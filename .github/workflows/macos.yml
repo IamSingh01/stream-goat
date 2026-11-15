@@ -106,13 +106,24 @@ jobs:
 
       - name: Screenshots of the app window
         # Starts the packaged app in screenshot mode (the same tours as on Linux); the pictures are in the artifact.
+        # Not fatal: the .dmg is still published if the window can't be captured on the build machine.
+        continue-on-error: true
         run: |
           mkdir -p shots
-          app="app/build/jpackage-mac/Stream Goat.app/Contents/MacOS/Stream Goat"
+          app="$PWD/app/build/jpackage-mac/Stream Goat.app/Contents/MacOS/Stream Goat"
+          ls -la "$(dirname "$app")"
           for tour in nav settings7; do
             # macOS has no timeout command: perl's alarm ends the app if a tour hangs.
-            CS_SCREENSHOT="$PWD/shots/mac-$tour" CS_SCREENSHOT_ONLY=$tour CLOUDSTREAM_HOME="$PWD/shot-home" perl -e 'alarm 180; exec @ARGV' "$app" || true
+            start=$(date +%s)
+            set +e
+            CS_SCREENSHOT="$PWD/shots/mac-$tour" CS_SCREENSHOT_ONLY=$tour CLOUDSTREAM_HOME="$PWD/shot-home" \
+              perl -e 'alarm 180; exec @ARGV or die "exec failed: $!"' "$app" > "shot-$tour.log" 2>&1
+            code=$?
+            set -e
+            echo "tour $tour: exit $code after $(( $(date +%s) - start )) s"
+            tail -40 "shot-$tour.log" || true
           done
+          echo "--- app log"; tail -60 shot-home/logs/cloudstream.log 2>/dev/null || true
           ls shots
           [ -n "$(ls shots)" ] || { echo "::error::No screenshots were taken"; exit 1; }
           pip install -q pillow
@@ -134,6 +145,7 @@ jobs:
           path: |
             build/macos/*.dmg
             shots/*.png
+            shot-*.log
 
       - name: Publish release
         if: startsWith(github.ref, 'refs/tags/')
