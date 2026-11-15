@@ -159,6 +159,9 @@ object Torrents {
 
     fun closeAll() { open.keys.toList().forEach { close(it) } }
 
+    /** Tests: stops the torrent engine itself, so its native threads are gone before the test process exits. */
+    @Synchronized internal fun shutdown() { closeAll(); runCatching { session?.stop() }; session = null }
+
     @Synchronized private fun stopSession() {
         val s = session ?: return
         session = null

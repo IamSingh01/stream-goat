@@ -27,6 +27,9 @@ android {
         fun quoted(name: String) = "\"" + (System.getenv(name) ?: "").replace("\"", "") + "\""
         buildConfigField("String", "GOOGLE_CLIENT_ID", quoted("GOOGLE_CLIENT_ID"))
         buildConfigField("String", "GOOGLE_CLIENT_SECRET", quoted("GOOGLE_CLIENT_SECRET"))
+        // WeTrakr sync: the app key (client_id) of the Stream Goat app registered on wetrakr.com (GitHub secret
+        // WETRAKR_CLIENT_ID). Its client secret is never put in the app: the device sign-in doesn't need it.
+        buildConfigField("String", "WETRAKR_CLIENT_ID", quoted("WETRAKR_CLIENT_ID"))
     }
 
     // The release key comes from the environment (GitHub Actions secrets, see android/README.md) and is never
@@ -150,3 +153,19 @@ dependencies {
 // Paparazzi (Android screenshots drawn on the computer: ./gradlew :app:recordPaparazziDebug) clashes with
 // Gradle's HTML test report; the XML results are kept.
 tasks.withType<Test>().configureEach { reports.html.required.set(false) }
+
+// The torrent test runs libtorrent's native engine, which can crash the test process as it exits when it shares
+// that process with Paparazzi's renderer: it gets a process of its own, right after the other unit tests.
+afterEvaluate {
+    val unit = tasks.named<Test>("testDebugUnitTest")
+    unit.configure { filter { excludeTestsMatching("*TorrentStreamingTest"); isFailOnNoMatchingTests = false } }
+    val torrent = tasks.register<Test>("torrentUnitTest") {
+        val base = unit.get()
+        testClassesDirs = base.testClassesDirs
+        classpath = base.classpath
+        jvmArgs(base.allJvmArgs.filter { it.startsWith("--add-opens") || it.startsWith("-D") })
+        filter { includeTestsMatching("*TorrentStreamingTest"); isFailOnNoMatchingTests = false }
+        dependsOn(base.dependsOn)
+    }
+    unit.configure { finalizedBy(torrent) }
+}

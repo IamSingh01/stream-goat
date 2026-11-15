@@ -1,6 +1,7 @@
 package io.github.sherazi5110.cloudstream.ui
 
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.material.icons.filled.Link
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -79,7 +80,7 @@ enum class Section(val title: String, val text: String, val icon: ImageVector) {
     APPEARANCE("Appearance", "Theme, accent colour, layout", Icons.Filled.Palette),
     PLAYER("Player", "Sources, quality, subtitles, audio", Icons.Filled.PlayCircle),
     LIVETV("Live TV", "M3U playlists, Xtream Codes, guides", Icons.Filled.LiveTv),
-    METADATA("Metadata & integrations", "TMDB, IMDb ratings, AniList", Icons.Filled.Star),
+    METADATA("Metadata & integrations", "TMDB, IMDb ratings, AniList, WeTrakr sync", Icons.Filled.Star),
     NETWORK("Network", "DNS over HTTPS, cookies", Icons.Filled.Public),
     ABOUT("About", "Version, source code", Icons.Filled.Info),
 }
@@ -455,6 +456,7 @@ private fun LiveTvSection() {
 
 @Composable
 private fun MetadataSection() {
+    WeTrakrSection()
     val scope = rememberCoroutineScope()
     var key by remember { mutableStateOf(Metadata.tmdbKey) }
     var status by remember { mutableStateOf<String?>(null) }
@@ -584,4 +586,68 @@ private fun LanguageChips(value: String, onChange: (String) -> Unit) {
                 .padding(horizontal = 14.dp, vertical = 8.dp))
         }
     }
+}
+
+
+/**
+ * Sync with WeTrakr: a code to enter on wetrakr.com/activate (a QR code on TVs), then what's watched here is
+ * marked watched there. Each profile connects its own account.
+ */
+@Composable
+private fun WeTrakrSection() {
+    val scope = rememberCoroutineScope()
+    var connected by remember { mutableStateOf(io.github.sherazi5110.cloudstream.WeTrakr.connected) }
+    var code by remember { mutableStateOf<io.github.sherazi5110.cloudstream.WeTrakr.DeviceCode?>(null) }
+    var status by remember { mutableStateOf<String?>(null) }
+    var job by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    DisposableEffect(Unit) { onDispose { job?.cancel() } }
+    Heading("WeTrakr sync")
+    Hint("WeTrakr (wetrakr.com) is a free tracker for movies, shows and anime. Connected, what you watch here shows as now watching " +
+        "there and is marked watched once you've seen 80% of it. Each profile connects its own account; only a sign-in token is kept on this device.")
+    when {
+        !io.github.sherazi5110.cloudstream.WeTrakr.available -> Hint("Not available in this build yet.")
+        connected -> {
+            Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("✓ Connected to WeTrakr", style = MaterialTheme.typography.titleSmall, color = Palette.accent, modifier = Modifier.weight(1f))
+                PillButton("Disconnect", null, primary = false, compact = true) {
+                    io.github.sherazi5110.cloudstream.WeTrakr.disconnect(); connected = false; status = null
+                }
+            }
+            var share by remember { mutableStateOf(io.github.sherazi5110.cloudstream.WeTrakr.shareNowPlaying) }
+            SwitchRow("Show what I'm watching", "WeTrakr shows the title as playing, with its progress. Off: titles are only marked watched when you finish them.", share) {
+                share = it; io.github.sherazi5110.cloudstream.WeTrakr.shareNowPlaying = it
+            }
+        }
+        code != null -> {
+            val c = code!!
+            Text("Go to ${c.url.removePrefix("https://")} on your phone or computer and enter:", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 8.dp))
+            Text(c.userCode, style = MaterialTheme.typography.displaySmall, color = Palette.accent, modifier = Modifier.padding(vertical = 6.dp))
+            if (App.isTv) {
+                val qr = remember(c.url) { qrBitmap(c.url + "?code=" + c.userCode, 480).asImageBitmap() }
+                androidx.compose.foundation.Image(qr, "QR code for WeTrakr", Modifier.size(180.dp).background(Color.White, RoundedCornerShape(8.dp)).padding(8.dp))
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Spinner(Modifier.size(22.dp))
+                Text("Waiting for you to approve…", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 10.dp).weight(1f))
+                PillButton("Cancel", null, primary = false, compact = true) { job?.cancel(); code = null }
+            }
+        }
+        else -> PillButton("Connect WeTrakr", Icons.Filled.Link, compact = true, modifier = Modifier.padding(top = 6.dp)) {
+            status = null
+            job = scope.launch {
+                try {
+                    val c = io.github.sherazi5110.cloudstream.WeTrakr.start()
+                    code = c
+                    val until = System.currentTimeMillis() + c.expiresIn * 1000L
+                    while (System.currentTimeMillis() < until) {
+                        kotlinx.coroutines.delay(c.interval * 1000L)
+                        if (io.github.sherazi5110.cloudstream.WeTrakr.poll(c)) { connected = true; code = null; App.toast("WeTrakr connected"); return@launch }
+                    }
+                    code = null; status = "The code expired. Try again."
+                } catch (e: kotlinx.coroutines.CancellationException) { throw e
+                } catch (e: Exception) { code = null; status = "Couldn't connect: ${e.message}" }
+            }
+        }
+    }
+    status?.let { Hint(it) }
 }

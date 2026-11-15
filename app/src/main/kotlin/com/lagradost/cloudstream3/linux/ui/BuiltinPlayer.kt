@@ -295,6 +295,7 @@ class BuiltinPlayer(
         if (finished) return
         finished = true
         record()
+        if (duration > 0) trakr?.stopped(percent())
         hideTimer.stop()
         onlineJob?.cancel()
         sources.cancel()
@@ -318,6 +319,11 @@ class BuiltinPlayer(
         }
     }
 
+    /** WeTrakr sync for this playback (movies and episodes; not Live TV). */
+    private val trakr = if (api is com.lagradost.cloudstream3.linux.LiveApi || response.type == com.lagradost.cloudstream3.TvType.Live) null
+        else com.lagradost.cloudstream3.linux.WeTrakr.Session(response, playable.season, playable.episode)
+    private fun percent(): Double = if (duration > 0) position * 100.0 / duration else 0.0
+
     private fun record() {
         // Live channels have no resume point and don't belong in Continue Watching.
         if (duration <= 0 || position < 5000 || response.type == com.lagradost.cloudstream3.TvType.Live) return
@@ -340,10 +346,12 @@ class BuiltinPlayer(
             applyEqualizer(Settings.playerEqualizer)
             pickAudioLanguage()
             scheduleHide()
+            trakr?.playing(percent())
         }
 
         override fun paused(mediaPlayer: MediaPlayer) = fx {
             playing = false
+            trakr?.paused(percent())
             playButton.graphic = icon(Icons.PLAY, 22.0)
             showControls()
         }
@@ -357,7 +365,7 @@ class BuiltinPlayer(
             if (!seek.dragging) seek.set(newTime, duration)
             timeLabel.text = format(newTime)
             updateClock()
-            if (duration > 0 && abs(newTime - saved) >= 10_000) { saved = newTime; record() }
+            if (duration > 0 && abs(newTime - saved) >= 10_000) { saved = newTime; record(); trakr?.tick(percent()) }
             if (newTime > 0) spinner.isVisible = false
             updateSkip(newTime)
             updateCountdown(newTime)

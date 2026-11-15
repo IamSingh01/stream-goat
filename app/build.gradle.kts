@@ -213,12 +213,15 @@ val cloudConfig = tasks.register("cloudConfig") {
     val out = layout.buildDirectory.dir("generated/cloud")
     val id = providers.environmentVariable("GOOGLE_CLIENT_ID").orElse("")
     val secret = providers.environmentVariable("GOOGLE_CLIENT_SECRET").orElse("")
+    // WeTrakr sync: the app key of the Stream Goat app on wetrakr.com (GitHub secret WETRAKR_CLIENT_ID).
+    val wetrakr = providers.environmentVariable("WETRAKR_CLIENT_ID").orElse("")
     inputs.property("id", id)
     inputs.property("secret", secret)
+    inputs.property("wetrakr", wetrakr)
     outputs.dir(out)
     doLast {
         out.get().file("stream-goat-cloud.properties").asFile.apply { parentFile.mkdirs() }
-            .writeText("GOOGLE_CLIENT_ID=${id.get()}\nGOOGLE_CLIENT_SECRET=${secret.get()}\n")
+            .writeText("GOOGLE_CLIENT_ID=${id.get()}\nGOOGLE_CLIENT_SECRET=${secret.get()}\nWETRAKR_CLIENT_ID=${wetrakr.get()}\n")
     }
 }
 sourceSets.main { resources.srcDir(cloudConfig) }

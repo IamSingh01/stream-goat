@@ -39,6 +39,7 @@ jobs:
           # Google Drive backup: the project's Google sign-in client (docs/google-drive-setup.md); empty without it.
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          WETRAKR_CLIENT_ID: ${{ secrets.WETRAKR_CLIENT_ID }}
         run: |
           ./scripts/build-deb.sh
           ./gradlew :app:distTar
@@ -120,6 +121,7 @@ jobs:
           # Google Drive backup: the project's Google sign-in client (docs/google-drive-setup.md); empty without it.
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          WETRAKR_CLIENT_ID: ${{ secrets.WETRAKR_CLIENT_ID }}
         run: |
           echo "sdk.dir=$ANDROID_HOME" > local.properties
           VERSION_ARG=""

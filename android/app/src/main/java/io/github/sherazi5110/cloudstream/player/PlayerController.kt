@@ -149,7 +149,7 @@ class PlayerController(
         listen()
         scope.launch { findSources() }
         saver = scope.launch {
-            while (true) { delay(10_000); if (playing) save() }
+            while (true) { delay(10_000); if (playing) { save(); trakr?.tick(percent()) } }
         }
     }
 
@@ -161,6 +161,7 @@ class PlayerController(
                     current?.takeIf { api !is io.github.sherazi5110.cloudstream.LiveApi }?.let { io.github.sherazi5110.cloudstream.LastSource.remember(api.name, response.url, it) }
                     playing = true; buffering = false; started = true; error = null; watchdog?.cancel()
                     channelKey?.let { io.github.sherazi5110.cloudstream.LiveTv.markWorking(it) }
+                    trakr?.playing(percent())
                     if (!languagesApplied) { languagesApplied = true; main.postDelayed({ applyLanguages() }, 1500) }
                     applyDelays()
                     restoreTracks?.let { (a, sp) ->
@@ -168,7 +169,7 @@ class PlayerController(
                         main.postDelayed({ if (a >= 0) setAudio(a); sp?.let { setSpu(it) } }, 1200)
                     }
                 }
-                MediaPlayer.Event.Paused -> playing = false
+                MediaPlayer.Event.Paused -> { playing = false; trakr?.paused(percent()) }
                 MediaPlayer.Event.Buffering -> buffering = e.buffering < 100f
                 MediaPlayer.Event.TimeChanged -> { time = e.timeChanged; if (buffering && playing) buffering = false; updateSkip(e.timeChanged) }
                 MediaPlayer.Event.LengthChanged -> { length = e.lengthChanged; loadSegments() }
@@ -749,7 +750,12 @@ class PlayerController(
     fun detach(view: Any) { if (view === layout) detachAll() }
 
     /** Records progress for Continue Watching and the episode list. */
+    /** WeTrakr sync for this playback (movies and episodes; not Live TV). */
+    private val trakr by lazy { if (isLive) null else io.github.sherazi5110.cloudstream.WeTrakr.Session(response, playable.season, playable.episode) }
+    private fun percent(): Double = if (length > 0) time * 100.0 / length else 0.0
+
     fun save(finished: Boolean = false) {
+        if (finished) trakr?.stopped(100.0)
         if (isLive || !started) return
         val len = length.takeIf { it > 0 } ?: return
         val pos = if (finished) len else time
@@ -762,6 +768,7 @@ class PlayerController(
     private var released = false
 
     fun release() {
+        if (started) trakr?.stopped(percent())
         released = true
         io.github.sherazi5110.cloudstream.CrashReport.playing(null)
         save()

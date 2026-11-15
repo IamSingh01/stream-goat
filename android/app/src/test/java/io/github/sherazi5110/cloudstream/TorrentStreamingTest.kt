@@ -75,7 +75,7 @@ class TorrentStreamingTest {
             Thread.sleep(1500)
             assertTrue("the download is deleted", File(root, "player").walk().none { it.isFile && it.name.endsWith(".mkv") })
         } finally {
-            Torrents.closeAll()
+            Torrents.shutdown()
             runCatching { seeder.stop() }
             root.deleteRecursively()
         }

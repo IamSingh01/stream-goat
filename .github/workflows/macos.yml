@@ -77,6 +77,7 @@ jobs:
           # Google Drive backup: the project's Google sign-in client (docs/google-drive-setup.md); empty without it.
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          WETRAKR_CLIENT_ID: ${{ secrets.WETRAKR_CLIENT_ID }}
         run: |
           ./gradlew :app:packageMac -PvlcDir="$VLC_DIR"
           app="app/build/jpackage-mac/Stream Goat.app"
@@ -109,7 +110,8 @@ jobs:
           mkdir -p shots
           app="app/build/jpackage-mac/Stream Goat.app/Contents/MacOS/Stream Goat"
           for tour in nav settings7; do
-            CS_SCREENSHOT="$PWD/shots/mac-$tour" CS_SCREENSHOT_ONLY=$tour CLOUDSTREAM_HOME="$PWD/shot-home" timeout 180 "$app" || true
+            # macOS has no timeout command: perl's alarm ends the app if a tour hangs.
+            CS_SCREENSHOT="$PWD/shots/mac-$tour" CS_SCREENSHOT_ONLY=$tour CLOUDSTREAM_HOME="$PWD/shot-home" perl -e 'alarm 180; exec @ARGV' "$app" || true
           done
           ls shots
           [ -n "$(ls shots)" ] || { echo "::error::No screenshots were taken"; exit 1; }
@@ -126,6 +128,7 @@ jobs:
           PY
 
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: streamgoat-macos
           path: |
