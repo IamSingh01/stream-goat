@@ -520,11 +520,8 @@ private fun SheetPanel(sheet: Sheet, c: PlayerController, modifier: Modifier, on
             }
             Sheet.ONLINE -> online.orEmpty().map { r ->
                 Option(r.languageName, r.id, false) {
-                    scope.launch {
-                        runCatching { io.github.sherazi5110.cloudstream.OnlineSubtitles.download(r) }
-                            .onSuccess { c.addSubtitleFile(it) }
-                            .onFailure { io.github.sherazi5110.cloudstream.App.toast("Couldn't download: ${it.message}") }
-                    }
+                    // In the player's own scope: this panel closes at once, and its scope would cancel the download.
+                    c.addOnlineSubtitle(r)
                     onClose()
                 }
             }

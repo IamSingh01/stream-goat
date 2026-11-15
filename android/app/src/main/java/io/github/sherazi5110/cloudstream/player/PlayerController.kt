@@ -377,6 +377,16 @@ class PlayerController(
     }
 
     /** A subtitle file downloaded from the internet (OpenSubtitles) or translated. */
+    /** Downloads an OpenSubtitles result and shows it (lives as long as the player, not the menu it was picked in). */
+    fun addOnlineSubtitle(r: io.github.sherazi5110.cloudstream.OnlineSubtitles.Result) {
+        App.toast("Downloading ${r.languageName} subtitles…")
+        scope.launch {
+            runCatching { io.github.sherazi5110.cloudstream.OnlineSubtitles.download(r) }
+                .onSuccess { addSubtitleFile(it, r.languageName) }
+                .onFailure { e -> if (e !is kotlinx.coroutines.CancellationException) App.toast("Couldn't download the subtitles: ${e.message}") }
+        }
+    }
+
     fun addSubtitleFile(file: java.io.File, name: String = file.name) {
         selectedSubtitle = file.absolutePath
         addedFiles += file to name
