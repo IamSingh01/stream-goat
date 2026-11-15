@@ -194,10 +194,68 @@ class PlayerController(
     fun stopAutoPlay() { autoPlay = false; grace?.cancel() }
 
     /** Starts [link], keeping the current position when switching sources mid-playback. */
-    fun play(link: ExtractorLink) {
+    /** The qualities inside the current HLS source (empty when it has one), and the one pinned (null = automatic). */
+    var variants by mutableStateOf<List<HlsVariants.Variant>>(emptyList())
+        private set
+    var variant by mutableStateOf<HlsVariants.Variant?>(null)
+        private set
+    private var master: HlsVariants.Master? = null
+    private var mastersJob: Job? = null
+
+    /** Pins a quality of the current source ([v] null = automatic), keeping the position. */
+    fun setQuality(v: HlsVariants.Variant?) {
+        val link = current ?: return
+        val m = master ?: return
+        scope.launch {
+            val target = when {
+                v == null -> null
+                !m.separateAudio -> v.url
+                else -> withContext(Dispatchers.IO) {
+                    // The audio is separate: a master with only this quality, so it keeps its sound.
+                    val headers = headersOf(link)
+                    val proxied = headers.keys.any { !it.equals("Referer", true) && !it.equals("User-Agent", true) }
+                    val text = HlsVariants.single(m, v) { if (proxied) StreamProxy.wrap(it, headers) else it }
+                    val file = java.io.File(App.context.cacheDir, "quality-${v.url.hashCode()}.m3u8").apply { writeText(text) }
+                    Uri.fromFile(file).toString()
+                }
+            }
+            variant = v
+            play(link, target)
+        }
+    }
+
+    private fun headersOf(link: ExtractorLink) = buildMap {
+        putAll(link.headers)
+        if (link.referer.isNotBlank() && keys.none { it.equals("Referer", true) }) put("Referer", link.referer)
+    }
+
+    /** Reads an HLS source's master playlist for its qualities (in the background; nothing waits for it). */
+    private fun loadVariants(link: ExtractorLink) {
+        mastersJob?.cancel()
+        master = null; variants = emptyList(); variant = null
+        if (!(link.isM3u8 || link.url.substringBefore('?').endsWith(".m3u8"))) return
+        mastersJob = scope.launch {
+            val m = withContext(Dispatchers.IO) {
+                runCatching {
+                    val request = okhttp3.Request.Builder().url(link.url).apply {
+                        headersOf(link).forEach { (k, v) -> header(k, v) }
+                        if (headersOf(link).keys.none { it.equals("User-Agent", true) }) header("User-Agent", USER_AGENT)
+                    }.build()
+                    com.lagradost.cloudstream3.app.baseClient.newCall(request).execute().use { r ->
+                        if (!r.isSuccessful) null else HlsVariants.parse(r.body.string().take(512 * 1024), r.request.url.toString())
+                    }
+                }.getOrNull()
+            }
+            if (current?.url == link.url && m != null) { master = m; variants = m.variants }
+        }
+    }
+
+    /** Starts [link] ([variantUrl]: one of its qualities instead), keeping the position when switching mid-playback. */
+    fun play(link: ExtractorLink, variantUrl: String? = null) {
         grace?.cancel()
         playCalledAt = android.os.SystemClock.elapsedRealtime()
         val keep = if (started) time.takeIf { it > 0 } ?: startAt else startAt
+        if (variantUrl == null && (current?.url != link.url || variant != null)) loadVariants(link.also { current = it })
         current = link
         matchSurface(link)
         tried += link.url
@@ -209,7 +267,8 @@ class PlayerController(
             if (link.referer.isNotBlank() && keys.none { it.equals("Referer", true) }) put("Referer", link.referer)
         }
         val needsProxy = headers.keys.any { !it.equals("Referer", true) && !it.equals("User-Agent", true) }
-        val url = if (needsProxy) StreamProxy.wrap(link.url, headers) else link.url
+        val source = variantUrl ?: link.url
+        val url = if (source.startsWith("file:")) source else if (needsProxy) StreamProxy.wrap(source, headers) else source
         val media = Media(Vlc.lib, Uri.parse(url)).apply {
             setHWDecoderEnabled(true, false)
             if (!needsProxy) {

@@ -43,6 +43,7 @@ import androidx.compose.material.icons.filled.Brightness6
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ClosedCaption
 import androidx.compose.material.icons.filled.Forward10
+import androidx.compose.material.icons.filled.HighQuality
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Pause
@@ -105,7 +106,7 @@ import java.text.DateFormat
 import java.util.Date
 import kotlin.math.abs
 
-private enum class Sheet(val title: String) { SOURCES("Sources"), SUBTITLES("Subtitles"), ONLINE("Online subtitles"), TRANSLATE("Translate subtitles"), AUDIO("Audio"), SPEED("Speed"), ZOOM("Zoom") }
+private enum class Sheet(val title: String) { SOURCES("Sources"), SUBTITLES("Subtitles"), ONLINE("Online subtitles"), TRANSLATE("Translate subtitles"), AUDIO("Audio"), SPEED("Speed"), ZOOM("Zoom"), QUALITY("Quality") }
 
 fun Context.findActivity(): Activity? = when (this) {
     is Activity -> this
@@ -127,7 +128,8 @@ fun PlayerScreen(screen: Screen.Player) {
     val view = LocalView.current
     var controls by remember { mutableStateOf(true) }
     var locked by remember { mutableStateOf(false) }
-    var sheet by remember(screen) { mutableStateOf(if (screen.chooseSource) Sheet.SOURCES else null) }
+    // "Let me choose the source" (Settings → Player): the list opens at once and fills in as sources are found.
+    var sheet by remember(screen) { mutableStateOf(if (screen.chooseSource || (!Settings.autoPlay && screen.channel == null)) Sheet.SOURCES else null) }
     var poke by remember { mutableIntStateOf(0) } // any interaction restarts the hide timer
     var pinch by remember { mutableFloatStateOf(1f) }
     val rootFocus = remember { FocusRequester() }
@@ -259,7 +261,10 @@ fun PlayerScreen(screen: Screen.Player) {
             }
         }
 
-        sheet?.let { s -> SheetPanel(s, c, Modifier.align(Alignment.CenterEnd), onOpen = { sheet = it }) { sheet = null } }
+        sheet?.let { s ->
+            if (s == Sheet.SOURCES) SourcesPanel(c) { sheet = null }
+            else SheetPanel(s, c, Modifier.align(Alignment.CenterEnd), onOpen = { sheet = it }) { sheet = null }
+        }
     }
 }
 
@@ -417,6 +422,8 @@ private fun Controls(c: PlayerController, onSheet: (Sheet) -> Unit, onLock: () -
                 BarButton(Icons.AutoMirrored.Filled.List, "Sources") { onSheet(Sheet.SOURCES) }
                 BarButton(Icons.Filled.ClosedCaption, "Subtitles") { onSheet(Sheet.SUBTITLES) }
                 BarButton(Icons.Filled.Translate, "Audio") { onSheet(Sheet.AUDIO) }
+                // Several qualities inside this source (an HLS master): pin one, or Auto.
+                if (c.variants.isNotEmpty()) BarButton(Icons.Filled.HighQuality, c.variant?.label ?: "Auto") { onSheet(Sheet.QUALITY) }
                 BarButton(Icons.Filled.Speed, "${c.speed}×") { onSheet(Sheet.SPEED) }
                 BarButton(Icons.Filled.AspectRatio, c.zoom.label) { onSheet(Sheet.ZOOM) }
                 c.next?.let { next -> BarButton(Icons.Filled.SkipNext, "Next episode") { Nav.replace(Screen.Player(c.api, c.response, next)) } }
@@ -524,6 +531,8 @@ private fun SheetPanel(sheet: Sheet, c: PlayerController, modifier: Modifier, on
             Sheet.AUDIO -> c.audioTracks().filter { it.id != -1 }.map { t -> Option(t.name, null, t.id == c.audioTrack()) { c.setAudio(t.id); onClose() } }
             Sheet.SPEED -> listOf(0.25f, 0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f).map { r -> Option("$r×", if (r == 1f) "Normal" else null, r == c.speed) { c.setRate(r); onClose() } }
             Sheet.ZOOM -> Zoom.entries.map { z -> Option(z.label, null, z == c.zoom) { c.setZoomMode(z); onClose() } }
+            Sheet.QUALITY -> listOf(Option("Auto", "Changes with your connection", c.variant == null) { c.setQuality(null); onClose() }) +
+                c.variants.map { v -> Option(v.label, v.bandwidth?.let { "${it / 1000} kbps" }, v == c.variant) { c.setQuality(v); onClose() } }
         }
         if (options.isEmpty()) Text(
             when (sheet) {

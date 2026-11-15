@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -90,25 +91,29 @@ fun ExtensionsScreen() {
     var query by remember { mutableStateOf("") }
     val shownInstalled = remember(installed, query) { installed.filter { matches(query, it.name ?: it.internalName, it.internalName) } }
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 14.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("Extensions", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
             if (busy) Spinner(Modifier.size(32.dp))
         }
-        Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        // The two kinds as one segmented switch, apart from the buttons below it.
+        Row(Modifier.padding(horizontal = 16.dp).background(Palette.surface, RoundedCornerShape(50)).padding(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             listOf("CloudStream extensions", "Stremio add-ons").forEachIndexed { i, label ->
                 val on = (i == 1) == stremio
-                Text(label, style = MaterialTheme.typography.labelLarge, modifier = Modifier.card(RoundedCornerShape(50)) { stremio = i == 1 }
-                    .background(if (on) Palette.accent else Palette.surfaceHigh, RoundedCornerShape(50)).padding(horizontal = 16.dp, vertical = 8.dp))
+                Text(label, style = MaterialTheme.typography.labelLarge, color = if (on) Color.White else Palette.muted,
+                    modifier = Modifier.card(RoundedCornerShape(50)) { stremio = i == 1 }
+                        .background(if (on) Palette.accent else Color.Transparent, RoundedCornerShape(50)).padding(horizontal = 18.dp, vertical = 9.dp))
             }
         }
+        Spacer(Modifier.height(18.dp))
         if (stremio) { StremioTab(); return@Column }
         LazyColumn(contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             item {
                 // Wraps onto a second line on narrow phones.
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    PillButton("Add repository", Icons.Filled.Add) { adding = true }
-                    PillButton("Add from phone", Icons.Filled.PhoneAndroid, primary = false) { Nav.open(Screen.AddFromPhone) }
-                    PillButton("Update all", Icons.Filled.Refresh, primary = false) {
+                FlowRow(Modifier.padding(bottom = 6.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    PillButton("Add repository", Icons.Filled.Add, compact = true) { adding = true }
+                    PillButton("Add from phone", Icons.Filled.PhoneAndroid, primary = false, compact = true) { Nav.open(Screen.AddFromPhone) }
+                    PillButton("Update all", Icons.Filled.Refresh, primary = false, compact = true) {
                         busy = true
                         scope.launch {
                             val updated = withContext(Dispatchers.IO) { PluginManager.updateAll() }
@@ -116,10 +121,10 @@ fun ExtensionsScreen() {
                             App.toast(if (updated.isEmpty()) "Everything is up to date" else "Updated ${updated.joinToString()}")
                         }
                     }
-                    if (!isTv) PillButton("From file", Icons.Filled.FileOpen, primary = false) { picker.launch(arrayOf("*/*")) }
+                    if (!isTv) PillButton("From file", Icons.Filled.FileOpen, primary = false, compact = true) { picker.launch(arrayOf("*/*")) }
                 }
             }
-            item { SectionTitle("Repositories", Modifier.padding(top = 12.dp)) }
+            item { SectionTitle("Repositories", Modifier.padding(top = 20.dp, bottom = 4.dp)) }
             if (repos.isEmpty()) item {
                 Text("Add a repository by its address, a cloudstreamrepo:// link or a shortcode, the same ones the official app accepts.",
                     style = MaterialTheme.typography.bodyMedium)
@@ -133,7 +138,7 @@ fun ExtensionsScreen() {
                     }
                 }
             }
-            item { SectionTitle("Installed · ${installed.size}", Modifier.padding(top = 12.dp)) }
+            item { SectionTitle("Installed · ${installed.size}", Modifier.padding(top = 24.dp, bottom = 4.dp)) }
             if (installed.size > 6) item { ExtensionSearch(query) { query = it } }
             uniqueItems(shownInstalled, key = { "plugin|${it.internalName}" }) { data ->
                 val failure = PluginManager.failures[data.internalName]

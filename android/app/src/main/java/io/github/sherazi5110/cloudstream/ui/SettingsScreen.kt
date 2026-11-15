@@ -244,8 +244,14 @@ private fun AppearanceSection() {
 
 @Composable
 private fun PlayerSection() {
+    Heading("When you press Play")
     var autoPlay by remember { mutableStateOf(Settings.autoPlay) }
-    SwitchRow("Start the best source automatically", "Otherwise you pick from the list.", autoPlay) { autoPlay = it; Settings.autoPlay = it }
+    ChoiceChips(listOf(true, false), { if (it) "Start the best source automatically" else "Let me choose the source" }, { it == autoPlay }) {
+        autoPlay = it; Settings.autoPlay = it
+    }
+    Hint(if (autoPlay) "The best source (closest to your preferred quality) starts by itself; Sources in the player lists the others."
+        else "The sources list opens, with a search box and language and quality filters: pick the one you want.")
+    Heading("Playback")
     var next by remember { mutableStateOf(Settings.autoPlayNext) }
     SwitchRow("Play the next episode automatically", "Counts down from the credits; Cancel stays on this episode", next) { next = it; Settings.autoPlayNext = it }
     var skipBtns by remember { mutableStateOf(Settings.skipButtons) }
