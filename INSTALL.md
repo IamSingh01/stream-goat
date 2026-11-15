@@ -256,9 +256,12 @@ Needs Android 6.0 or newer.
    - **Fire TV:** Settings → My Fire TV → Developer options → Install unknown apps → Downloader → On.
      (If Developer options is missing: Settings → My Fire TV → About → click the device name 7 times.)
    - **Android TV / Google TV:** Settings → Apps → Security & restrictions → Unknown sources → Downloader → On.
-3. In Downloader, enter the `.apk` link from the Releases page (right-click the file on a computer → *Copy link*),
-   or `https://github.com/sherazi5110/stream-goat/releases/latest/download/streamgoat-android-armeabi-v7a.apk`,
-   and choose **Install**.
+3. Open Downloader, type **`sherazi5110.github.io/stream-goat/tv`** in the box and press **Go**. It downloads the
+   newest version for TVs (`armeabi-v7a`).
+   - If the TV says *App not installed*, uninstall the old Stream Goat first (back up first: Settings → Updates and
+     backup), or type `sherazi5110.github.io/stream-goat/apk` instead (the universal file, for every device).
+   - The full link works too: `https://github.com/sherazi5110/stream-goat/releases/latest/download/streamgoat-android-armeabi-v7a.apk`.
+4. Choose **Install**, then **Open**. Downloader offers to delete the downloaded file: you can, it isn't needed any more.
 
 **Other ways:** copy the `.apk` to a USB stick and open it with a file manager on the TV, or send it with the
 *Send files to TV* app.
