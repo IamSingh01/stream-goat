@@ -40,19 +40,31 @@ import org.videolan.libvlc.MediaPlayer
 import org.videolan.libvlc.interfaces.IMedia
 import org.videolan.libvlc.util.VLCVideoLayout
 
-/** The one libVLC instance (it is heavy to create). */
+/** The one libVLC instance (it is heavy to create). A new subtitle style needs a new one ([restart]). */
 object Vlc {
-    val lib: LibVLC by lazy {
-        LibVLC(App.context, arrayListOf(
-            "--http-reconnect",
-            // 1.5 s of buffer before playing (was 3 s): starts as quickly as the official app's player.
-            "--network-caching=1500",
-            "--audio-time-stretch", // keeps the pitch at other speeds
-            "--subsdec-encoding=UTF-8",
-            "--freetype-rel-fontsize=16",
-            "--freetype-color=16777215",
-            "--freetype-outline-thickness=4",
-        ))
+    @Volatile private var instance: LibVLC? = null
+    /** The subtitle look [instance] was made with. */
+    @Volatile var look: SubtitleStyle.Look? = null
+        private set
+
+    val lib: LibVLC
+        get() = instance ?: synchronized(this) {
+            instance ?: SubtitleStyle.current().let { l ->
+                look = l
+                LibVLC(App.context, arrayListOf(
+                    "--http-reconnect",
+                    // 1.5 s of buffer before playing (was 3 s): starts as quickly as the official app's player.
+                    "--network-caching=1500",
+                    "--audio-time-stretch", // keeps the pitch at other speeds
+                    "--subsdec-encoding=UTF-8",
+                ).apply { addAll(SubtitleStyle.vlcOptions(l)) })
+            }.also { instance = it }
+        }
+
+    /** Drops the instance so the next player gets the current subtitle style (released after the players queued before). */
+    fun restart() {
+        val old = synchronized(this) { instance.also { instance = null } } ?: return
+        VlcThread.run { old.release() }
     }
 }
 
@@ -83,7 +95,9 @@ class PlayerController(
     /** True while libVLC opens a source or stops the previous one: calls that wait for it are skipped or queued. */
     @Volatile private var opening = false
     private val main = Handler(Looper.getMainLooper())
-    val player = MediaPlayer(Vlc.lib)
+    /** Replaced by a new one when the subtitle style changes ([restyle]). */
+    var player = MediaPlayer(Vlc.lib)
+        private set
 
     val links = mutableStateListOf<ExtractorLink>()
     val subtitles = mutableStateListOf<SubtitleFile>()
@@ -127,6 +141,14 @@ class PlayerController(
         Library.progress(api.name, playable.data)?.let { p ->
             if (p.duration > 0 && p.position / p.duration in 0.02..0.92) startAt = (p.position * 1000).toLong()
         }
+        listen()
+        scope.launch { findSources() }
+        saver = scope.launch {
+            while (true) { delay(10_000); if (playing) save() }
+        }
+    }
+
+    private fun listen() {
         player.setEventListener { e ->
             when (e.type) {
                 MediaPlayer.Event.Playing -> {
@@ -134,6 +156,11 @@ class PlayerController(
                     current?.takeIf { api !is io.github.sherazi5110.cloudstream.LiveApi }?.let { io.github.sherazi5110.cloudstream.LastSource.remember(api.name, response.url, it) }
                     playing = true; buffering = false; started = true; error = null; watchdog?.cancel()
                     if (!languagesApplied) { languagesApplied = true; main.postDelayed({ applyLanguages() }, 1500) }
+                    applyDelays()
+                    restoreTracks?.let { (a, sp) ->
+                        restoreTracks = null
+                        main.postDelayed({ if (a >= 0) setAudio(a); sp?.let { setSpu(it) } }, 1200)
+                    }
                 }
                 MediaPlayer.Event.Paused -> playing = false
                 MediaPlayer.Event.Buffering -> buffering = e.buffering < 100f
@@ -143,10 +170,54 @@ class PlayerController(
                 MediaPlayer.Event.EncounteredError -> main.post { failover() }
             }
         }
-        scope.launch { findSources() }
-        saver = scope.launch {
-            while (true) { delay(10_000); if (playing) save() }
-        }
+    }
+
+    /** Subtitle and audio sync in milliseconds (positive = later). libVLC resets them with every source. */
+    var subtitleDelay by mutableLongStateOf(0L)
+        private set
+    var audioDelay by mutableLongStateOf(0L)
+        private set
+    fun syncSubtitles(ms: Long) { subtitleDelay = ms.coerceIn(-600_000, 600_000); applyDelays() }
+    fun syncAudio(ms: Long) { audioDelay = ms.coerceIn(-600_000, 600_000); applyDelays() }
+    private fun applyDelays() {
+        val sub = subtitleDelay * 1000; val audio = audioDelay * 1000
+        VlcThread.run { if (player.spuDelay != sub) player.spuDelay = sub; if (player.audioDelay != audio) player.audioDelay = audio }
+    }
+
+    /** Audio and subtitle track to pick again after [restyle] (subtitle null = a file, re-added by play). */
+    private var restoreTracks: Pair<Int, Int?>? = null
+
+    /**
+     * Applies a new subtitle look: libVLC reads it only when it starts, so a new libVLC and player take over
+     * and the source opens again where it was (like VLC for Android does after changing subtitle settings).
+     * True when the player was replaced (a chosen subtitle file is then shown again by play).
+     */
+    fun restyle(): Boolean {
+        if (released || Vlc.look == SubtitleStyle.current()) return false
+        val old = player
+        old.setEventListener(null)
+        val l = layout
+        detachAll()
+        val keep = if (started) audioTrack() to (if (selectedSubtitle == null) spuTrack() else null) else null
+        VlcThread.run { old.stop(); old.release() }
+        Vlc.restart()
+        player = MediaPlayer(Vlc.lib)
+        listen()
+        l?.let { attach(it) }
+        val link = current ?: return true
+        // Ended, or a torrent still joining (it plays on the new player when ready): nothing to reopen.
+        if (ended || lastVariantUrl == null && io.github.sherazi5110.cloudstream.Torrents.isTorrent(link)) return true
+        restoreTracks = keep
+        play(link, lastVariantUrl)
+        return true
+    }
+
+    /** The cleaned-up subtitles settings changed: show the chosen subtitle file again with them. */
+    fun reloadSubtitle() {
+        if (released) return
+        val sel = selectedSubtitle ?: return
+        subtitles.firstOrNull { it.url == sel }?.let { addSubtitle(it); return }
+        addedFiles.firstOrNull { it.first.absolutePath == sel }?.let { selectFile(it.first) }
     }
 
     /** These sources came from the 20-minute cache (or the search started on the title page). */
@@ -358,7 +429,45 @@ class PlayerController(
     /** Shows an already added subtitle file again (a new source starts without it). */
     fun selectFile(file: java.io.File) {
         selectedSubtitle = file.absolutePath
-        VlcThread.run { player.addSlave(IMedia.Slave.Type.Subtitle, Uri.fromFile(file), true) }
+        showSubtitle(file.absolutePath, null)
+    }
+
+    /** Adds a subtitle file to the player: cleaned first (Subtitle style: captions, ads, capitals) when it is SRT/VTT. */
+    private fun showSubtitle(source: String, headers: Map<String, String>?) {
+        val direct = if (source.startsWith("/")) Uri.fromFile(java.io.File(source))
+            else headers?.takeIf { it.isNotEmpty() }?.let { Uri.parse(StreamProxy.wrap(source, it)) } ?: Uri.parse(source)
+        val clean = SubtitleStyle.currentClean()
+        if (!clean.active) { VlcThread.run { player.addSlave(IMedia.Slave.Type.Subtitle, direct, true) }; return }
+        val wanted = selectedSubtitle
+        scope.launch {
+            val file = runCatching { cleanedFile(source, headers, clean) }
+                .onFailure { android.util.Log.w("StreamGoat", "subtitle clean-up failed", it) }.getOrNull()
+            if (selectedSubtitle != wanted) return@launch // something else was picked meanwhile
+            val uri = file?.let { Uri.fromFile(it) } ?: direct
+            VlcThread.run { player.addSlave(IMedia.Slave.Type.Subtitle, uri, true) }
+        }
+    }
+
+    /** [source] cleaned with [c], cached; null when it isn't a text subtitle file (left to libVLC as it is). */
+    private suspend fun cleanedFile(source: String, headers: Map<String, String>?, c: SubtitleStyle.Clean): java.io.File? = withContext(Dispatchers.IO) {
+        val dir = java.io.File(App.context.cacheDir, "subtitles").apply { mkdirs() }
+        val prefix = "c-${source.hashCode().toUInt()}-${c.key}."
+        dir.listFiles()?.firstOrNull { it.name.startsWith(prefix) && it.length() > 0 }?.let { return@withContext it }
+        val bytes = when {
+            source.startsWith("/") -> java.io.File(source).readBytes()
+            source.startsWith("file:") -> java.io.File(Uri.parse(source).path!!).readBytes()
+            else -> {
+                val h = headers ?: listOfNotNull(current?.referer?.takeIf { it.isNotBlank() }?.let { "Referer" to it }).toMap()
+                val r = com.lagradost.cloudstream3.app.get(source, headers = h, timeout = 20)
+                if (!r.isSuccessful) throw java.io.IOException("HTTP ${r.code}")
+                r.body.bytes()
+            }
+        }
+        val text = SubtitleStyle.decode(bytes)
+        if (!text.contains("-->")) return@withContext null
+        val out = SubtitleStyle.clean(text, c)
+        val ext = if (out.trimStart().startsWith("WEBVTT")) "vtt" else if (out === text) "ass" else "srt"
+        java.io.File(dir, prefix + ext).apply { writeText(out) }
     }
 
     /**
@@ -439,7 +548,7 @@ class PlayerController(
     fun addSubtitleFile(file: java.io.File, name: String = file.name) {
         selectedSubtitle = file.absolutePath
         addedFiles += file to name
-        VlcThread.run { player.addSlave(IMedia.Slave.Type.Subtitle, Uri.fromFile(file), true) }
+        showSubtitle(file.absolutePath, null)
     }
 
     /** Subtitle files added during this playback (online, translated), with their names. */
@@ -568,8 +677,7 @@ class PlayerController(
 
     fun addSubtitle(s: SubtitleFile) {
         selectedSubtitle = s.url
-        val url = s.headers?.takeIf { it.isNotEmpty() }?.let { StreamProxy.wrap(s.url, it) } ?: s.url
-        VlcThread.run { player.addSlave(IMedia.Slave.Type.Subtitle, Uri.parse(url), true) }
+        showSubtitle(s.url, s.headers)
     }
 
     private var layout: VLCVideoLayout? = null
@@ -626,7 +734,10 @@ class PlayerController(
         ))
     }
 
+    private var released = false
+
     fun release() {
+        released = true
         io.github.sherazi5110.cloudstream.CrashReport.playing(null)
         save()
         closeTorrent()

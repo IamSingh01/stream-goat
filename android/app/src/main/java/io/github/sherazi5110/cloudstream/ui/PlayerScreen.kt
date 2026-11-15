@@ -108,7 +108,8 @@ import java.text.DateFormat
 import java.util.Date
 import kotlin.math.abs
 
-private enum class Sheet(val title: String) { SOURCES("Sources"), SUBTITLES("Subtitles"), ONLINE("Online subtitles"), TRANSLATE("Translate subtitles"), AUDIO("Audio"), SPEED("Speed"), ZOOM("Zoom"), QUALITY("Quality") }
+private enum class Sheet(val title: String) { SOURCES("Sources"), SUBTITLES("Subtitles"), ONLINE("Online subtitles"), TRANSLATE("Translate subtitles"), AUDIO("Audio"), SPEED("Speed"), ZOOM("Zoom"), QUALITY("Quality"),
+    SUB_SYNC("Sync subtitles"), AUDIO_SYNC("Sync audio"), SUB_STYLE("Subtitle style") }
 
 fun Context.findActivity(): Activity? = when (this) {
     is Activity -> this
@@ -267,6 +268,8 @@ fun PlayerScreen(screen: Screen.Player) {
 
         sheet?.let { s ->
             if (s == Sheet.SOURCES) SourcesPanel(c) { sheet = null }
+            else if (s == Sheet.SUB_STYLE) SubtitleStylePanel(c) { sheet = null }
+            else if (s == Sheet.SUB_SYNC || s == Sheet.AUDIO_SYNC) SyncPanel(c, audio = s == Sheet.AUDIO_SYNC) { sheet = null }
             else SheetPanel(s, c, Modifier.align(Alignment.CenterEnd), onOpen = { sheet = it }) { sheet = null }
         }
     }
@@ -542,6 +545,8 @@ private fun SheetPanel(sheet: Sheet, c: PlayerController, modifier: Modifier, on
                 spu.filter { it.id != -1 }.forEach { t -> add(Option(t.name, "In the video", t.id == currentSpu && c.selectedSubtitle == null) { c.setSpu(t.id); onClose() }) }
                 c.subtitles.forEach { s -> add(Option(s.lang, "From ${c.api.name}", s.url == c.selectedSubtitle) { c.addSubtitle(s); onClose() }) }
                 c.addedFiles.forEach { (f, name) -> add(Option(name, if ("→" in name) "Translated" else "Online", f.absolutePath == c.selectedSubtitle) { c.selectFile(f); onClose() }) }
+                add(Option("Sync subtitles", if (c.subtitleDelay == 0L) "Earlier or later, to match the voices" else delayText(c.subtitleDelay), false) { onOpen(Sheet.SUB_SYNC) })
+                add(Option("Subtitle style", "Size, colour, font, outline, background, position…", false) { onOpen(Sheet.SUB_STYLE) })
                 if (!c.isLive) add(Option("Search online…", "OpenSubtitles, no account", false) { onOpen(Sheet.ONLINE) })
                 if (c.translateSourceName() != null) add(Option("Translate subtitles to…", c.translating?.let { "Translating to $it…" } ?: "Hindi, Urdu, Chinese, French and more", false) { onOpen(Sheet.TRANSLATE) })
             }
@@ -556,6 +561,7 @@ private fun SheetPanel(sheet: Sheet, c: PlayerController, modifier: Modifier, on
                 }
             }
             Sheet.AUDIO -> c.audioTracks().filter { it.id != -1 }.map { t -> Option(t.name, null, t.id == c.audioTrack()) { c.setAudio(t.id); onClose() } } +
+                Option("Sync audio", if (c.audioDelay == 0L) "Earlier or later, to match the lips" else delayText(c.audioDelay), false) { onOpen(Sheet.AUDIO_SYNC) } +
                 Option(if (Settings.levelAudio) "Even out loud and quiet sounds: On" else "Even out loud and quiet sounds: Off",
                     "Quieter music and explosions, clearer voices (good on TVs)", Settings.levelAudio) {
                     Settings.levelAudio = !Settings.levelAudio
@@ -564,6 +570,7 @@ private fun SheetPanel(sheet: Sheet, c: PlayerController, modifier: Modifier, on
                 }
             Sheet.SPEED -> listOf(0.25f, 0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f).map { r -> Option("$r×", if (r == 1f) "Normal" else null, r == c.speed) { c.setRate(r); onClose() } }
             Sheet.ZOOM -> Zoom.entries.map { z -> Option(z.label, null, z == c.zoom) { c.setZoomMode(z); onClose() } }
+            Sheet.SUB_SYNC, Sheet.AUDIO_SYNC, Sheet.SUB_STYLE -> emptyList()
             Sheet.QUALITY -> listOf(Option("Auto", "Changes with your connection", c.variant == null) { c.setQuality(null); onClose() }) +
                 c.variants.map { v -> Option(v.label, v.bandwidth?.let { "${it / 1000} kbps" }, v == c.variant) { c.setQuality(v); onClose() } }
         }
