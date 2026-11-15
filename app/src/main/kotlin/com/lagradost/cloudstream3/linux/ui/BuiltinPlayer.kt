@@ -1002,7 +1002,7 @@ class BuiltinPlayer(
 
         /** VLC names tracks "Track 1 - [English]"; show "English" (or "Track 1"). */
         fun cleanTrack(description: String): String {
-            val inBrackets = Regex("\\[([^]]+)]").find(description)?.groupValues?.get(1)
+            val inBrackets = Regex("\\[([^\\]]+)]").find(description)?.groupValues?.get(1)
             val base = description.substringBefore(" - [").trim()
             return when {
                 inBrackets != null && base.startsWith("Track") -> inBrackets

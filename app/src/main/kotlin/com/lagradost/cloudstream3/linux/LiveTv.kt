@@ -918,7 +918,7 @@ object ChannelLogos {
 
     /** "1+1 International HD (720p) [Geo-blocked]" → "1+1international". */
     fun normalize(name: String) = name.lowercase()
-        .replace(Regex("\\[[^]]*]|\\([^)]*\\)"), " ")
+        .replace(Regex("\\[[^\\]]*]|\\([^)]*\\)"), " ")
         .replace(Regex("\\b(hd|fhd|uhd|sd|4k|hevc|backup|tv)\\b"), " ")
         .replace(Regex("[^\\p{L}\\p{N}+]"), "")
 
