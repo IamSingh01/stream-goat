@@ -241,6 +241,8 @@ fun PlayerScreen(screen: Screen.Player) {
             LoadingOverlay(c, onChoose = { c.stopAutoPlay(); sheet = Sheet.SOURCES })
         } else {
             if (!isTv) Gestures(locked, onTap = { controls = !controls; poke++ }, onSeek = { c.seekBy(it); poke++ }, onPinch = { pinch = (pinch * it).coerceIn(1f, 4f) })
+            // TV with a mouse: a click on the picture shows the controls (and settings buttons), another hides them.
+            else Box(Modifier.fillMaxSize().pointerInput(Unit) { detectTapGestures { controls = !controls; poke++ } })
             if (c.buffering && c.error == null) Spinner(Modifier.fillMaxSize())
             c.error?.let {
                 Text(it, style = MaterialTheme.typography.titleMedium, modifier = Modifier.align(Alignment.Center)

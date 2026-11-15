@@ -252,7 +252,7 @@ private fun Details(api: MainAPI, r: LoadResponse) {
                     item(key = "cast") {
                         Column(Modifier.padding(top = 24.dp)) {
                             SectionTitle("Cast", Modifier.padding(horizontal = edge))
-                            LazyRow(contentPadding = PaddingValues(horizontal = edge, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                            TvRowScroll { LazyRow(contentPadding = PaddingValues(horizontal = edge, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                                 items(cast.take(30)) { (name, role, photo) ->
                                     Column(Modifier.width(104.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                                         NetImage(photo, Modifier.size(92.dp).clip(CircleShape))
@@ -260,7 +260,7 @@ private fun Details(api: MainAPI, r: LoadResponse) {
                                         role?.let { Text(it, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis) }
                                     }
                                 }
-                            }
+                            } }
                         }
                     }
                 }
@@ -291,7 +291,7 @@ private fun Details(api: MainAPI, r: LoadResponse) {
                     item(key = "similar") {
                         Column(Modifier.padding(top = 24.dp)) {
                             SectionTitle("More like this", Modifier.padding(horizontal = edge))
-                            LazyRow(contentPadding = PaddingValues(horizontal = edge, vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                            TvRowScroll { LazyRow(contentPadding = PaddingValues(horizontal = edge, vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                                 items(similar) { s ->
                                     Column(Modifier.width(if (wide) 140.dp else 108.dp)) {
                                         Box(Modifier.fillMaxWidth().aspectRatio(2f / 3f).card { Nav.searchQuery = s.title; Nav.searchSubmitted = s.title; Nav.select(Tab.SEARCH) }) {
@@ -301,7 +301,7 @@ private fun Details(api: MainAPI, r: LoadResponse) {
                                         Text(s.title, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp))
                                     }
                                 }
-                            }
+                            } }
                         }
                     }
                 }
@@ -309,9 +309,9 @@ private fun Details(api: MainAPI, r: LoadResponse) {
                     item(key = "recs") {
                         Column(Modifier.padding(top = 24.dp)) {
                             SectionTitle("More like this", Modifier.padding(horizontal = edge))
-                            LazyRow(contentPadding = PaddingValues(horizontal = edge, vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                            TvRowScroll { LazyRow(contentPadding = PaddingValues(horizontal = edge, vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                                 uniqueItems(recs, key = { it.url }) { item -> PosterCard(item, if (wide) 140.dp else 108.dp) { openTitle(item) } }
-                            }
+                            } }
                         }
                     }
                 }
@@ -407,7 +407,7 @@ private fun EpisodeCard(api: MainAPI, r: LoadResponse, ep: Playable, libraryVers
     val watched = remember(libraryVersion, ep) { Library.isWatched(api.name, ep.data) }
     var menu by remember { mutableStateOf(false) }
     Box(modifier) {
-        Column(Modifier.fillMaxWidth().card(RoundedCornerShape(10.dp), focusScale = 1.04f, onLongClick = { menu = true }) { Playback.play(api, r, ep) }
+        Column(Modifier.fillMaxWidth().card(RoundedCornerShape(10.dp), focusScale = 1.04f, onLongClick = { menu = true }, selectFirst = true) { Playback.play(api, r, ep) }
             .background(Palette.surface.copy(alpha = 0.92f), RoundedCornerShape(10.dp))) {
             Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f)) {
                 val hide = io.github.sherazi5110.cloudstream.Settings.antiSpoiler && !watched
@@ -457,7 +457,7 @@ private fun EpisodeRow(api: MainAPI, r: LoadResponse, ep: Playable, libraryVersi
     Box {
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)
-                .card(RoundedCornerShape(10.dp), focusScale = 1.02f, onLongClick = { menu = true }) { Playback.play(api, r, ep) }
+                .card(RoundedCornerShape(10.dp), focusScale = 1.02f, onLongClick = { menu = true }, selectFirst = true) { Playback.play(api, r, ep) }
                 .padding(4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {

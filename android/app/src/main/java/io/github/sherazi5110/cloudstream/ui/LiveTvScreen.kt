@@ -362,7 +362,7 @@ private fun ChannelCard(c: LiveTv.Channel, now: Long, guideVersion: Int, onFocus
     val cur = remember(c, now, guideVersion) { LiveTv.nowNext(c, now).first }
     val health = remember(c, guideVersion) { LiveTv.health(c) }
     val dead = health?.ok == false
-    Column(Modifier.fillMaxWidth().alpha(if (dead) 0.5f else 1f).card(RoundedCornerShape(12.dp), onFocus = onFocus, onClick = onClick)
+    Column(Modifier.fillMaxWidth().alpha(if (dead) 0.5f else 1f).card(RoundedCornerShape(12.dp), onFocus = onFocus, selectFirst = true, onClick = onClick)
         .background(Palette.surface, RoundedCornerShape(12.dp))) {
         Box(Modifier.fillMaxWidth().aspectRatio(16f / 8f).background(Brush.linearGradient(listOf(Palette.surfaceHigh, Palette.accent.copy(alpha = 0.18f)))),
             contentAlignment = Alignment.Center) {

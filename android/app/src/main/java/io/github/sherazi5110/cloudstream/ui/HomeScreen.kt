@@ -225,7 +225,7 @@ fun ContinueRow(entries: List<WatchEntry>, cardWidth: androidx.compose.ui.unit.D
     val edge = if (isWide) 40.dp else 16.dp
     Column(Modifier.padding(top = 12.dp)) {
         SectionTitle("Continue Watching", Modifier.padding(horizontal = edge))
-        LazyRow(
+        TvRowScroll { LazyRow(
             contentPadding = PaddingValues(horizontal = edge, vertical = 10.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
@@ -244,7 +244,7 @@ fun ContinueRow(entries: List<WatchEntry>, cardWidth: androidx.compose.ui.unit.D
                     WatchedMenu(menu, e) { menu = false }
                 }
             }
-        }
+        } }
     }
 }
 
@@ -273,7 +273,7 @@ fun CatalogRow(
             section.list.name, Modifier.padding(horizontal = edge),
             action = if (isTv) null else "View all",
         ) { viewAll() }
-        LazyRow(
+        TvRowScroll { LazyRow(
             contentPadding = PaddingValues(horizontal = edge, vertical = 10.dp),
             horizontalArrangement = Arrangement.spacedBy(if (isWide) 14.dp else 10.dp),
         ) {
@@ -281,7 +281,7 @@ fun CatalogRow(
                 PosterCard(item, posterWidth, onFocus = onFocus?.let { { it(item) } }) { openTitle(item) }
             }
             item(key = "view-all") { ViewAllTile(section.list.name, posterWidth) { viewAll() } }
-        }
+        } }
     }
 }
 
@@ -412,7 +412,7 @@ private fun BannerPage(item: SearchResponse, rank: Int?, rowName: String?, heigh
 private fun ViewAllTile(title: String, width: androidx.compose.ui.unit.Dp, onClick: () -> Unit) {
     Column(Modifier.width(width)) {
         Column(
-            Modifier.fillMaxWidth().aspectRatio(2f / 3f).card(onClick = onClick)
+            Modifier.fillMaxWidth().aspectRatio(2f / 3f).card(selectFirst = true, onClick = onClick)
                 .background(Palette.surfaceHigh, RoundedCornerShape(10.dp))
                 .border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(10.dp)),
             horizontalAlignment = Alignment.CenterHorizontally,
