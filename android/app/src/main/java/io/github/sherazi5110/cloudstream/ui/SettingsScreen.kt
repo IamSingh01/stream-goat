@@ -6,6 +6,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
@@ -386,11 +387,66 @@ private fun LiveTvSection() {
         if (busy) Spinner(Modifier.padding(start = 12.dp).size(28.dp))
     }
     if (kind == LiveTv.Kind.M3U) Hint("Or choose a playlist file (.m3u, .m3u8) saved on this device.")
+    if (kind == LiveTv.Kind.M3U && LiveTv.isIptvOrgIndex(url)) Hint("That's iptv-org's whole list: 10,000+ channels from every country, and many play only in " +
+        "their own country or have stopped. Live TV opens on your country's channels from it, or add just one country below (smaller and quicker).")
+    // iptv-org's free channels, one country at a time (its whole list is too big and mostly region-locked elsewhere).
+    Heading("Free channels by country")
+    var pickCountry by remember { mutableStateOf(LiveTv.homeCountry) }
+    var countryMenu by remember { mutableStateOf(false) }
+    val allCountries = remember {
+        java.util.Locale.getISOCountries().map { it to LiveTv.countryName(it) }.sortedBy { it.second }
+    }
+    Hint("From iptv-org, the open list of publicly available channels. Region-locked channels from your own country play; dead links can be hidden with Check channels on the Live TV page.")
+    Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+        Box {
+            PillButton(LiveTv.countryName(pickCountry) + " ▾", null, primary = false, compact = true) { countryMenu = true }
+            androidx.compose.material3.DropdownMenu(countryMenu, { countryMenu = false }, Modifier.heightIn(max = 420.dp)) {
+                (listOf(LiveTv.homeCountry to LiveTv.countryName(LiveTv.homeCountry) + " · your country") + allCountries).forEach { (code, label) ->
+                    androidx.compose.material3.DropdownMenuItem(text = { Text(label) }, onClick = { pickCountry = code; countryMenu = false })
+                }
+            }
+        }
+        PillButton("Add its channels", Icons.Filled.Add, compact = true, modifier = Modifier.padding(start = 10.dp)) {
+            if (busy) return@PillButton
+            busy = true
+            scope.launch {
+                val r = withContext(Dispatchers.IO) { runCatching { LiveTv.add(LiveTv.Kind.M3U, LiveTv.iptvOrgCountryUrl(pickCountry), "${LiveTv.countryName(pickCountry)} (iptv-org)") } }
+                busy = false
+                r.onSuccess { (src, n) -> App.toast("${src.name}: $n channels"); version++ }
+                    .onFailure { App.toast(it.message ?: "Couldn't load that country's channels") }
+            }
+        }
+    }
     Heading("Options")
+    var home by remember { mutableStateOf(LiveTv.homeCountry) }
+    var homeMenu by remember { mutableStateOf(false) }
+    var hideLocked by remember { mutableStateOf(LiveTv.hideRegionLocked) }
+    var autoCheck by remember { mutableStateOf(LiveTv.autoCheck) }
+    SwitchRow("Check channels automatically", "When Live TV opens, the channels showing are tested in the background (each once a day), " +
+        "and ones with broken links are hidden. A channel whose stream works but won't play is reported as a problem in the app instead.", autoCheck) { autoCheck = it; LiveTv.autoCheck = it }
+    var hideBroken by remember { mutableStateOf(LiveTv.hideNotWorking) }
+    SwitchRow("Hide channels that don't work", "Broken links found by the check, or that failed to play.", hideBroken) { hideBroken = it; LiveTv.hideNotWorking = it }
+    SwitchRow("Hide region-locked channels", "Channels marked as playing only in their own country are left out, except ones from " +
+        "${LiveTv.countryName(home)}.", hideLocked) { hideLocked = it; LiveTv.hideRegionLocked = it }
+    Row(Modifier.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text("Your country", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+        Box {
+            PillButton(LiveTv.countryName(home) + " ▾", null, primary = false, compact = true) { homeMenu = true }
+            androidx.compose.material3.DropdownMenu(homeMenu, { homeMenu = false }, Modifier.heightIn(max = 420.dp)) {
+                allCountries.forEach { (code, label) ->
+                    androidx.compose.material3.DropdownMenuItem(text = { Text(label) }, onClick = { home = code; LiveTv.homeCountry = code; homeMenu = false })
+                }
+            }
+        }
+    }
     var daily by remember { mutableStateOf(LiveTv.refreshDaily) }
     SwitchRow("Refresh channel lists daily", "Otherwise they're kept until you refresh them on the Live TV page.", daily) { daily = it; LiveTv.refreshDaily = it }
     var kids by remember { mutableStateOf(LiveTv.allowKids) }
     SwitchRow("Live TV in kids profiles", "Only channels in children's groups.", kids) { kids = it; LiveTv.allowKids = it }
+    var expired by remember { mutableStateOf(LiveTv.allowExpired) }
+    SwitchRow("Play channels with an expired certificate", "Many public channels' servers let their security certificate run out. " +
+        "When one fails for that reason it's tried again accepting it, if the certificate is otherwise genuine (right address, " +
+        "trusted issuer). Only for Live TV streams.", expired) { expired = it; LiveTv.allowExpired = it }
     var plain by remember { mutableStateOf(LiveTv.retryPlain) }
     SwitchRow("Retry without encryption", "Off by default. When a playlist channel's secure (https) address fails, for example because its " +
         "server's certificate has expired, try the same address over plain http. Never used for Xtream logins. Over plain http someone " +

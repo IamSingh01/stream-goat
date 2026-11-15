@@ -247,8 +247,17 @@ fun PlayerScreen(screen: Screen.Player) {
             else Box(Modifier.fillMaxSize().pointerInput(Unit) { detectTapGestures { controls = !controls; poke++ } })
             if (c.buffering && c.error == null) Spinner(Modifier.fillMaxSize())
             c.error?.let {
-                Text(it, style = MaterialTheme.typography.titleMedium, modifier = Modifier.align(Alignment.Center)
-                    .background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(10.dp)).padding(16.dp))
+                Column(Modifier.align(Alignment.Center).widthIn(max = 560.dp).background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(10.dp)).padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(it, style = MaterialTheme.typography.titleMedium)
+                    // Not the link's fault: one tap writes it up for the developer (GitHub issue, filled in).
+                    c.appIssue?.let { details ->
+                        PillButton("Report to the developer", Icons.Filled.BugReport, modifier = Modifier.padding(top = 12.dp)) {
+                            io.github.sherazi5110.cloudstream.GlitchReport.draft = io.github.sherazi5110.cloudstream.GlitchReport.Draft(
+                                io.github.sherazi5110.cloudstream.GlitchReport.describe(Nav.top), io.github.sherazi5110.cloudstream.GlitchReport.steps(), null, crash = details)
+                        }
+                    }
+                }
             }
             if (locked) {
                 AnimatedVisibility(controls, Modifier.align(Alignment.TopEnd), enter = fadeIn(), exit = fadeOut()) {

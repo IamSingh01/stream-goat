@@ -113,6 +113,8 @@ class PlayerController(
     var zoom by mutableStateOf(runCatching { Zoom.valueOf(Settings.playerZoom) }.getOrDefault(Zoom.FIT))
     var selectedSubtitle by mutableStateOf<String?>(null)
     var error by mutableStateOf<String?>(null)
+    /** Set when a stream that answers fine still doesn't play: what to send the developer (a problem in the app). */
+    var appIssue by mutableStateOf<String?>(null)
     var ended by mutableStateOf(false)
 
     /** Auto-play waits for this; "Choose source" turns it off. */
@@ -124,6 +126,9 @@ class PlayerController(
     private var watchdog: Job? = null
     private var saver: Job? = null
     val isLive = live || response is LiveStreamLoadResponse
+    /** A Live TV channel's key in its list (for "Hide not working"). */
+    private val channelKey: String? = if (api is io.github.sherazi5110.cloudstream.LiveApi)
+        runCatching { org.json.JSONObject(response.url).optString("key").ifBlank { null } }.getOrNull() else null
     private var languagesApplied = false
     private var playCalledAt = 0L
 
@@ -155,6 +160,7 @@ class PlayerController(
                     // Next time (Continue Watching, Resume) this title starts with the same source.
                     current?.takeIf { api !is io.github.sherazi5110.cloudstream.LiveApi }?.let { io.github.sherazi5110.cloudstream.LastSource.remember(api.name, response.url, it) }
                     playing = true; buffering = false; started = true; error = null; watchdog?.cancel()
+                    channelKey?.let { io.github.sherazi5110.cloudstream.LiveTv.markWorking(it) }
                     if (!languagesApplied) { languagesApplied = true; main.postDelayed({ applyLanguages() }, 1500) }
                     applyDelays()
                     restoreTracks?.let { (a, sp) ->
@@ -381,8 +387,10 @@ class PlayerController(
             if (link.referer.isNotBlank() && keys.none { it.equals("Referer", true) }) put("Referer", link.referer)
         }
         val needsProxy = headers.keys.any { !it.equals("Referer", true) && !it.equals("User-Agent", true) }
-        val source = variantUrl ?: link.url
-        val url = if (source.startsWith("file:")) source else if (needsProxy) StreamProxy.wrap(source, headers) else source
+        val source = (variantUrl ?: link.url).removeSuffix(io.github.sherazi5110.cloudstream.LiveApi.EXPIRED_MARK)
+        // A Live TV server with an expired (but genuine) certificate: through the local proxy, which accepts it.
+        val expiredOk = link.name == io.github.sherazi5110.cloudstream.LiveApi.EXPIRED
+        val url = if (source.startsWith("file:")) source else if (needsProxy || expiredOk) StreamProxy.wrap(source, headers, expiredOk) else source
         val media = Media(Vlc.lib, Uri.parse(url)).apply {
             setHWDecoderEnabled(true, false)
             if (!needsProxy) {
@@ -514,8 +522,23 @@ class PlayerController(
                 val first = links.firstOrNull { it.name != io.github.sherazi5110.cloudstream.LiveApi.PLAIN } ?: current
                 error = "Checking why ${response.name} doesn't play…"
                 if (first != null) scope.launch {
-                    error = io.github.sherazi5110.cloudstream.LiveTv.failureMessage(response.name, first.url, first.headers,
-                        plainTried = tried.any { it.startsWith("http://") } && first.url.startsWith("https://"))
+                    val why = io.github.sherazi5110.cloudstream.LiveTv.diagnose(first.url, first.headers)
+                    if (why == null) {
+                        // The stream answers like a stream, yet the player couldn't play it: likely the app's fault, not the link's.
+                        error = "${response.name}'s stream is online, but the player couldn't play it. This looks like a problem in Stream Goat, not the channel."
+                        appIssue = buildString {
+                            appendLine("Live TV channel that answers but doesn't play")
+                            appendLine("Channel: ${response.name}")
+                            appendLine("Address: ${first.url.take(300)}")
+                            if (first.headers.isNotEmpty()) appendLine("Headers sent: ${first.headers.keys.joinToString()}")
+                            appendLine("Addresses tried: ${tried.size}")
+                        }
+                    } else {
+                        error = io.github.sherazi5110.cloudstream.LiveTv.failureMessage(response.name, first.url, first.headers,
+                            plainTried = tried.any { it.startsWith("http://") } && first.url.startsWith("https://"))
+                        // A broken link: "Hide not working" then leaves it out of the list too.
+                        channelKey?.let { io.github.sherazi5110.cloudstream.LiveTv.markNotWorking(it, why) }
+                    }
                 }
             } else error = "This source can't be played. Pick another one in Sources."
             buffering = false

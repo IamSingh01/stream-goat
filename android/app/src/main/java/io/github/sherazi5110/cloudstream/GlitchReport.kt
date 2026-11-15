@@ -130,6 +130,7 @@ object GlitchReport {
 
     /** The text that goes into the GitHub issue (under the person's own words). */
     fun reportText(d: Draft, screenshot: String?, log: String): String = buildString {
+        d.crash?.let { appendLine(it.trim()); appendLine() }
         appendLine(CrashReport.header())
         appendLine("Screen: ${d.screen}")
         if (screenshot != null) appendLine("Screenshot saved on the device: $screenshot")

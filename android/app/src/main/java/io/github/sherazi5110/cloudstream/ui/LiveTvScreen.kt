@@ -3,6 +3,7 @@ package io.github.sherazi5110.cloudstream.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -213,11 +214,41 @@ private fun LiveContent(all: List<LiveTv.Channel>, now: Long, guideVersion: Int,
     var healthVersion by remember { mutableIntStateOf(0) }
     var checking by remember { mutableStateOf<Pair<Int, Int>?>(null) }
     var checkJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    var checkTotal by remember { mutableIntStateOf(0) }
     var hideDead by remember { mutableStateOf(LiveTv.hideNotWorking) }
     val notWorking = remember(all, healthVersion) { all.count { LiveTv.health(it)?.ok == false } }
-    val shown = remember(all, filter, query, favVersion, hideDead, healthVersion) {
+    // Region-locked channels (iptv-org's "[Geo-blocked]", Free-TV's Ⓖ) play only in their own country: hidden unless
+    // they're from the viewer's.
+    var hideLocked by remember { mutableStateOf(LiveTv.hideRegionLocked) }
+    val home = remember { LiveTv.homeCountry }
+    val lockedCount = remember(all) { all.count { LiveTv.lockedOut(it) } }
+    // Lists from many countries (iptv-org's whole list): pick one; the viewer's own first.
+    val countries = remember(all) {
+        all.mapNotNull { it.country?.uppercase() }.groupingBy { it }.eachCount().entries
+            .sortedWith(compareByDescending<Map.Entry<String, Int>> { it.key == home }.thenByDescending { it.value }).map { it.key to it.value }
+    }
+    var country by remember(all) { mutableStateOf(if (countries.size >= 5 && countries.any { it.first == home }) home else null) }
+    var countryMenu by remember { mutableStateOf(false) }
+    // The automatic check: the channels in view that weren't checked in the last day, quietly in the background;
+    // the ones with broken links then drop out ("Hide not working" is on by default).
+    LaunchedEffect(all, country, hideLocked) {
+        if (!LiveTv.autoCheck || checkJob?.isActive == true) return@LaunchedEffect
+        kotlinx.coroutines.delay(1500)
+        val todo = all.filter { c -> (!hideLocked || !LiveTv.lockedOut(c)) && (country == null || c.country.equals(country, true)) && LiveTv.stale(c) }
+        if (todo.isEmpty()) return@LaunchedEffect
+        checkTotal = todo.size
+        checkJob = scope.launch {
+            checking = 0 to 0
+            runCatching { LiveTv.check(todo) { done, working -> checking = done to working } }
+            checking = null
+            healthVersion++
+        }
+    }
+    val shown = remember(all, filter, query, favVersion, hideDead, healthVersion, hideLocked, country) {
         all.filter { c ->
             (!hideDead || LiveTv.health(c)?.ok != false) &&
+            (!hideLocked || !LiveTv.lockedOut(c)) &&
+            (country == null || c.country.equals(country, ignoreCase = true)) &&
             when (filter) { "All" -> true; "★ Favourites" -> c.key in favourites; else -> filter in c.groups.ifEmpty { listOf("Other") } } &&
                 (query.isBlank() || c.name.contains(query.trim(), ignoreCase = true))
         }
@@ -242,7 +273,9 @@ private fun LiveContent(all: List<LiveTv.Channel>, now: Long, guideVersion: Int,
                 IconAction(if (guide) Icons.Filled.GridView else Icons.Filled.Schedule, if (guide) "Channels" else "TV guide") { guide = !guide }
                 IconAction(Icons.Filled.NetworkCheck, "Check channels") {
                     if (checkJob?.isActive == true) return@IconAction
-                    val list = all
+                    // The channels showing (one country of a big list checks in minutes).
+                    val list = shown
+                    checkTotal = list.size
                     checkJob = scope.launch {
                         checking = 0 to 0
                         val ok = runCatching { LiveTv.check(list) { done, working -> checking = done to working } }.getOrNull()
@@ -260,12 +293,34 @@ private fun LiveContent(all: List<LiveTv.Channel>, now: Long, guideVersion: Int,
     val chipRow: @Composable () -> Unit = {
             checking?.let { (done, working) ->
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("Checking channels… $done of ${all.size} · $working work", style = MaterialTheme.typography.labelLarge, color = Palette.accent)
+                    Text("Checking channels… $done of $checkTotal · $working work", style = MaterialTheme.typography.labelLarge, color = Palette.accent)
                     Text("Stop", style = MaterialTheme.typography.labelMedium, modifier = Modifier.card(RoundedCornerShape(50)) { checkJob?.cancel(); checking = null; healthVersion++ }
                         .background(Palette.surfaceHigh, RoundedCornerShape(50)).padding(horizontal = 14.dp, vertical = 6.dp))
                 }
             }
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(vertical = 4.dp)) {
+                if (countries.size >= 2) item {
+                    Box {
+                        Text("🌍 " + (country?.let { LiveTv.countryName(it) } ?: "All countries") + " ▾", style = MaterialTheme.typography.labelMedium, modifier = Modifier
+                            .card(RoundedCornerShape(50)) { countryMenu = true }
+                            .background(if (country != null) Palette.accent else Palette.surfaceHigh, RoundedCornerShape(50))
+                            .padding(horizontal = 14.dp, vertical = 8.dp))
+                        androidx.compose.material3.DropdownMenu(countryMenu, { countryMenu = false }, Modifier.heightIn(max = 420.dp)) {
+                            androidx.compose.material3.DropdownMenuItem(text = { Text("All countries (${all.size})") }, onClick = { country = null; countryMenu = false })
+                            countries.forEach { (code, n) ->
+                                androidx.compose.material3.DropdownMenuItem(
+                                    text = { Text(LiveTv.countryName(code) + " ($n)" + if (code == home) " · your country" else "") },
+                                    onClick = { country = code; countryMenu = false })
+                            }
+                        }
+                    }
+                }
+                if (lockedCount > 0) item {
+                    Text(if (hideLocked) "✓ Hiding $lockedCount region-locked" else "Show $lockedCount region-locked", style = MaterialTheme.typography.labelMedium, modifier = Modifier
+                        .card(RoundedCornerShape(50)) { hideLocked = !hideLocked; LiveTv.hideRegionLocked = hideLocked }
+                        .background(if (hideLocked) Palette.accent else Palette.surfaceHigh, RoundedCornerShape(50))
+                        .padding(horizontal = 14.dp, vertical = 8.dp))
+                }
                 if (notWorking > 0 || hideDead) item {
                     Text(if (hideDead) "✓ Hiding $notWorking not working" else "Hide $notWorking not working", style = MaterialTheme.typography.labelMedium, modifier = Modifier
                         .card(RoundedCornerShape(50)) { hideDead = !hideDead; LiveTv.hideNotWorking = hideDead }
