@@ -52,9 +52,11 @@
   <p>If you choose <b>Sign in with Google</b> (Settings → Updates and backup), Stream Goat asks Google for permission
   to use your Google Drive's hidden <b>app data folder</b> (the <code>drive.appdata</code> permission). With it, the app:</p>
   <ul>
-    <li>stores one backup file there: your settings, profiles, My list, history and progress, repositories, the list of
-    extensions and their settings, Live TV sources and Stremio add-ons, as listed above;</li>
-    <li>reads that file back when you restore, and shows the email address of the account you signed in with;</li>
+    <li>stores one backup file there for each of your devices that is signed in: your settings, profiles, My list,
+    history and progress, repositories, the list of extensions and their settings, Live TV sources and Stremio
+    add-ons, as listed above; it is updated every 5 minutes when something changed;</li>
+    <li>reads these files back when you restore (for example your phone's backup on your TV), deletes one when you
+    ask it to, and shows the email address of the account you signed in with;</li>
     <li>cannot see, open or change any other file in your Google Drive.</li>
   </ul>
   <p>The backup goes directly between your device and Google; the developer never receives it or your sign-in. The
