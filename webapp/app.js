@@ -27,6 +27,17 @@ const icons = {
   subs: '<svg viewBox="0 0 24 24"><path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zM4 12h4v2H4v-2zm10 6H4v-2h10v2zm6 0h-4v-2h4v2zm0-4H10v-2h10v2z"/></svg>',
   next: '<svg viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>',
   trash: '<svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>',
+  pause: '<svg viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>',
+  rew: '<svg viewBox="0 0 24 24"><path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/><text x="12" y="16.6" font-size="7" font-weight="700" text-anchor="middle" font-family="Arial, sans-serif">10</text></svg>',
+  fwd: '<svg viewBox="0 0 24 24"><path d="M12 5V1l5 5-5 5V7c-3.31 0-6 2.69-6 6s2.69 6 6 6 6-2.69 6-6h2c0 4.42-3.58 8-8 8s-8-3.58-8-8 3.58-8 8-8z"/><text x="12" y="16.6" font-size="7" font-weight="700" text-anchor="middle" font-family="Arial, sans-serif">10</text></svg>',
+  vol: '<svg viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>',
+  mute: '<svg viewBox="0 0 24 24"><path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/></svg>',
+  audio: '<svg viewBox="0 0 24 24"><path d="M12 3v9.28c-.47-.17-.97-.28-1.5-.28C8.01 12 6 14.01 6 16.5S8.01 21 10.5 21c2.31 0 4.2-1.75 4.45-4H15V6h4V3h-7z"/></svg>',
+  speed: '<svg viewBox="0 0 24 24"><path d="M20.38 8.57l-1.23 1.85a8 8 0 0 1-.22 7.58H5.07A8 8 0 0 1 15.58 6.85l1.85-1.23A10 10 0 0 0 3.35 19a2 2 0 0 0 1.72 1h13.85a2 2 0 0 0 1.74-1 10 10 0 0 0-.27-10.44zm-9.79 6.84a2 2 0 0 0 2.83 0l5.66-8.49-8.49 5.66a2 2 0 0 0 0 2.83z"/></svg>',
+  hd: '<svg viewBox="0 0 24 24"><path d="M19 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2zm-8 12H9.5v-2h-2v2H6V9h1.5v2.5h2V9H11v6zm2-6h4c.55 0 1 .45 1 1v4c0 .55-.45 1-1 1h-4V9zm1.5 4.5h2v-3h-2v3z"/></svg>',
+  pip: '<svg viewBox="0 0 24 24"><path d="M19 11h-8v6h8v-6zm4 8V4.98C23 3.88 22.1 3 21 3H3c-1.1 0-2 .88-2 1.98V19c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2zm-2 .02H3V4.97h18v14.05z"/></svg>',
+  fs: '<svg viewBox="0 0 24 24"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>',
+  fsExit: '<svg viewBox="0 0 24 24"><path d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z"/></svg>',
   info: '<svg viewBox="0 0 24 24"><path d="M11 7h2v2h-2zm0 4h2v6h-2zm1-9C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/></svg>',
   google: '<svg viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34.1 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34.1 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>',
 };
@@ -35,6 +46,8 @@ const clock = (s) => { s = Math.floor(s || 0); const h = Math.floor(s / 3600), m
 let toastTimer;
 function toast(text) {
   const t = document.getElementById("toast");
+  const host = document.fullscreenElement || document.webkitFullscreenElement || document.body;
+  if (t.parentNode !== host) host.appendChild(t);
   t.textContent = text; t.hidden = false;
   clearTimeout(toastTimer); toastTimer = setTimeout(() => (t.hidden = true), 3500);
 }
@@ -44,7 +57,7 @@ function sheet(title, html, onReady) {
   back.className = "sheet-back";
   back.innerHTML = `<div class="sheet"><div class="grip"></div>${title ? `<h3>${esc(title)}</h3>` : ""}${html}</div>`;
   back.addEventListener("click", (e) => { if (e.target === back) back.remove(); });
-  document.body.appendChild(back);
+  (document.fullscreenElement || document.webkitFullscreenElement || document.body).appendChild(back); // stays visible in full screen
   onReady && onReady(back.querySelector(".sheet"), () => back.remove());
 }
 
@@ -605,16 +618,23 @@ async function title(params) {
 
 // ---------- streams ----------
 
-/** What the browser can play, and why not when it can't. */
+/**
+ * What the browser can play. Some streams need things a web page can't do (send a site's headers, decode MKV or
+ * HEVC): they can still be tried, after the others, and are marked; the Stream Goat apps play them all.
+ */
 function classify(s) {
   if (s.url) {
-    const headers = Object.keys((s.behaviorHints && s.behaviorHints.proxyHeaders && s.behaviorHints.proxyHeaders.request) || {}).filter((k) => k.toLowerCase() !== "user-agent");
     if (location.protocol === "https:" && s.url.startsWith("http:")) return { ok: false, why: "Not a secure (https) link: browsers block it" };
-    if (headers.length) return { ok: false, why: "Needs special headers: works in the Stream Goat apps, not in a browser" };
-    const mkv = /\.mkv(\?|$)/i.test(s.url);
-    return { ok: true, why: mkv ? "MKV: may not play on iPhone" : s.behaviorHints && s.behaviorHints.notWebReady ? "May not play in a browser" : "" };
+    const text = [s.name, s.title, s.description, s.url].filter(Boolean).join(" ");
+    const headers = Object.keys((s.behaviorHints && s.behaviorHints.proxyHeaders && s.behaviorHints.proxyHeaders.request) || {}).filter((k) => k.toLowerCase() !== "user-agent");
+    const notes = [];
+    if (headers.length) notes.push("needs a website's headers: may not play in a browser (the apps play it)");
+    if (/\.mkv(\?|$)|\bmkv\b/i.test(text)) notes.push("MKV: browsers often can't play it");
+    if (/\b(hevc|x265|h\.?265)\b/i.test(text)) notes.push("HEVC: many browsers can't play it");
+    if (!notes.length && s.behaviorHints && s.behaviorHints.notWebReady) notes.push("may not play in a browser");
+    return { ok: true, risky: notes.length > 0, why: notes.join(" · ") };
   }
-  if (s.infoHash) return { ok: false, why: "Torrent: not supported" };
+  if (s.infoHash) return { ok: false, why: "Torrent: not supported in a browser" };
   if (s.ytId) return { ok: false, external: `https://www.youtube.com/watch?v=${s.ytId}`, why: "Opens YouTube" };
   if (s.externalUrl) return { ok: false, external: s.externalUrl, why: "Opens a website" };
   return { ok: false, why: "Unknown stream" };
@@ -626,7 +646,7 @@ async function streamsFor(type, videoId) {
     try { return ((await res(a, "stream", type, videoId)).streams || []).map((s) => ({ ...s, addon: a.manifest.name, c: classify(s) })); }
     catch { return []; }
   }));
-  return lists.flat().sort((x, y) => (y.c.ok - x.c.ok) || (!!x.c.why - !!y.c.why));
+  return lists.flat().sort((x, y) => (y.c.ok - x.c.ok) || (!!x.c.risky - !!y.c.risky));
 }
 
 async function subtitlesFor(type, videoId) {
@@ -658,25 +678,136 @@ function loadHls() {
 
 // ---------- player ----------
 
+const fmt = (t) => {
+  if (!isFinite(t) || t < 0) t = 0;
+  const h = Math.floor(t / 3600), m = Math.floor(t % 3600 / 60), sec = Math.floor(t % 60);
+  return (h ? `${h}:${String(m).padStart(2, "0")}` : `${m}`) + `:${String(sec).padStart(2, "0")}`;
+};
+
+/** The browser's preferred languages first (two-letter codes), then English. */
+function preferredLangs() {
+  const l = [...(navigator.languages || [navigator.language || "en"])].map((x) => x.slice(0, 2).toLowerCase());
+  return [...new Set([...l, "en"])];
+}
+
 async function watch(params) {
   const live = isLiveType(params.type);
+  const here = location.hash;
   document.body.style.overflow = "hidden";
-  $view.innerHTML = `<div class="player">
-    <div class="top"><button class="icon-btn" id="close">${icons.back}</button><div class="t"><b id="ptitle">${esc(params.name || "")}</b><span class="muted small" id="psource">Finding streams…</span></div></div>
-    <video playsinline controls autoplay preload="auto"></video><div class="status" id="pstatus"><div class="spinner"></div>Finding streams…</div>
-    <div class="bottom"><button class="btn small" id="srcs">${icons.list} Streams</button><button class="btn small" id="subs">${icons.subs} Subtitles</button>
-      <button class="btn small" id="nextBtn" hidden>${icons.next} Next episode</button></div></div>`;
-  const video = $view.querySelector("video");
-  const status = $view.querySelector("#pstatus");
+  $view.innerHTML = `<div class="player" id="player">
+    <video playsinline autoplay preload="auto"></video>
+    <div class="pl-status" id="pstatus"><div class="spinner"></div>Finding streams…</div>
+    <div class="pl-ui">
+      <div class="pl-top"><button class="pl-btn" id="close" aria-label="Back">${icons.back}</button>
+        <div class="t"><b id="ptitle">${esc(params.name || "")}</b><span id="psource">Finding streams…</span></div></div>
+      <div class="pl-center">
+        ${live ? "" : `<button class="pl-btn big" id="rew" aria-label="Back 10 seconds">${icons.rew}</button>`}
+        <button class="pl-btn huge" id="pp" aria-label="Play or pause">${icons.play}</button>
+        ${live ? "" : `<button class="pl-btn big" id="fwd" aria-label="Forward 10 seconds">${icons.fwd}</button>`}</div>
+      <div class="pl-bottom">
+        ${live ? "" : `<div class="pl-seek"><div class="buf"></div><div class="done"></div><input type="range" id="seek" min="0" max="1000" value="0" step="1" aria-label="Seek"></div>`}
+        <div class="pl-bar">
+          <button class="pl-btn" id="pp2" aria-label="Play or pause">${icons.play}</button>
+          <button class="pl-btn" id="vol" aria-label="Mute">${icons.vol}</button>
+          <input type="range" id="volume" class="pl-volume" min="0" max="1" step="0.05" value="1" aria-label="Volume">
+          <span class="pl-time" id="time">${live ? "LIVE" : "0:00 / 0:00"}</span>
+          <span class="spacer"></span>
+          <button class="pl-btn txt" id="nextBtn" hidden>${icons.next}<span>Next episode</span></button>
+          <button class="pl-btn txt" id="subs">${icons.subs}<span>Subtitles</span></button>
+          <button class="pl-btn txt" id="audio">${icons.audio}<span>Audio</span></button>
+          ${live ? "" : `<button class="pl-btn txt" id="speed">${icons.speed}<span id="speedLabel">1×</span></button>`}
+          <button class="pl-btn txt" id="quality" hidden>${icons.hd}<span id="qLabel">Auto</span></button>
+          <button class="pl-btn txt" id="srcs">${icons.list}<span>Sources</span></button>
+          <button class="pl-btn" id="pip" hidden aria-label="Picture in picture">${icons.pip}</button>
+          <button class="pl-btn" id="fs" aria-label="Full screen">${icons.fs}</button>
+        </div>
+      </div>
+    </div></div>`;
+  const player = $view.querySelector("#player");
+  const video = player.querySelector("video");
+  const status = player.querySelector("#pstatus");
+  const $ = (id) => player.querySelector(id);
   const setStatus = (html) => { status.innerHTML = html; status.hidden = !html; };
-  let saveTimer, countdown, hls;
-  const leave = () => { saveProgress(); clearInterval(saveTimer); clearInterval(countdown); hls && hls.destroy(); document.body.style.overflow = ""; };
-  $view.querySelector("#close").addEventListener("click", () => { history.length > 1 ? history.back() : (location.hash = "#/home"); });
+  let saveTimer, countdown, hls, idleTimer, stuckTimer;
+
+  // Controls: shown on movement, hidden after 3 s while playing.
+  const poke = () => {
+    player.classList.remove("idle");
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => { if (!video.paused && !document.querySelector(".sheet-back")) player.classList.add("idle"); }, 3000);
+  };
+  ["mousemove", "touchstart", "click"].forEach((e) => player.addEventListener(e, poke, { passive: true }));
+  const togglePlay = () => (video.paused ? video.play().catch(() => {}) : video.pause());
+  const seekBy = (d) => { if (isFinite(video.duration)) video.currentTime = Math.max(0, Math.min(video.duration - 1, video.currentTime + d)); poke(); };
+  $("#pp").addEventListener("click", (e) => { e.stopPropagation(); togglePlay(); });
+  $("#pp2").addEventListener("click", togglePlay);
+  if (!live) { $("#rew").addEventListener("click", (e) => { e.stopPropagation(); seekBy(-10); }); $("#fwd").addEventListener("click", (e) => { e.stopPropagation(); seekBy(10); }); }
+  video.addEventListener("click", () => { if (matchMedia("(hover: hover)").matches) togglePlay(); });
+  video.addEventListener("dblclick", () => toggleFs());
+  const showPlaying = () => { const i = video.paused ? icons.play : icons.pause; $("#pp").innerHTML = i; $("#pp2").innerHTML = i; player.classList.toggle("paused", video.paused); poke(); };
+  video.addEventListener("play", showPlaying); video.addEventListener("pause", showPlaying);
+
+  // Volume (remembered), mute.
+  video.volume = store.get("volume", 1);
+  $("#volume").value = video.volume;
+  const showVol = () => { $("#vol").innerHTML = video.muted || video.volume === 0 ? icons.mute : icons.vol; };
+  $("#volume").addEventListener("input", (e) => { video.volume = +e.target.value; video.muted = false; store.set("volume", video.volume); showVol(); });
+  $("#vol").addEventListener("click", () => { video.muted = !video.muted; showVol(); });
+
+  // Seek bar with what's buffered.
+  if (!live) {
+    const seek = $("#seek");
+    let dragging = false;
+    seek.addEventListener("input", () => { dragging = true; if (isFinite(video.duration)) $("#time").textContent = `${fmt(seek.value / 1000 * video.duration)} / ${fmt(video.duration)}`; });
+    seek.addEventListener("change", () => { dragging = false; if (isFinite(video.duration)) video.currentTime = seek.value / 1000 * video.duration; });
+    video.addEventListener("timeupdate", () => {
+      if (!isFinite(video.duration) || video.duration <= 0) return;
+      const f = video.currentTime / video.duration;
+      if (!dragging) { seek.value = Math.round(f * 1000); $("#time").textContent = `${fmt(video.currentTime)} / ${fmt(video.duration)}`; }
+      $(".pl-seek .done").style.width = `${f * 100}%`;
+      const b = video.buffered;
+      for (let i = 0; i < b.length; i++) if (b.start(i) <= video.currentTime && video.currentTime <= b.end(i)) $(".pl-seek .buf").style.width = `${b.end(i) / video.duration * 100}%`;
+    });
+  }
+
+  // Full screen, picture in picture.
+  const inFs = () => document.fullscreenElement || document.webkitFullscreenElement;
+  function toggleFs() {
+    if (inFs()) (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+    else if (player.requestFullscreen) player.requestFullscreen().catch(() => video.webkitEnterFullscreen && video.webkitEnterFullscreen());
+    else if (video.webkitEnterFullscreen) video.webkitEnterFullscreen(); // iPhone
+  }
+  $("#fs").addEventListener("click", toggleFs);
+  document.addEventListener("fullscreenchange", () => { const f = $("#fs"); if (f) f.innerHTML = inFs() ? icons.fsExit : icons.fs; });
+  if (document.pictureInPictureEnabled) { $("#pip").hidden = false; $("#pip").addEventListener("click", () => (document.pictureInPictureElement ? document.exitPictureInPicture() : video.requestPictureInPicture()).catch(() => {})); }
+
+  // Speed.
+  if (!live) $("#speed").addEventListener("click", () => sheet("Playback speed", [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2].map((r) =>
+    `<button class="option ${video.playbackRate === r ? "on" : ""}" data-r="${r}">${r === 1 ? "Normal (1×)" : `${r}×`}</button>`).join(""), (el, close) => {
+    el.querySelectorAll("[data-r]").forEach((b) => b.addEventListener("click", () => { video.playbackRate = +b.dataset.r; $("#speedLabel").textContent = `${b.dataset.r}×`; close(); }));
+  }));
+
+  // Keyboard on computers.
+  const keys = (e) => {
+    if (!document.body.contains(video)) return document.removeEventListener("keydown", keys);
+    if (e.target && /INPUT|TEXTAREA/.test(e.target.tagName) && e.target.type !== "range") return;
+    const k = e.key;
+    if (k === " " || k === "k") { togglePlay(); e.preventDefault(); }
+    else if (k === "ArrowLeft" && !live) { seekBy(-10); e.preventDefault(); }
+    else if (k === "ArrowRight" && !live) { seekBy(10); e.preventDefault(); }
+    else if (k === "ArrowUp") { video.volume = Math.min(1, video.volume + 0.1); $("#volume").value = video.volume; showVol(); poke(); e.preventDefault(); }
+    else if (k === "ArrowDown") { video.volume = Math.max(0, video.volume - 0.1); $("#volume").value = video.volume; showVol(); poke(); e.preventDefault(); }
+    else if (k === "f") toggleFs();
+    else if (k === "m") { video.muted = !video.muted; showVol(); }
+  };
+  document.addEventListener("keydown", keys);
+
+  const leave = () => { saveProgress(); clearInterval(saveTimer); clearInterval(countdown); clearTimeout(stuckTimer); hls && hls.destroy(); document.body.style.overflow = ""; document.removeEventListener("keydown", keys); if (inFs()) document.exitFullscreen().catch(() => {}); };
+  $("#close").addEventListener("click", () => { history.length > 1 ? history.back() : (location.hash = "#/home"); });
   window.addEventListener("hashchange", function off() { leave(); window.removeEventListener("hashchange", off); });
   window.addEventListener("pagehide", () => saveProgress());
 
   let meta = null, videos = [], v = null, next = null;
-  const here = location.hash;
   if (!live) {
     meta = await loadMeta(params.type, params.id, params.a);
     if (location.hash !== here) return;
@@ -684,8 +815,8 @@ async function watch(params) {
     const i = videos.findIndex((x) => x.id === params.v);
     v = videos[i] || videos[0];
     next = i >= 0 && !v.movie ? videos.slice(i + 1).find((x) => (x.season ?? 0) > 0 || (v.season ?? 0) === 0) : null;
-    $view.querySelector("#ptitle").textContent = v.movie ? meta.name : `${meta.name} · ${label(v)}`;
-    if (next) { const nb = $view.querySelector("#nextBtn"); nb.hidden = false; nb.addEventListener("click", () => goNext()); }
+    $("#ptitle").textContent = v.movie ? meta.name : `${meta.name} · ${label(v)}`;
+    if (next) { const nb = $("#nextBtn"); nb.hidden = false; nb.addEventListener("click", () => goNext()); }
   }
   const videoId = live ? params.id : v.id;
   const [streams, subs] = await Promise.all([streamsFor(params.type, videoId), live ? [] : subtitlesFor(params.type, videoId)]);
@@ -694,35 +825,52 @@ async function watch(params) {
   if (!streams.length) return setStatus(`<b>No streams</b><br>None of your add-ons has a stream for this. Add a stream add-on in More.`);
 
   const p0 = !live && lib.progress(videoId);
-  let resumeAt = p0 && p0.dur && p0.pos / p0.dur < 0.92 && p0.pos > 10 ? p0.pos : 0;
+  let resumeAt = p0 && p0.dur && p0.pos / p0.dur < 0.95 && p0.pos > 10 ? p0.pos : 0;
   let current = null;
+  const sourceText = (s) => [s.addon, (s.name || "").replace(/\n/g, " ")].filter(Boolean).join(" · ");
   const play = async (s) => {
     current = s;
-    $view.querySelector("#psource").textContent = [s.addon, (s.name || "").replace(/\n/g, " "), s.c.why].filter(Boolean).join(" · ");
+    clearTimeout(stuckTimer);
+    $("#psource").textContent = sourceText(s) + (s.c.why ? ` · ${s.c.why}` : "");
     setStatus('<div class="spinner"></div>Loading…');
     if (video.currentTime > 5) resumeAt = video.currentTime;
     hls && hls.destroy(); hls = null;
-    const isHls = /\.m3u8(\?|$)/i.test(s.url);
+    $("#quality").hidden = true;
+    [...video.querySelectorAll("track")].forEach((t) => t.remove());
+    const isHls = /\.m3u8(\?|$)/i.test(s.url) || /m3u8|hls/i.test((s.behaviorHints && s.behaviorHints.videoMimeType) || "");
     if (isHls && !video.canPlayType("application/vnd.apple.mpegurl")) {
       try {
         const Hls = await loadHls();
-        hls = new Hls();
-        hls.on(Hls.Events.ERROR, (_, d) => { if (d.fatal) failed(); });
+        hls = new Hls({ enableWorker: true });
+        hls.on(Hls.Events.ERROR, (_, d) => { if (d.fatal) failed("it stopped loading"); });
+        hls.on(Hls.Events.MANIFEST_PARSED, () => {
+          if (hls.levels.length > 1) { $("#quality").hidden = false; $("#qLabel").textContent = "Auto"; }
+        });
+        hls.on(Hls.Events.LEVEL_SWITCHED, (_, d) => {
+          const lv = hls.levels[d.level];
+          if (lv && hls.autoLevelEnabled) $("#qLabel").textContent = `Auto${lv.height ? ` (${lv.height}p)` : ""}`;
+        });
         hls.loadSource(s.url); hls.attachMedia(video);
       } catch (e) { return setStatus(esc(e.message)); }
     } else { video.src = s.url; video.load(); }
-    video.play().catch(() => setStatus("Tap ▶ to start"));
+    video.play().catch(() => setStatus("Press ▶ to start"));
+    // A stream that hasn't started in 25 s is treated as not playable here.
+    stuckTimer = setTimeout(() => { if (video.readyState < 3 && current === s) failed("it didn't start"); }, 25000);
   };
   // A stream that fails moves on to the next playable one, keeping the position (never to the next episode).
-  const failed = () => {
+  const failed = (why) => {
+    clearTimeout(stuckTimer);
+    if (current) current.failed = true;
     const rest = playable.slice(playable.indexOf(current) + 1);
-    if (rest.length) { toast("That stream failed, trying the next one"); play(rest[0]); }
-    else setStatus("<b>None of the streams would play.</b><br>Pick one in Streams, or try another add-on.");
+    const reason = current && current.c.why ? current.c.why.split(" · ")[0] : why;
+    if (rest.length) { toast(`That source didn't play in this browser (${reason}). Trying the next one…`); play(rest[0]); }
+    else setStatus(`<b>None of the sources would play in this browser.</b><br>Many of them need the Stream Goat app (phone, TV, Windows),
+      which plays every source. Or pick one in Sources.`);
   };
   video.addEventListener("loadedmetadata", () => { if (resumeAt > 5 && isFinite(video.duration) && resumeAt < video.duration - 30) video.currentTime = resumeAt; });
-  video.addEventListener("playing", () => setStatus(""));
+  video.addEventListener("playing", () => { setStatus(""); clearTimeout(stuckTimer); poke(); });
   video.addEventListener("waiting", () => setStatus('<div class="spinner"></div>'));
-  video.addEventListener("error", () => { if (!hls) failed(); });
+  video.addEventListener("error", () => { if (!hls) failed(video.error && video.error.code === 4 ? "the link is dead or the format isn't supported" : "it couldn't load"); });
   video.addEventListener("timeupdate", () => {
     if (!next || !isFinite(video.duration) || video.duration < 300 || countdown) return;
     if (video.currentTime > video.duration - 20) showNext();
@@ -736,7 +884,7 @@ async function watch(params) {
     card.className = "next-card";
     card.innerHTML = `<div class="label">NEXT EPISODE</div><b>${esc(label(next))}</b><div class="muted small" id="cd">Starts in ${n} s</div>
       <div class="actions"><button class="btn primary small" id="now">${icons.play} Play now</button><button class="btn small" id="cancel">Cancel</button></div>`;
-    $view.querySelector(".player").appendChild(card);
+    player.appendChild(card);
     card.querySelector("#now").addEventListener("click", goNext);
     card.querySelector("#cancel").addEventListener("click", () => { clearInterval(countdown); card.remove(); countdown = "cancelled"; });
     countdown = setInterval(() => { n--; const cd = card.querySelector("#cd"); if (cd) cd.textContent = `Starts in ${n} s`; if (n <= 0) goNext(); }, 1000);
@@ -753,38 +901,84 @@ async function watch(params) {
     if (document.visibilityState === "hidden") saveProgress();
   });
 
-  $view.querySelector("#srcs").addEventListener("click", () => sheet("Streams", streams.map((s, i) =>
-    `<button class="option ${s === current ? "on" : ""}" data-i="${i}" ${s.c.ok || s.c.external ? "" : "disabled"}><span>${esc(s.addon)} · ${esc((s.name || "").replace(/\n/g, " "))}
-      <span class="why">${esc([(s.title || s.description || "").replace(/\n/g, " ").slice(0, 120), s.c.why].filter(Boolean).join(" · "))}</span></span></button>`).join(""), (el, close) => {
+  // Sources: every stream, the ones a browser may not play marked; they can still be tried.
+  $("#srcs").addEventListener("click", () => sheet("Sources", streams.map((s, i) =>
+    `<button class="option ${s === current ? "on" : ""}" data-i="${i}" ${s.c.ok || s.c.external ? "" : "disabled"}><span>${esc(sourceText(s))}
+      <span class="why">${esc([(s.title || s.description || "").replace(/\n/g, " ").slice(0, 140), s.failed ? "didn't play here" : "", s.c.why].filter(Boolean).join(" · "))}</span></span></button>`).join(""), (el, close) => {
     el.querySelectorAll("[data-i]").forEach((b) => b.addEventListener("click", () => {
       const s = streams[+b.dataset.i]; close();
       if (s.c.external) window.open(s.c.external, "_blank", "noopener"); else play(s);
     }));
   }));
-  $view.querySelector("#subs").addEventListener("click", () => {
-    if (!subs.length) return toast("No subtitles found for this");
-    sheet("Subtitles", `<button class="option" data-i="-1">Off</button>` + subs.slice(0, 60).map((s, i) =>
-      `<button class="option" data-i="${i}">${esc(langName(s.lang || "und"))}</button>`).join(""), (el, close) => {
-      el.querySelectorAll("[data-i]").forEach((b) => b.addEventListener("click", async () => {
+
+  // Subtitles: add-ons' (your languages first) and those inside the stream; text size.
+  const langs = preferredLangs();
+  const lang2 = (code) => { try { return new Intl.Locale(code).language.slice(0, 2).toLowerCase(); } catch { return (code || "").slice(0, 2).toLowerCase(); } }; // "spa" -> "es"
+  const rank = (code) => { const i = langs.indexOf(lang2(code)); return i < 0 ? 99 : i; };
+  const addonSubs = subs.slice().sort((a, b) => rank(a.lang) - rank(b.lang) || langName(a.lang || "").localeCompare(langName(b.lang || ""))).slice(0, 80);
+  let subShown = -1;
+  const showTrack = (track) => { [...video.textTracks].forEach((t) => (t.mode = t === track ? "showing" : "disabled")); };
+  $("#subs").addEventListener("click", () => {
+    const inside = hls ? hls.subtitleTracks.map((t, i) => ({ i, name: t.name || langName(t.lang || "und") })) : [];
+    const counts = {};
+    sheet("Subtitles", `<button class="option ${subShown === -1 ? "on" : ""}" data-s="-1">Off</button>` +
+      inside.map((t) => `<button class="option" data-h="${t.i}">${esc(t.name)} <span class="why">in the stream</span></button>`).join("") +
+      addonSubs.map((s, i) => { const n = langName(s.lang || "und"); counts[n] = (counts[n] || 0) + 1;
+        return `<button class="option ${subShown === i ? "on" : ""}" data-s="${i}">${esc(n)}${counts[n] > 1 ? ` ${counts[n]}` : ""}</button>`; }).join("") +
+      (addonSubs.length || inside.length ? "" : `<p class="muted small" style="padding:6px 12px">No subtitles found for this. Add-ons like OpenSubtitles (in More) provide them.</p>`) +
+      `<div class="chips" style="margin:10px 0 0;padding:0 12px">${["Small", "Normal", "Large"].map((z) => `<button class="chip ${store.get("cue", "Normal") === z ? "on" : ""}" data-z="${z}">${z} text</button>`).join("")}</div>`, (el, close) => {
+      el.querySelectorAll("[data-z]").forEach((b) => b.addEventListener("click", () => { store.set("cue", b.dataset.z); player.dataset.cue = b.dataset.z; close(); }));
+      el.querySelectorAll("[data-h]").forEach((b) => b.addEventListener("click", () => { close(); hls.subtitleTrack = +b.dataset.h; hls.subtitleDisplay = true; subShown = -2; }));
+      el.querySelectorAll("[data-s]").forEach((b) => b.addEventListener("click", async () => {
         close();
-        [...video.textTracks].forEach((t) => (t.mode = "disabled"));
-        const i = +b.dataset.i;
-        if (i < 0) return;
+        const i = +b.dataset.s;
+        subShown = i;
+        if (hls) hls.subtitleTrack = -1;
+        if (i < 0) return showTrack(null);
         try {
-          const r = await fetch(subs[i].url, { referrerPolicy: "no-referrer" });
+          const r = await fetch(addonSubs[i].url, { referrerPolicy: "no-referrer" });
           const url = URL.createObjectURL(new Blob([toVtt(await r.text())], { type: "text/vtt" }));
           const track = document.createElement("track");
-          Object.assign(track, { kind: "subtitles", label: langName(subs[i].lang || "und"), srclang: (subs[i].lang || "en").slice(0, 2), src: url, default: true });
+          Object.assign(track, { kind: "subtitles", label: langName(addonSubs[i].lang || "und"), srclang: lang2(addonSubs[i].lang || "en"), src: url });
           video.appendChild(track);
-          track.track.mode = "showing";
+          track.addEventListener("load", () => showTrack(track.track));
+          showTrack(track.track);
         } catch { toast("Couldn't load those subtitles"); }
+      }));
+    });
+  });
+  player.dataset.cue = store.get("cue", "Normal");
+
+  // Audio: alternate audio of adaptive (HLS) streams, or the file's tracks where the browser allows (Safari).
+  $("#audio").addEventListener("click", () => {
+    const hlsTracks = hls ? hls.audioTracks : [];
+    const native = video.audioTracks && video.audioTracks.length > 1 ? [...video.audioTracks] : [];
+    if (hlsTracks.length > 1) return sheet("Audio", hlsTracks.map((t, i) => `<button class="option ${hls.audioTrack === i ? "on" : ""}" data-a="${i}">${esc(t.name || langName(t.lang || "und"))}</button>`).join(""), (el, close) => {
+      el.querySelectorAll("[data-a]").forEach((b) => b.addEventListener("click", () => { hls.audioTrack = +b.dataset.a; close(); }));
+    });
+    if (native.length) return sheet("Audio", native.map((t, i) => `<button class="option ${t.enabled ? "on" : ""}" data-a="${i}">${esc(t.label || langName(t.language || "und"))}</button>`).join(""), (el, close) => {
+      el.querySelectorAll("[data-a]").forEach((b) => b.addEventListener("click", () => { native.forEach((t, j) => (t.enabled = j === +b.dataset.a)); close(); }));
+    });
+    sheet("Audio", `<p class="muted">This source has one audio track here: a browser can't switch the language inside this kind of file.</p>
+      <p class="muted small">For another language, pick a source whose name says it (Sources), or use the Stream Goat app (phone, TV, Windows), which can switch the audio of any file.</p>`);
+  });
+
+  // Quality of adaptive (HLS) streams.
+  $("#quality").addEventListener("click", () => {
+    if (!hls) return;
+    const levels = hls.levels.map((l, i) => ({ i, h: l.height, b: l.bitrate })).sort((a, b) => (b.h || 0) - (a.h || 0) || b.b - a.b);
+    sheet("Quality", `<button class="option ${hls.autoLevelEnabled ? "on" : ""}" data-q="-1">Auto</button>` + levels.map((l) =>
+      `<button class="option ${!hls.autoLevelEnabled && hls.currentLevel === l.i ? "on" : ""}" data-q="${l.i}">${l.h ? `${l.h}p` : `${Math.round(l.b / 1000)} kbps`}</button>`).join(""), (el, close) => {
+      el.querySelectorAll("[data-q]").forEach((b) => b.addEventListener("click", () => {
+        hls.currentLevel = +b.dataset.q; const lv = hls.levels[+b.dataset.q];
+        $("#qLabel").textContent = +b.dataset.q < 0 ? "Auto" : lv && lv.height ? `${lv.height}p` : "Fixed"; close();
       }));
     });
   });
 
   if (!playable.length) {
-    setStatus(`<b>No stream this browser can play</b><br>${esc(streams[0].c.why)}. Open Streams to see them all.`);
-    $view.querySelector("#psource").textContent = `${streams.length} stream(s), none playable here`;
+    setStatus(`<b>No source this browser can play</b><br>${esc(streams[0].c.why)}. Open Sources to see them all, or use the Stream Goat app.`);
+    $("#psource").textContent = `${streams.length} source(s), none playable here`;
     return;
   }
   play(playable[0]);
