@@ -30,6 +30,8 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.filled.NetworkCheck
+import androidx.compose.ui.draw.alpha
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material3.Icon
@@ -183,12 +185,20 @@ private fun LiveContent(all: List<LiveTv.Channel>, now: Long, guideVersion: Int,
     var favVersion by remember { mutableIntStateOf(0) }
     val favourites = remember(favVersion) { LiveTv.favourites() }
     val recentKeys = remember(favVersion) { LiveTv.recent() }
-    val groups = remember(all) { all.groupingBy { it.group ?: "Other" }.eachCount().entries.sortedByDescending { it.value }.map { it.key } }
+    // A channel in several groups ("Animation;Kids") is under each of them.
+    val groups = remember(all) { all.flatMap { c -> c.groups.ifEmpty { listOf("Other") } }.groupingBy { it }.eachCount().entries.sortedByDescending { it.value }.map { it.key } }
     var filter by remember { mutableStateOf("All") }
     var query by remember { mutableStateOf("") }
-    val shown = remember(all, filter, query, favVersion) {
+    // "Check channels": which answer (public lists always have dead links), and hiding the ones that don't.
+    var healthVersion by remember { mutableIntStateOf(0) }
+    var checking by remember { mutableStateOf<Pair<Int, Int>?>(null) }
+    var checkJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    var hideDead by remember { mutableStateOf(LiveTv.hideNotWorking) }
+    val notWorking = remember(all, healthVersion) { all.count { LiveTv.health(it)?.ok == false } }
+    val shown = remember(all, filter, query, favVersion, hideDead, healthVersion) {
         all.filter { c ->
-            when (filter) { "All" -> true; "★ Favourites" -> c.key in favourites; else -> (c.group ?: "Other") == filter } &&
+            (!hideDead || LiveTv.health(c)?.ok != false) &&
+            when (filter) { "All" -> true; "★ Favourites" -> c.key in favourites; else -> filter in c.groups.ifEmpty { listOf("Other") } } &&
                 (query.isBlank() || c.name.contains(query.trim(), ignoreCase = true))
         }
     }
@@ -207,6 +217,17 @@ private fun LiveContent(all: List<LiveTv.Channel>, now: Long, guideVersion: Int,
                     modifier = Modifier.weight(1f).widthIn(max = 420.dp))
                 Spacer(Modifier.weight(0.01f))
                 IconAction(if (guide) Icons.Filled.GridView else Icons.Filled.Schedule, if (guide) "Channels" else "TV guide") { guide = !guide }
+                IconAction(Icons.Filled.NetworkCheck, "Check channels") {
+                    if (checkJob?.isActive == true) return@IconAction
+                    val list = all
+                    checkJob = scope.launch {
+                        checking = 0 to 0
+                        val ok = runCatching { LiveTv.check(list) { done, working -> checking = done to working } }.getOrNull()
+                        checking = null
+                        healthVersion++
+                        if (ok != null) App.toast("$ok of ${list.size} channels work" + if (ok < list.size) ". \"Hide not working\" leaves the others out." else "")
+                    }
+                }
                 IconAction(Icons.Filled.Refresh, "Refresh") { onRefresh() }
                 IconAction(Icons.Filled.Settings, "Live TV sources") {
                     ProfileUi.guarded { if (wide) Nav.select(Tab.MORE) else Nav.open(Screen.SettingsPage(Section.LIVETV.name)) }
@@ -214,8 +235,21 @@ private fun LiveContent(all: List<LiveTv.Channel>, now: Long, guideVersion: Int,
             }
     }
     val chipRow: @Composable () -> Unit = {
+            checking?.let { (done, working) ->
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("Checking channels… $done of ${all.size} · $working work", style = MaterialTheme.typography.labelLarge, color = Palette.accent)
+                    Text("Stop", style = MaterialTheme.typography.labelMedium, modifier = Modifier.card(RoundedCornerShape(50)) { checkJob?.cancel(); checking = null; healthVersion++ }
+                        .background(Palette.surfaceHigh, RoundedCornerShape(50)).padding(horizontal = 14.dp, vertical = 6.dp))
+                }
+            }
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(vertical = 4.dp)) {
-                val chips = listOf("All", "★ Favourites") + groups.take(40)
+                if (notWorking > 0 || hideDead) item {
+                    Text(if (hideDead) "✓ Hiding $notWorking not working" else "Hide $notWorking not working", style = MaterialTheme.typography.labelMedium, modifier = Modifier
+                        .card(RoundedCornerShape(50)) { hideDead = !hideDead; LiveTv.hideNotWorking = hideDead }
+                        .background(if (hideDead) Palette.accent else Palette.surfaceHigh, RoundedCornerShape(50))
+                        .padding(horizontal = 14.dp, vertical = 8.dp))
+                }
+                val chips = listOf("All", "★ Favourites") + groups
                 items(chips) { g ->
                     val on = g == filter
                     val count = when (g) { "All" -> all.size; "★ Favourites" -> favourites.size; else -> null }
@@ -237,7 +271,7 @@ private fun LiveContent(all: List<LiveTv.Channel>, now: Long, guideVersion: Int,
                     "None of your sources has a guide (XMLTV) loaded. Xtream logins include one; for an M3U playlist add its guide address in Settings → Live TV.",
                     Modifier.fillMaxWidth(), button = "Refresh guide") { onRefresh() }
                 sorted.isEmpty() -> EmptyState("No channels", if (query.isNotBlank()) "Nothing matches \"$query\"." else "This list is empty.", Modifier.fillMaxWidth())
-                else -> GuideGrid(sorted.take(400), now, guideVersion, wide, onPlay = { LivePlayback.play(scope, it, sorted) }, modifier = Modifier.weight(1f))
+                else -> GuideGrid(sorted, now, guideVersion, wide, onPlay = { LivePlayback.play(scope, it, sorted) }, modifier = Modifier.weight(1f))
             }
         }
         return
@@ -259,12 +293,12 @@ private fun LiveContent(all: List<LiveTv.Channel>, now: Long, guideVersion: Int,
         if (recent.isNotEmpty() && filter == "All" && query.isBlank()) {
             item(span = { GridItemSpan(maxLineSpan) }) { SectionTitle("Recently watched", Modifier.padding(top = 8.dp)) }
             uniqueItems(recent.take(if (wide) 5 else 4), key = { "recent|" + it.key }) { c ->
-                ChannelCard(c, now, guideVersion, onFocus = { selected = c }) { LivePlayback.play(scope, c, all) }
+                ChannelCard(c, now, guideVersion + healthVersion, onFocus = { selected = c }) { LivePlayback.play(scope, c, all) }
             }
             item(span = { GridItemSpan(maxLineSpan) }) { SectionTitle(if (filter == "All") "All channels" else filter, Modifier.padding(top = 8.dp)) }
         }
         uniqueItems(shown, key = { it.key }) { c ->
-            ChannelCard(c, now, guideVersion, onFocus = { selected = c }) { LivePlayback.play(scope, c, shown) }
+            ChannelCard(c, now, guideVersion + healthVersion, onFocus = { selected = c }) { LivePlayback.play(scope, c, shown) }
         }
         if (shown.isEmpty()) item(span = { GridItemSpan(maxLineSpan) }) {
             EmptyState("No channels", if (query.isNotBlank()) "Nothing matches \"$query\"." else "This list is empty.", Modifier.fillMaxWidth())
@@ -280,7 +314,7 @@ private fun LiveBanner(c: LiveTv.Channel, number: Int, now: Long, guideVersion: 
         .background(Brush.horizontalGradient(listOf(Palette.accent.copy(alpha = 0.10f), Color.Transparent)), RoundedCornerShape(16.dp)).padding(if (wide) 8.dp else 4.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             LiveBadge(label = LiveTv.webPage(c)?.let { "LIVE · ${it.uppercase()}" } ?: "LIVE")
-            Text(listOfNotNull("Channel $number", c.group, "Region-locked".takeIf { c.regionLocked }).joinToString(" · "), style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(start = 10.dp))
+            Text(listOfNotNull("Channel $number", c.groupLabel, "Region-locked".takeIf { c.regionLocked }).joinToString(" · "), style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(start = 10.dp))
         }
         Row(Modifier.padding(vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
             ChannelLogo(c, if (wide) 92.dp else 64.dp)
@@ -303,7 +337,9 @@ private fun LiveBanner(c: LiveTv.Channel, number: Int, now: Long, guideVersion: 
 @Composable
 private fun ChannelCard(c: LiveTv.Channel, now: Long, guideVersion: Int, onFocus: () -> Unit, onClick: () -> Unit) {
     val cur = remember(c, now, guideVersion) { LiveTv.nowNext(c, now).first }
-    Column(Modifier.fillMaxWidth().card(RoundedCornerShape(12.dp), onFocus = onFocus, onClick = onClick)
+    val health = remember(c, guideVersion) { LiveTv.health(c) }
+    val dead = health?.ok == false
+    Column(Modifier.fillMaxWidth().alpha(if (dead) 0.5f else 1f).card(RoundedCornerShape(12.dp), onFocus = onFocus, onClick = onClick)
         .background(Palette.surface, RoundedCornerShape(12.dp))) {
         Box(Modifier.fillMaxWidth().aspectRatio(16f / 8f).background(Brush.linearGradient(listOf(Palette.surfaceHigh, Palette.accent.copy(alpha = 0.18f)))),
             contentAlignment = Alignment.Center) {
@@ -313,7 +349,8 @@ private fun ChannelCard(c: LiveTv.Channel, now: Long, guideVersion: Int, onFocus
         }
         Column(Modifier.padding(10.dp)) {
             Text(c.name, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(cur?.let { "Now: ${it.title}" } ?: (c.group ?: " "), style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(if (dead) "Not working: ${health?.why ?: "no answer"}" else cur?.let { "Now: ${it.title}" } ?: (c.groupLabel ?: " "),
+                style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis, color = if (dead) Palette.muted else Color.Unspecified)
             if (cur != null) ProgressLine(progressOf(cur, now), Modifier.padding(top = 6.dp))
         }
     }

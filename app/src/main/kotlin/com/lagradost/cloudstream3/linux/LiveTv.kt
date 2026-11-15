@@ -52,7 +52,12 @@ object LiveTv {
         val country: String? = null, val number: Int = 0,
         /** Marked in the playlist as playing only in its own country (Free-TV's Ⓖ, iptv-org's "[Geo-blocked]"). */
         val regionLocked: Boolean = false,
-    )
+    ) {
+        /** Every group the playlist puts it in: group-title="Animation;Kids" is in both. */
+        val groups: List<String> get() = group?.split(';')?.map { it.trim() }?.filter { it.isNotEmpty() }.orEmpty()
+        /** Its groups as shown: "Animation · Kids". */
+        val groupLabel: String? get() = groups.joinToString(" · ").ifEmpty { null }
+    }
 
     data class Programme(val start: Long, val stop: Long, val title: String, val description: String?)
 
@@ -292,6 +297,157 @@ object LiveTv {
     }
 
     private val circledLetters = Regex("[\\u24B6-\\u24E9]")
+    private val brokenChrome = Regex("like Gecko\\) Chrome/(\\d+)")
+
+    /**
+     * A channel's name in an #EXTINF line: after the first comma that follows the attributes (names may contain
+     * commas, "Love Nature, 4K"), else after the last comma. Lines a converter broke (a quote and comma inside an
+     * attribute) still give the name at the end.
+     */
+    internal fun m3uName(inf: String): String {
+        val afterAttributes = inf.indexOf(',', inf.lastIndexOf('"') + 1)
+        return (if (afterAttributes >= 0) inf.substring(afterAttributes + 1) else inf.substringAfterLast(",", "")).trim()
+    }
+
+    /**
+     * The same channel in the user's other lists (the same tvg-id, or the same name without quality tags), tried
+     * by the player when this one doesn't play: public lists carry many channels twice, from different servers.
+     */
+    fun alternatives(c: Channel, max: Int = 4): List<Channel> = alternativesIn(synchronized(channels) { channels.values.flatten() }, c, max)
+
+    internal fun alternativesIn(all: List<Channel>, c: Channel, max: Int = 4): List<Channel> {
+        val id = channelId(c.epgId)
+        val name = sameName(c.name)
+        return all.asSequence()
+            .filter { it.url != c.url && it.key != c.key }
+            .filter { o ->
+                val other = channelId(o.epgId)
+                // Both have ids: they decide. Otherwise the names, without quality tags ("(720p)", "HD", "[Not 24/7]").
+                if (id != null && other != null) id == other else name.length >= 3 && sameName(o.name) == name
+            }
+            .distinctBy { it.url }.take(max).toList()
+    }
+
+    /**
+     * iptv-org ids: "HumTV.pk@SD" and "HumTV.pk@HD" are one channel in two qualities, but "GodStandsTV.pk@Arabic" and
+     * "GodStandsTV.pk@Urdu" are two (the part after @ is a feed: a quality, or a language or region).
+     */
+    private fun channelId(epgId: String?): String? {
+        val id = epgId?.trim()?.lowercase()?.ifBlank { null } ?: return null
+        val feed = id.substringAfter('@', "")
+        return if (feed.isEmpty() || feed in qualityFeeds) id.substringBefore('@') else id
+    }
+    private val qualityFeeds = setOf("sd", "hd", "fhd", "uhd", "4k", "hq", "lq")
+
+    /** Quality marks only: a country in brackets, "ATV (Pakistan)", is part of the name. */
+    private val qualityTags = Regex("\\((?:\\d{3,4}p|hd|sd|fhd|uhd|4k)\\)|\\[[^\\]]*]|\\b(?:hd|sd|fhd|uhd|4k|\\d{3,4}p)\\b")
+    private fun sameName(n: String) = n.lowercase().replace(qualityTags, " ").replace(Regex("[^\\p{L}\\p{N}]+"), "")
+
+    /** A source's name, for "Backup from …". */
+    fun sourceName(id: String): String? = sources().firstOrNull { it.id == id }?.name
+
+    // ---------- checking channels ----------
+
+    /** What the last check found for a channel: whether it answered, when, and if not, why (a few words). */
+    data class Health(val ok: Boolean, val at: Long, val why: String? = null)
+
+    private val healthFile get() = File(cacheDir, "health.json")
+    @Volatile private var healthCache: MutableMap<String, Health>? = null
+
+    private fun healthMap(): MutableMap<String, Health> = healthCache ?: synchronized(this) {
+        healthCache ?: runCatching {
+            val o = JSONObject(healthFile.readText())
+            o.keys().asSequence().associateWith { k -> o.getJSONObject(k).let { Health(it.getBoolean("ok"), it.getLong("at"), it.optString("why").ifBlank { null }) } }
+        }.getOrDefault(emptyMap()).toMutableMap().also { healthCache = it }
+    }
+
+    /** The last check's result for [c], or null if it hasn't been checked (or not in the last 7 days). */
+    fun health(c: Channel): Health? = healthMap()[c.key]?.takeIf { System.currentTimeMillis() - it.at < 7 * 24 * 3600_000L }
+
+    /** Leave out channels the last check found not working. */
+    var hideNotWorking: Boolean
+        get() = prefs.getString("hide_not_working", null) == "true"
+        set(v) { prefs.edit().putString("hide_not_working", v.toString()).apply(); changed() }
+
+    /**
+     * Opens every channel's stream (12 at a time) to see which answer: public playlists always carry some dead
+     * links. HLS lists are followed into their first quality, since a list often still answers when the video
+     * behind it is gone. [onProgress] gets (checked, working) as it goes. Returns how many work.
+     */
+    suspend fun check(list: List<Channel>, onProgress: (Int, Int) -> Unit = { _, _ -> }): Int = withContext(Dispatchers.IO) {
+        val client = app.baseClient.newBuilder().connectTimeout(8, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(8, java.util.concurrent.TimeUnit.SECONDS).callTimeout(15, java.util.concurrent.TimeUnit.SECONDS).build()
+        val gate = kotlinx.coroutines.sync.Semaphore(12)
+        val done = java.util.concurrent.atomic.AtomicInteger()
+        val working = java.util.concurrent.atomic.AtomicInteger()
+        val results = java.util.concurrent.ConcurrentHashMap<String, Health>()
+        try {
+            coroutineScope {
+                list.filter { webPage(it) == null && it.url.startsWith("http") }.map { c ->
+                    async {
+                        gate.acquire()
+                        try {
+                            val why = runCatching { probe(client, c.url, c.headers, depth = 0) }.getOrElse { reason(it) }
+                            results[c.key] = Health(why == null, System.currentTimeMillis(), why)
+                            if (why == null) working.incrementAndGet()
+                        } finally { gate.release() }
+                        onProgress(done.incrementAndGet(), working.get())
+                    }
+                }.awaitAll()
+            }
+        } finally {
+            // Also when stopped half-way: what was checked is kept.
+            val map = healthMap()
+            synchronized(map) {
+                map.putAll(results)
+                val o = JSONObject()
+                map.forEach { (k, h) -> o.put(k, JSONObject().put("ok", h.ok).put("at", h.at).put("why", h.why ?: "")) }
+                runCatching { healthFile.writeText(o.toString()) }
+            }
+            changed()
+        }
+        working.get()
+    }
+
+    /** null when the stream answers like a stream; otherwise why not, in a few words. */
+    private fun probe(client: okhttp3.OkHttpClient, url: String, headers: Map<String, String>, depth: Int): String? {
+        val request = okhttp3.Request.Builder().url(url).apply {
+            header("User-Agent", headers.entries.firstOrNull { it.key.equals("User-Agent", true) }?.value ?: com.lagradost.cloudstream3.USER_AGENT)
+            headers.forEach { (k, v) -> if (!k.equals("User-Agent", true)) header(k, v) }
+        }.build()
+        client.newCall(request).execute().use { r ->
+            if (!r.isSuccessful) return when (r.code) {
+                401, 403 -> "refused (HTTP ${r.code}): blocked here or needs a login"
+                404, 410 -> "gone (HTTP ${r.code})"
+                else -> "HTTP ${r.code}"
+            }
+            val buffer = ByteArray(16 * 1024)
+            var n = 0
+            r.body.byteStream().use { input ->
+                while (n < buffer.size) { val got = input.read(buffer, n, buffer.size - n); if (got < 0) break; n += got; if (depth > 0 && n >= 2048) break }
+            }
+            if (n == 0) return "empty answer"
+            val text = String(buffer, 0, n, Charsets.UTF_8)
+            val head = text.trimStart().take(64).lowercase()
+            val playlist = "#extm3u" in text.take(2048).lowercase()
+            if (!playlist && (head.startsWith("<!doctype html") || head.startsWith("<html"))) return "a web page, not a stream"
+            if (!playlist || depth > 0) return null
+            // A master list: follow the first quality (or the first media file) one level.
+            val next = text.lineSequence().map { it.trim() }.firstOrNull { it.isNotEmpty() && !it.startsWith("#") } ?: return "an empty list"
+            val nextUrl = r.request.url.resolve(next)?.toString() ?: return null
+            if (!(nextUrl.substringBefore('?').endsWith(".m3u8") || "#ext-x-stream-inf" in text.lowercase())) return null
+            return probe(client, nextUrl, headers, depth + 1)
+        }
+    }
+
+    private fun reason(e: Throwable): String = when (val cause = generateSequence(e) { it.cause }.last()) {
+        is java.net.UnknownHostException -> "its server wasn't found"
+        is java.net.SocketTimeoutException, is java.io.InterruptedIOException -> "no answer"
+        is java.net.ConnectException -> "its server refused the connection"
+        is javax.net.ssl.SSLException, is java.security.cert.CertificateException -> "security certificate problem"
+        else -> cause.message?.take(60) ?: cause.javaClass.simpleName
+    }
+
 
     /**
      * Channels that are web pages rather than streams (a YouTube or Twitch channel's live page, which
@@ -397,11 +553,20 @@ object LiveTv {
                 else -> {
                     val inf = info ?: continue
                     val attrs = attr.findAll(inf).associate { it.groupValues[1].lowercase() to it.groupValues[2] }
-                    val rawName = inf.substringAfterLast(",", "").trim().ifBlank { attrs["tvg-name"] ?: "Channel ${out.size + 1}" }
+                    val rawName = m3uName(inf).ifBlank { attrs["tvg-name"] ?: "Channel ${out.size + 1}" }
                     // Free-TV marks channels with circled letters (Ⓢ SD, Ⓖ region-locked, Ⓨ YouTube, Ⓣ Twitch): shown as tags instead.
                     val name = rawName.replace(circledLetters, "").replace(Regex("\\s+"), " ").trim().ifBlank { rawName }
                     val locked = 'Ⓖ' in rawName || rawName.contains("geo-blocked", true)
                     val headers = options.toMutableMap()
+                    // iptv-org style: the headers as attributes of the #EXTINF line (#EXTVLCOPT lines win).
+                    attrs["http-referrer"]?.ifBlank { null }?.let { headers.putIfAbsent("Referer", it) }
+                    attrs["http-user-agent"]?.ifBlank { null }?.let { headers.putIfAbsent("User-Agent", it) }
+                    attrs["http-origin"]?.ifBlank { null }?.let { headers.putIfAbsent("Origin", it) }
+                    // Some converters cut http-user-agent="…(KHTML, like Gecko) Chrome/120…" at its comma, leaving
+                    // "like Gecko) Chrome/120… Safari/537.36" in the line: the server wanted desktop Chrome, so ask as it.
+                    if ("User-Agent" !in headers) brokenChrome.find(inf)?.let {
+                        headers["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${it.groupValues[1]}.0.0.0 Safari/537.36"
+                    }
                     var url = line
                     if ('|' in line) {
                         url = line.substringBefore('|')
@@ -412,7 +577,8 @@ object LiveTv {
                     }
                     if (url.startsWith("http") || url.startsWith("rtmp") || url.startsWith("rtsp") || url.startsWith("udp")) {
                         out += Channel("$sourceId:${out.size}:${url.hashCode()}", sourceId, name, attrs["tvg-logo"]?.ifBlank { null },
-                            (attrs["group-title"] ?: extGroup)?.substringBefore(';')?.ifBlank { null }, url, headers,
+                            (attrs["group-title"] ?: extGroup)?.split(';')?.map { it.trim() }?.filter { it.isNotEmpty() }?.joinToString(";")?.ifBlank { null },
+                            url, headers,
                             attrs["tvg-id"]?.ifBlank { null }, attrs["tvg-country"]?.ifBlank { null }?.uppercase(),
                             attrs["tvg-chno"]?.toIntOrNull() ?: (out.size + 1), locked)
                     }
@@ -605,7 +771,13 @@ object LiveApi : MainAPI() {
 
     /** A channel as the "url" this API loads: everything needed to play it. */
     fun data(c: LiveTv.Channel) = JSONObject().put("url", c.url).put("headers", JSONObject(c.headers)).put("name", c.name).put("logo", c.logo ?: "")
-        .apply { if (LiveTv.plainRetry(c)) put("plain", true) }.toString()
+        .apply {
+            if (LiveTv.plainRetry(c)) put("plain", true)
+            val alts = LiveTv.alternatives(c)
+            if (alts.isNotEmpty()) put("alts", org.json.JSONArray(alts.map { a ->
+                JSONObject().put("url", a.url).put("headers", JSONObject(a.headers)).put("from", LiveTv.sourceName(a.source) ?: "another list")
+            }))
+        }.toString()
 
     /** The link name of the plain-http retry (see [LiveTv.retryPlain]). */
     const val PLAIN = "Live (unencrypted)"
@@ -639,6 +811,19 @@ object LiveApi : MainAPI() {
             this.headers = headers
             headers["Referer"]?.let { referer = it }
         })
+        // The same channel from the user's other lists: the player moves on to them when this one doesn't play.
+        o.optJSONArray("alts")?.let { arr ->
+            for (i in 0 until arr.length()) {
+                val a = arr.optJSONObject(i) ?: continue
+                val altUrl = a.optString("url").ifBlank { null } ?: continue
+                val altHeaders = a.optJSONObject("headers")?.let { j -> j.keySet().associateWith { j.getString(it) } }.orEmpty()
+                val altType = if (altUrl.substringBefore('?').endsWith(".m3u8")) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
+                callback(newExtractorLink(o.optString("name", "Live TV"), "Backup from ${a.optString("from", "another list")}", altUrl, altType) {
+                    this.headers = altHeaders
+                    altHeaders["Referer"]?.let { referer = it }
+                })
+            }
+        }
         return true
     }
 }

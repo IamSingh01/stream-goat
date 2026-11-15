@@ -61,6 +61,12 @@ class LiveTvPage : StackPane(), Refreshable, TopBarActions, Disposable {
     private val guideHolder = StackPane().apply { VBox.setVgrow(this, javafx.scene.layout.Priority.ALWAYS); alignment = Pos.TOP_LEFT }
     private val guideLayout = VBox(18.0).apply { pad(TopBar.HEIGHT + 14, 40.0, 24.0, 40.0) }
     private val guideButton = button("TV guide", Icons.HISTORY, "topbar-source") { toggleGuide() }.apply { tooltip("Switch between the channel list and the TV guide") }
+    /** "Check channels": which channels answer (public lists always have dead links). */
+    private var checkJob: Job? = null
+    private var checking: Pair<Int, Int>? = null
+    private val checkButton = button("Check channels", Icons.NETWORK, "topbar-source") { checkChannels() }.apply {
+        tooltip("Open every channel's stream to see which ones work; then you can hide the others")
+    }
 
     init {
         children += scroll
@@ -70,7 +76,7 @@ class LiveTvPage : StackPane(), Refreshable, TopBarActions, Disposable {
         reload()
     }
 
-    override fun topBarActions(): List<Node> = listOf(label("Live TV", "topbar-title"), sourceButton, countryButton, guideButton, searchField)
+    override fun topBarActions(): List<Node> = listOf(label("Live TV", "topbar-title"), sourceButton, countryButton, guideButton, checkButton, searchField)
     override val hasOwnSearch get() = true
 
     override fun onShow() {
@@ -81,6 +87,7 @@ class LiveTvPage : StackPane(), Refreshable, TopBarActions, Disposable {
 
     override fun dispose() {
         job?.cancel()
+        checkJob?.cancel()
         unsubscribe()
     }
 
@@ -123,7 +130,8 @@ class LiveTvPage : StackPane(), Refreshable, TopBarActions, Disposable {
     }
 
     /** The page's main area: the channel rows, or the guide grid in guide mode. */
-    private fun show(nodes: List<Node>) {
+    private fun show(shownNodes: List<Node>) {
+        val nodes = healthBar()?.let { listOf(it) + shownNodes } ?: shownNodes
         if (guideMode) guideHolder.children.setAll(if (nodes.size == 1) nodes else listOf(VBox(16.0, *nodes.toTypedArray())))
         else body.children.setAll(nodes)
     }
@@ -131,8 +139,8 @@ class LiveTvPage : StackPane(), Refreshable, TopBarActions, Disposable {
 
     private fun renderGuide(list: List<LiveTv.Channel>, favs: Set<String>, query: String) {
         val filtered = list.filter { c ->
-            (group == ALL || (group == FAVOURITES && c.key in favs) || (c.group ?: "Other") == group) &&
-                (query.isEmpty() || c.name.lowercase().contains(query) || c.group.orEmpty().lowercase().contains(query))
+            (group == ALL || (group == FAVOURITES && c.key in favs) || group in c.groups.ifEmpty { listOf("Other") }) &&
+                (query.isEmpty() || c.name.lowercase().contains(query) || c.groupLabel.orEmpty().lowercase().contains(query))
         }.sortedByDescending { it.key in favs }
         when {
             !LiveTv.hasGuide() -> show(emptyState(Icons.HISTORY, "No TV guide yet",
@@ -149,7 +157,41 @@ class LiveTvPage : StackPane(), Refreshable, TopBarActions, Disposable {
         }
     }
 
-    private fun visible(): List<LiveTv.Channel> = all.filter { country == null || it.country?.split(';')?.contains(country) == true }
+    private fun visible(): List<LiveTv.Channel> = all.filter {
+        (country == null || it.country?.split(';')?.contains(country) == true) && (!LiveTv.hideNotWorking || LiveTv.health(it)?.ok != false)
+    }
+
+    private fun checkChannels() {
+        if (checkJob?.isActive == true) { checkJob?.cancel(); return }
+        val list = all.filter { country == null || it.country?.split(';')?.contains(country) == true }
+        if (list.isEmpty()) return
+        checkJob = ui.launch {
+            checking = 0 to 0
+            checkButton.text = "Stop checking"
+            renderBody()
+            val ok = runCatching {
+                LiveTv.check(list) { done, working -> javafx.application.Platform.runLater { checking = done to working; renderBody() } }
+            }.getOrNull()
+            checking = null
+            checkButton.text = "Check channels"
+            renderBody()
+            if (ok != null) Toasts.show("$ok of ${list.size} channels work" + if (ok < list.size) ". Use \"Hide them\" to leave the others out." else "")
+        }
+    }
+
+    /** Above the channels: the check's progress, or how many didn't answer with a Hide/Show switch. */
+    private fun healthBar(): Node? {
+        checking?.let { (done, working) ->
+            return hbox(10.0, ProgressIndicator().apply { setPrefSize(18.0, 18.0) },
+                label("Checking channels… $done of ${all.size} · $working work", "muted"),
+                button("Stop", null, "btn-ghost", "btn-small") { checkJob?.cancel() })
+        }
+        val dead = all.count { LiveTv.health(it)?.ok == false }
+        if (dead == 0) return null
+        val hide = LiveTv.hideNotWorking
+        return hbox(10.0, label(if (hide) "$dead channels that didn't answer the last check are hidden." else "$dead channels didn't answer the last check.", "muted"),
+            button(if (hide) "Show them" else "Hide them", null, "btn-ghost", "btn-small") { LiveTv.hideNotWorking = !hide; renderHero(); renderBody() })
+    }
 
     // ---------- top bar menus ----------
 
@@ -203,14 +245,14 @@ class LiveTvPage : StackPane(), Refreshable, TopBarActions, Disposable {
         val shadeL = Region().apply { styleClass += "hero-shade-left"; isMouseTransparent = true }
         val shadeB = Region().apply { styleClass += "hero-shade-bottom"; isMouseTransparent = true }
         val shadeT = Region().apply { styleClass += "hero-shade-top"; isMouseTransparent = true }
-        val head = hbox(10.0, label("● LIVE", "live-badge"), label(listOfNotNull(c.number.takeIf { it > 0 }?.let { "Channel $it" }, c.group).joinToString(" · "), "hero-source"))
+        val head = hbox(10.0, label("● LIVE", "live-badge"), label(listOfNotNull(c.number.takeIf { it > 0 }?.let { "Channel $it" }, c.groupLabel).joinToString(" · "), "hero-source"))
         val title = hbox(20.0, logoTile(c, 84.0), label(c.name, "hero-big-title").apply { isWrapText = true; maxWidth = 620.0 }).apply { alignment = Pos.CENTER_LEFT }
         val guide = vbox(8.0).apply {
             if (now != null) {
                 val left = ((now.stop - System.currentTimeMillis()) / 60000).coerceAtLeast(0)
                 children += hbox(12.0, label("Now: ${now.title}", "hero-meta-item"), label("${time(now.start)} – ${time(now.stop)} · $left min left", "muted"))
                 children += progressBar(progressOf(now), 420.0)
-            } else children += label(c.group?.let { "Live · $it" } ?: "Live", "muted")
+            } else children += label(c.groupLabel?.let { "Live · $it" } ?: "Live", "muted")
             if (next != null) children += label("Next: ${next.title} · ${time(next.start)}", "muted")
         }
         val buttons = hbox(12.0,
@@ -270,7 +312,8 @@ class LiveTvPage : StackPane(), Refreshable, TopBarActions, Disposable {
         }
         chips.isVisible = true
         val favs = LiveTv.favourites()
-        val groups = list.groupingBy { it.group ?: "Other" }.eachCount().entries.sortedByDescending { it.value }
+        // A channel in several groups ("Animation;Kids") is under each of them.
+        val groups = list.flatMap { c -> c.groups.ifEmpty { listOf("Other") } }.groupingBy { it }.eachCount().entries.sortedByDescending { it.value }
         chipKeys = listOf(ALL, FAVOURITES) + groups.map { it.key }
         val labels = listOf("All ${list.size}", "★ Favourites ${list.count { it.key in favs }}") + groups.map { it.key }
         chips.setItems(labels, chipKeys.indexOf(group).coerceAtLeast(0))
@@ -282,13 +325,13 @@ class LiveTvPage : StackPane(), Refreshable, TopBarActions, Disposable {
             val rows = mutableListOf<Node>()
             LiveTv.recent().mapNotNull { byKey[it] }.takeIf { it.isNotEmpty() }?.let { rows += row("Recently watched", it, null) }
             list.filter { it.key in favs }.takeIf { it.isNotEmpty() }?.let { rows += row("Favourites", it, FAVOURITES) }
-            groups.take(14).forEach { (g, n) -> rows += row(g, list.filter { (it.group ?: "Other") == g }, g, n) }
+            groups.take(14).forEach { (g, n) -> rows += row(g, list.filter { g in it.groups.ifEmpty { listOf("Other") } }, g, n) }
             show(rows)
             return
         }
         val filtered = list.filter { c ->
-            (group == ALL || (group == FAVOURITES && c.key in favs) || (c.group ?: "Other") == group) &&
-                (query.isEmpty() || c.name.lowercase().contains(query) || c.group.orEmpty().lowercase().contains(query))
+            (group == ALL || (group == FAVOURITES && c.key in favs) || group in c.groups.ifEmpty { listOf("Other") }) &&
+                (query.isEmpty() || c.name.lowercase().contains(query) || c.groupLabel.orEmpty().lowercase().contains(query))
         }
         if (filtered.isEmpty()) {
             show(label(if (group == FAVOURITES) "No favourites yet. Use the star on a channel to add it." else "No channels match.", "muted"))
@@ -321,6 +364,8 @@ class LiveTvPage : StackPane(), Refreshable, TopBarActions, Disposable {
         val w = 236.0
         val (now, _) = LiveTv.nowNext(c)
         val fav = c.key in LiveTv.favourites()
+        val health = LiveTv.health(c)
+        val dead = health?.ok == false
         val pic = StackPane(logoTile(c, 64.0)).apply {
             styleClass += "channel-pic"
             setMinSize(w, 124.0); setMaxSize(w, 124.0)
@@ -346,12 +391,14 @@ class LiveTvPage : StackPane(), Refreshable, TopBarActions, Disposable {
         pic.children += star
         val info = vbox(3.0,
             label(c.name, "channel-name").apply { maxWidth = w - 24 },
-            label(now?.let { "Now: ${it.title} · ${time(it.start)}" } ?: (c.group ?: " "), "channel-now").apply { maxWidth = w - 24 },
+            label(if (dead) "Not working: ${health?.why ?: "no answer"}" else now?.let { "Now: ${it.title} · ${time(it.start)}" } ?: (c.groupLabel ?: " "),
+                "channel-now").apply { maxWidth = w - 24 },
         ).apply { pad(10.0, 12.0, 12.0, 12.0) }
         if (now != null) info.children += progressBar(progressOf(now), w - 24, 3.0).apply { VBox.setMargin(this, javafx.geometry.Insets(6.0, 0.0, 0.0, 0.0)) }
         val box = VBox(pic, info).apply {
             styleClass += "channel-card"
             setMinWidth(w); setMaxWidth(w)
+            if (dead) opacity = 0.5
             onClick { play(c) }
         }
         roundedClip(box, 12.0)
