@@ -77,9 +77,10 @@ use the universal one.
 1. Install **Downloader** (by AFTVnews) from the TV's app store.
 2. Allow it to install apps: **Fire TV:** Settings → My Fire TV → Developer options → Install unknown apps.
    **Android/Google TV:** Settings → Apps → Security & restrictions → Unknown sources.
-3. In Downloader, enter
-   `https://github.com/sherazi5110/stream-goat/releases/download/{{TAG}}/streamgoat-android-armeabi-v7a.apk`
-   (or the `arm64-v8a` one for newer TVs) and choose **Install**.
+3. In Downloader, type **`sherazi5110.github.io/stream-goat/tv`** and press **Go** (always the newest version), then
+   **Install**. If the TV says *App not installed*: uninstall the old version first, or type
+   `sherazi5110.github.io/stream-goat/apk` (the universal file). This release's file directly:
+   `https://github.com/sherazi5110/stream-goat/releases/download/{{TAG}}/streamgoat-android-armeabi-v7a.apk`.
 
 Or copy the `.apk` to a USB stick and open it with a file manager on the TV, or: `adb install -r streamgoat-android-armeabi-v7a.apk`.
 </details>

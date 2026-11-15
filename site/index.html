@@ -88,6 +88,13 @@
   .pill:hover { background: rgba(79, 141, 255, .26); }
   .feature.new { border-color: rgba(79, 141, 255, .45); background: linear-gradient(160deg, #16223f, var(--card) 60%); }
   .more { text-align: center; margin-top: 22px; }
+  .tvbox { scroll-margin-top: 76px; margin-top: 16px; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 22px 26px; }
+  .tvbox h3 { margin: 0 0 4px; font-size: 21px; }
+  .tvbox ol { margin: 10px 0 0; padding-left: 22px; color: var(--muted); }
+  .tvbox li { margin: 6px 0; }
+  .tvbox b, .tvbox code { color: var(--text); }
+  .code { display: inline-block; font: 700 20px/1 ui-monospace, Menlo, Consolas, monospace; letter-spacing: 1px; color: #fff;
+    background: var(--bg2); border: 1px solid var(--accent); border-radius: 8px; padding: 6px 10px; margin: 2px 0; }
 
   footer { border-top: 1px solid var(--line); padding: 32px 0 48px; color: var(--muted); font-size: 14px; text-align: center; }
   footer img { width: 40px; height: 40px; }
@@ -153,6 +160,7 @@
         <a class="dl" href="https://github.com/sherazi5110/stream-goat/releases/latest/download/streamgoat-android-arm64-v8a.apk">Phones and tablets<small>streamgoat-android-arm64-v8a.apk</small></a>
         <a class="dl" href="https://github.com/sherazi5110/stream-goat/releases/latest/download/streamgoat-android-armeabi-v7a.apk">Android TV, Fire TV, TV boxes<small>streamgoat-android-armeabi-v7a.apk</small></a>
         <a class="dl" href="https://github.com/sherazi5110/stream-goat/releases/latest/download/streamgoat-android-universal.apk">Not sure? Universal<small>Runs on any device (bigger download)</small></a>
+        <a class="dl" href="#tv">On a TV? Use the Downloader app<small>Type sherazi5110.github.io/stream-goat/tv</small></a>
       </div>
       <div class="platform" data-os="linux">
         <h3>Linux <span class="tag">Your device</span></h3>
@@ -160,6 +168,22 @@
         <a class="dl" href="https://github.com/sherazi5110/stream-goat/releases/latest">Ubuntu, Debian, Mint, ChromeOS (.deb)<small>sudo apt install ./streamgoat-linux_…_amd64.deb</small></a>
         <a class="dl" href="https://github.com/sherazi5110/stream-goat/releases/latest/download/streamgoat-linux.flatpak">Any distro (Flatpak)<small>flatpak install --user streamgoat-linux.flatpak</small></a>
       </div>
+    </div>
+    <div class="tvbox" id="tv">
+      <h3>📺 On a TV with the Downloader app</h3>
+      <p style="color:var(--muted);margin:0">The easiest way on Android TV, Google TV, Fire TV and TV boxes: no computer, no USB stick.</p>
+      <ol>
+        <li>Install <b>Downloader</b> (by AFTVnews) from the TV's app store (Google Play or the Amazon Appstore).</li>
+        <li>Let it install apps:
+          <b>Google TV / Android TV:</b> Settings → Apps → Security &amp; restrictions → Unknown sources → Downloader → On.
+          <b>Fire TV:</b> Settings → My Fire TV → Developer options → Install unknown apps → Downloader → On
+          (no Developer options? Settings → My Fire TV → About → press the device name 7 times).</li>
+        <li>Open Downloader and type this address in the box, then press <b>Go</b>:<br>
+          <span class="code">sherazi5110.github.io/stream-goat/tv</span></li>
+        <li>When it has downloaded, press <b>Install</b>, then <b>Open</b>. Downloader offers to delete the file afterwards: press <b>Delete</b>, it isn't needed any more.</li>
+      </ol>
+      <p style="color:var(--muted);margin:10px 0 0;font-size:14px">It always gets the newest version. If the TV says "App not installed", uninstall the old Stream Goat first
+        (back up first: Settings → Updates and backup), or type <span class="code" style="font-size:15px">sherazi5110.github.io/stream-goat/apk</span> instead (works on every device, bigger download).</p>
     </div>
     <p class="note">Step-by-step help for every device: <a href="https://github.com/sherazi5110/stream-goat/blob/main/INSTALL.md">install guide</a>.
       iPhone and iPad: use the <a href="app/">web version</a> and add it to your home screen.</p>
