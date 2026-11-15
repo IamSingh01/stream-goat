@@ -1,8 +1,9 @@
 # Google Drive backup: setting up Google sign-in
 
-Stream Goat backs up to the user's own Google Drive, in Drive's hidden **app folder** (scope
-`https://www.googleapis.com/auth/drive.appdata`): the app sees only its own backup file there, never the rest of
-the Drive. Sign-in uses Google's code sign-in for TVs and other devices: the app shows a code, the user enters it
+Stream Goat backs up to the user's own Google Drive, in a **Stream Goat backups** folder (scope
+`https://www.googleapis.com/auth/drive.file`): the app sees only the files it made itself, never the rest of the
+Drive. (Drive's hidden app folder, `drive.appdata`, can't be used: Google's code sign-in refuses it with
+*"Invalid device flow scope"*.) Sign-in uses Google's code sign-in for TVs and other devices: the app shows a code, the user enters it
 at google.com/device on a phone or computer. That works the same on phones, Android TV and Windows/Linux.
 
 For this, the project needs its own Google sign-in client. It's free and takes about ten minutes, once.
@@ -18,9 +19,10 @@ For this, the project needs its own Google sign-in client. It's free and takes a
 1. **Google Auth Platform** (in older menus: *APIs & Services → OAuth consent screen*) → **Get started**.
 2. App name `Stream Goat`, your email as support email → **Next**.
 3. Audience: **External** → **Next**. Contact email: yours → **Next** → agree → **Create**.
-4. **Data Access → Add or remove scopes** → filter for `drive.appdata` → tick
-   `.../auth/drive.appdata` ("See, create, and delete its own configuration data in your Google Drive") →
-   **Update** → **Save**. It's a *non-sensitive* scope, so no review by Google is needed.
+4. **Data Access → Add or remove scopes** → filter for `drive.file` → tick
+   `.../auth/drive.file` ("See, edit, create, and delete only the specific Google Drive files you use with this
+   app") → **Update** → **Save**. It's a *non-sensitive* scope, so no review by Google is needed. (If
+   `drive.appdata` is ticked from an earlier version of this guide, it can be removed.)
 5. **Audience → Publish app → Confirm** (status *In production*). In *Testing* only the test users you list can
    sign in, and their sign-in expires after 7 days.
 
@@ -38,7 +40,8 @@ into the app. Still, keep it in GitHub secrets rather than in the code.
 ## 3b. The web version's client
 
 The web version (https://sherazi5110.github.io/stream-goat/app/) signs in inside the browser, which needs a second
-client in the same project (the backups are shared: the web version can bring the apps' Stremio add-ons over).
+client in the **same project**: Drive lets a project see only the files that project made, so the web version and the
+apps share the backups (the web version can bring the apps' Stremio add-ons over) only within one project.
 
 1. **Clients → Create client**. Application type: **Web application**. Name: `Stream Goat web`.
 2. **Authorized JavaScript origins → Add URI**: `https://sherazi5110.github.io` (to try a preview from a
@@ -74,5 +77,5 @@ is saved there. With *Back up automatically* on (default), it's uploaded wheneve
 minutes, and on Android when the app is put away). **Restore** lists every device's backup; old ones can be
 deleted there. On a fresh install, the first screen has **Restore from Google Drive**.
 
-Users can remove the backup in Google Drive → Settings → *Manage apps* → Stream Goat → *Delete hidden app data*,
-and Stream Goat's access in their Google account → *Security → Third-party apps*.
+Users can delete the backups like any other file (the *Stream Goat backups* folder in My Drive), and remove Stream
+Goat's access in their Google account → *Security → Third-party apps*.
