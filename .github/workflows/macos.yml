@@ -52,6 +52,9 @@ jobs:
           cp -RL "$src/plugins" vlc/
           hdiutil detach /Volumes/vlc > /dev/null
           rm -f vlc/plugins/libmacosx_plugin.dylib vlc/plugins/liblua_plugin.dylib
+          # VLC's plugin cache records file dates; copied and re-signed files make it stale (slower start). VLC
+          # scans the folder itself without it.
+          rm -f vlc/plugins/plugins.dat
           ls vlc/lib
           du -sh vlc
           echo "VLC_DIR=$PWD/vlc" >> "$GITHUB_ENV"
@@ -113,11 +116,12 @@ jobs:
           app="$PWD/app/build/jpackage-mac/Stream Goat.app/Contents/MacOS/Stream Goat"
           ls -la "$(dirname "$app")"
           for tour in nav settings7; do
-            # macOS has no timeout command: perl's alarm ends the app if a tour hangs.
+            # macOS has no timeout command: perl's alarm ends the app if a tour hangs. exec { name } list keeps
+            # the path whole (a lone string would be split at the space in "Stream Goat").
             start=$(date +%s)
             set +e
             CS_SCREENSHOT="$PWD/shots/mac-$tour" CS_SCREENSHOT_ONLY=$tour CLOUDSTREAM_HOME="$PWD/shot-home" \
-              perl -e 'alarm 180; exec @ARGV or die "exec failed: $!"' "$app" > "shot-$tour.log" 2>&1
+              perl -e 'alarm 180; exec { $ARGV[0] } @ARGV or die "exec failed: $!"' "$app" > "shot-$tour.log" 2>&1
             code=$?
             set -e
             echo "tour $tour: exit $code after $(( $(date +%s) - start )) s"
