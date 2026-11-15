@@ -130,7 +130,7 @@ class CloudBackupTest {
         val none = CloudBackup.RescueDns(blocked, listOf("Cloudflare" to okhttp3.Dns { emptyList() }, "Google" to okhttp3.Dns { throw java.net.SocketTimeoutException("timeout") }))
         val error = runCatching { none.lookup("oauth2.googleapis.com") }.exceptionOrNull()
         assertTrue(error is java.net.UnknownHostException)
-        assertEquals("oauth2.googleapis.com not found (this device: No address associated with hostname; Cloudflare: no answer; Google: timeout)", error!!.message)
+        assertEquals("oauth2.googleapis.com not found (this device: No address associated with hostname; Cloudflare: no answer; Google: SocketTimeoutException timeout)", error!!.message)
         // A working DNS is used as it is.
         assertEquals(listOf(local), CloudBackup.RescueDns(okhttp3.Dns { listOf(local) }, emptyList()).lookup("oauth2.googleapis.com"))
     }

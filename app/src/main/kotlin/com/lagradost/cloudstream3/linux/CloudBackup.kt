@@ -123,8 +123,15 @@ object CloudBackup {
             val second = other?.let { runCatching { send(request.newBuilder().url(it).build()) } }
             second?.getOrNull()?.let { return@withContext it }
             val tried = (second?.exceptionOrNull() as? java.net.UnknownHostException)?.message?.let { "; $it" } ?: ""
-            throw CloudException("Couldn't reach Google: ${e.message}$tried. If an ad blocker, a VPN or Private DNS is on, " +
-                "allow googleapis.com there, or try another network.")
+            // Is it only Google, or does this app reach nothing? (Android answers "No address associated with
+            // hostname" for every name when the app is blocked from the internet: a firewall, data limits.)
+            val others = runCatching { Dns.SYSTEM.lookup("github.com"); "other sites are found" }.getOrElse { "other sites aren't found either" }
+            val advice = if (others.startsWith("other sites are"))
+                "Something on this device or network blocks Google: an ad blocker, a VPN or firewall app, Private DNS or the router. " +
+                    "Allow googleapis.com and accounts.google.com there, or try another network."
+            else "This app may be blocked from the internet on this device: check its settings (data usage, background data), " +
+                "a firewall or ad-block app, or the network."
+            throw CloudException("Couldn't reach Google: ${e.message}$tried; $others. $advice")
         }
     }
 
@@ -157,7 +164,9 @@ object CloudBackup {
                         if (found.isNotEmpty()) return found
                         why += "$name: no answer"
                     } catch (x: Exception) {
-                        why += "$name: ${(x.message ?: x.javaClass.simpleName).take(70)}"
+                        // DNS over HTTPS reports only the name; the reason (blocked, timeout, certificate…) is the cause.
+                        val reason = generateSequence(x as Throwable) { it.cause }.last()
+                        why += "$name: ${reason.javaClass.simpleName}${reason.message?.takeIf { it != hostname }?.let { " ${it.take(70)}" } ?: ""}"
                     }
                 }
                 throw java.net.UnknownHostException("$hostname not found (${why.joinToString("; ")})")
