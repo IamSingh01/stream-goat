@@ -379,7 +379,9 @@ class SettingsPage : StackPane(), Refreshable {
                     label(if (vlcEngine) "Ready" else "Not installed", if (vlcEngine) "good-text" else "error-text")),
                 row("Battery saver", "For low-end PCs and laptops on battery: skips the H.264 deblocking filter (much less CPU), buffers longer and does no extra processing. Hardware decoding stays on.",
                     Switch(Settings.batterySaver) { Settings.batterySaver = it; Vlc.optionsChanged(Playback.active != null) }),
-                row("Anime enhance", "Crisper line art for animation in low quality: small video is upscaled to your screen with Lanczos instead of a soft stretch. Auto: anime and cartoons up to 1440p. Also in the player's Picture menu (Z).",
+                row("Find sources before you press Play", "When a title's page opens, its sources are looked up in the background, so Play starts sooner. Found sources are kept for 20 minutes.",
+                    Switch(Settings.prepareSources) { Settings.prepareSources = it }),
+                row("Anime enhance", "Crisper line art for animation in low quality: small video is upscaled to your screen with Lanczos instead of a soft stretch. Auto: anime and cartoons up to 1440p. In the player: the Picture menu (Z) shows whether it's sharpening the video; E turns it on or off.",
                     combo(com.lagradost.cloudstream3.linux.Picture.modes.map { it.first }, Settings.animeEnhance, { com.lagradost.cloudstream3.linux.Picture.modeName(it) }) { Settings.animeEnhance = it; Vlc.optionsChanged(Playback.active != null) }),
                 row("HDR colour fix", "HDR10, Dolby Vision and HLG video is shown in normal (SDR) colour here, which on its own looks grey and washed out; this corrects contrast and colour. Auto: sources marked HDR or Dolby Vision.",
                     combo(com.lagradost.cloudstream3.linux.Picture.modes.map { it.first }, Settings.hdrFix, { com.lagradost.cloudstream3.linux.Picture.modeName(it) }) { Settings.hdrFix = it }),
@@ -618,17 +620,26 @@ class SettingsPage : StackPane(), Refreshable {
                         p.name.orEmpty().ifEmpty { p.internalName } to runCatching { CompatChecker.check(File(p.filePath)) }
                     }
                 }
-                compat.children.setAll(results.map { (name, r) ->
+                compat.children.setAll(results.sortedByDescending { (_, r) -> r.getOrNull()?.count { it.matters } ?: Int.MAX_VALUE }.map { (name, r) ->
                     val issues = r.getOrNull()
-                    // UI-only gaps (settings screens, dialogs) don't affect browsing or playback.
-                    val relevant = issues?.filterNot { i -> listOf("Fragment", "Dialog", "View", "Adapter", "Layout", "Widget", "R$", "Preference").any { i.usedIn.contains(it) } }
+                    // Only what could stop browsing or playing counts: an Android screen of the extension (its settings,
+                    // dialogs, Compose UI) isn't used here, and a step the extension guards itself just falls back.
+                    val relevant = issues?.filter { it.matters }.orEmpty()
+                    val screens = issues?.count { it.screenOnly } ?: 0
+                    val guarded = issues?.count { it.handled && !it.screenOnly } ?: 0
+                    val os = com.lagradost.cloudstream3.linux.Os.name
+                    val note = listOfNotNull(
+                        "its Android settings screens aren't available on $os".takeIf { screens > 0 },
+                        "$guarded Android-only check(s) fall back by themselves".takeIf { guarded > 0 },
+                    ).joinToString("; ")
                     vbox(3.0,
                         hbox(8.0, label(name, "bold"), spacer(), label(when {
                             issues == null -> "Couldn't check"
-                            relevant!!.isEmpty() -> "Compatible"
-                            else -> "${relevant.size} issue(s)"
-                        }, if (relevant?.isEmpty() == true) "good-text" else "error-text", "small")),
-                        *relevant.orEmpty().take(6).map { label(it.toString(), "muted", "small").apply { isWrapText = true } }.toTypedArray(),
+                            relevant.isEmpty() -> "Works on $os"
+                            else -> "${relevant.size} issue(s) may stop it"
+                        }, if (issues != null && relevant.isEmpty()) "good-text" else "error-text", "small")),
+                        *listOfNotNull(note.takeIf { it.isNotEmpty() }?.let { label(it.replaceFirstChar { c -> c.uppercase() } + ".", "faint", "small").apply { isWrapText = true } }).toTypedArray(),
+                        *relevant.take(6).map { label(it.toString(), "muted", "small").apply { isWrapText = true } }.toTypedArray(),
                     ).apply { styleClass += "card-row" }
                 })
             }
@@ -704,8 +715,16 @@ class SettingsPage : StackPane(), Refreshable {
                     items.setAll(1, 2, 3, 4, 5); value = Settings.parallelDownloads
                     setOnAction { Settings.parallelDownloads = value }
                 }),
+                row("Connections per download", "Like a download manager (IDM): a file is fetched in 4 MB pieces, or a stream in segments, " +
+                    "this many at the same time. More is usually faster; some sites limit connections (then try 4).", javafx.scene.control.ComboBox<Int>().apply {
+                    items.setAll(1, 2, 4, 6, 8, 12, 16); value = Settings.downloadConnections
+                    setOnAction { Settings.downloadConnections = value }
+                }),
+                row("Ask which source and quality", "When you press Download, choose the source and, for streams, the quality. Off: the best one is picked.",
+                    Switch(Settings.downloadAsk) { Settings.downloadAsk = it }),
             ),
-            section("Backup",
+            section("Google Drive backup", *cloudBackupRows(::row) { open("storage") }.toTypedArray()),
+            section("Backup file",
                 row("Back up", "Settings, profiles, My list, history and progress, repositories, the list of extensions and their settings, Live TV sources and Stremio add-ons, in one file. It also works with the Android app.",
                     button("Back up…", Icons.DOWNLOAD, "btn-ghost", "btn-small") {
                         val file = javafx.stage.FileChooser().apply {
@@ -991,7 +1010,9 @@ class SettingsPage : StackPane(), Refreshable {
             Triple("Player", "S", "Sources"),
             Triple("Player", "C", "Subtitles (and online search)"),
             Triple("Player", "A", "Audio language and equalizer"),
-            Triple("Player", "Z", "Cycle zoom (fit, fill, stretch, …)"),
+            Triple("Player", "Z", "Picture menu: zoom, anime enhance, HDR colour fix"),
+            Triple("Player", "Shift + Z", "Cycle zoom (fit, fill, stretch, …)"),
+            Triple("Player", "E", "Anime enhance on / off (says whether it's sharpening this video)"),
             Triple("Player", "[  /  ]", "Slower / faster"),
             Triple("Player", "G  /  H", "Subtitles earlier / later"),
             Triple("Player", "0 – 9", "Jump to 0 % – 90 %"),
