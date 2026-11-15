@@ -2,7 +2,7 @@
 
 <p align="center"><img src="packaging/linux/cloudstream-linux.png" width="128" alt="Stream Goat logo: a goat chewing grass in front of a rainbow circle"></p>
 
-<p align="center"><b>Movies, series, anime and Live TV on Windows, Linux, Android phones and Android TV.</b><br>
+<p align="center"><b>Movies, series, anime and Live TV on Windows, macOS, Linux, Android phones and Android TV.</b><br>
 Created by <b>Syed Ali Hamza</b></p>
 
 ![Stream Goat's start animation: the goat chewing its grass under an arc of stars](docs/screenshots/intro.png)
@@ -27,6 +27,17 @@ Every file is on the **[latest release](https://github.com/sherazi5110/stream-go
 Java and **VLC are included**, so there's nothing else to install. The installer isn't code-signed yet: if Windows says
 *"Windows protected your PC"*, click **More info → Run anyway**. Your data lives in `%APPDATA%\Stream Goat`; installing
 a newer `.msi` updates in place. [More: INSTALL.md → Windows](INSTALL.md)
+
+### macOS (Apple Silicon: M1, M2, M3, M4)
+
+| File | What it is |
+|---|---|
+| `streamgoat-macos-arm64-<version>.dmg` | Open it and drag **Stream Goat** into **Applications**. |
+
+Java and **VLC are included**. The app isn't registered with Apple yet, so the first time macOS says *"Apple could not
+verify Stream Goat"*: click **Done**, open **System Settings → Privacy & Security**, scroll down and click
+**Open Anyway** next to Stream Goat. You only do this once. Your data lives in
+`~/Library/Application Support/Stream Goat`. [More: INSTALL.md → macOS](INSTALL.md#macos-apple-silicon)
 
 ### Android phones, tablets and Android TV
 
