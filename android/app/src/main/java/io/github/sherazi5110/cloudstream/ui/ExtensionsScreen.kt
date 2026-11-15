@@ -332,7 +332,9 @@ private fun StremioTab() {
     LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         item {
             Text("Add-ons are installed by the address of their manifest.json (or a stremio:// link). Streams from every add-on that has them " +
-                "play in the built-in player; torrent-only add-ons aren't supported.", style = MaterialTheme.typography.bodySmall)
+                "play in the built-in player. Torrent add-ons such as Torrentio: set them up with a debrid service at their configure page " +
+                "(torrentio.strem.fun/configure) and install that link, or turn on Settings → Player → Torrent streaming.",
+                style = MaterialTheme.typography.bodySmall)
             Row(Modifier.padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                 OutlinedTextField(url, { url = it }, singleLine = true, modifier = Modifier.weight(1f), placeholder = { Text("https://…/manifest.json") })
                 PillButton("Install", Icons.Filled.Download, Modifier.padding(start = 10.dp), compact = true) {

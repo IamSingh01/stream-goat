@@ -128,6 +128,15 @@ dependencies {
 
     // The player: libVLC for Android (Maven Central), with this app's own controls.
     implementation("org.videolan.android:libvlc-all:3.6.5")
+    // Torrent streaming (opt-in, Settings → Player): libtorrent through libtorrent4j, native code for each ABI.
+    val libtorrent = "2.1.0-39"
+    implementation("org.libtorrent4j:libtorrent4j:$libtorrent")
+    implementation("org.libtorrent4j:libtorrent4j-android-arm64:$libtorrent")
+    implementation("org.libtorrent4j:libtorrent4j-android-arm:$libtorrent")
+    implementation("org.libtorrent4j:libtorrent4j-android-x86:$libtorrent")
+    implementation("org.libtorrent4j:libtorrent4j-android-x86_64:$libtorrent")
+    // Unit tests run on this computer (Linux): its native library, for a seeder-to-player test on localhost.
+    testImplementation("org.libtorrent4j:libtorrent4j-linux:$libtorrent")
     // NewPipe Extractor, which the official app ships: extensions such as YoutubeProvider (official repository) use it.
     implementation("com.github.teamnewpipe:NewPipeExtractor:v0.26.3")
     // QR codes for "Add from phone" (scan with the phone's camera).

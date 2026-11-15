@@ -281,6 +281,7 @@ private fun PlayerSection() {
     OutlinedTextField(audio, { audio = it; Settings.audioLanguage = it }, singleLine = true, modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
         label = { Text("Audio to pick, e.g. ja or hi,en") })
     Hint("Leave empty for the stream's default. Online subtitles (OpenSubtitles, no account) are in the player's Subtitles menu.")
+    TorrentSettings()
 }
 
 @Composable
@@ -447,4 +448,33 @@ private fun AboutSection() {
         reportOnGitHub(context, null)
     }
     Hint("GPL-3.0. Extensions and their content come from third parties; this app hosts nothing.")
+}
+
+/** Settings → Player → Torrents: off until the person has read what it means. */
+@Composable
+private fun TorrentSettings() {
+    Heading("Torrents")
+    var on by remember { mutableStateOf(io.github.sherazi5110.cloudstream.Torrents.enabled) }
+    var asking by remember { mutableStateOf(false) }
+    SwitchRow("Torrent streaming", "Plays torrent sources (Torrentio and other add-ons, magnet links) while they download. Off by default.", on) {
+        if (it) asking = true else { on = false; io.github.sherazi5110.cloudstream.Torrents.enabled = false }
+    }
+    if (on) {
+        var limit by remember { mutableStateOf(io.github.sherazi5110.cloudstream.Torrents.uploadLimitKb) }
+        Text("Upload limit while watching", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 8.dp, bottom = 4.dp))
+        ChoiceChips(listOf(50, 100, 500, 0), { if (it == 0) "No limit" else if (it >= 1000) "${it / 1000} MB/s" else "$it KB/s" }, { it == limit }) {
+            limit = it; io.github.sherazi5110.cloudstream.Torrents.uploadLimitKb = it
+        }
+    }
+    Hint("Faster and private: set Torrentio up with a debrid service (Real-Debrid, AllDebrid, Premiumize, TorBox…) at " +
+        "torrentio.strem.fun/configure and install that link instead. Its streams are then ordinary links, no torrenting on this device.")
+    if (asking) SimpleDialog("Turn on torrent streaming?", { asking = false }, confirm = "I understand, turn it on", onConfirm = {
+        on = true; io.github.sherazi5110.cloudstream.Torrents.enabled = true; asking = false
+    }) {
+        Hint("While a torrent plays, this device downloads it from other people and also uploads parts of it to them; that's " +
+            "how BitTorrent works. Your IP address is visible to everyone sharing the same torrent, and in many countries " +
+            "copyright holders watch torrents for that. Many people use a VPN.")
+        Hint("Only stream what you're allowed to. Uploading is limited (Upload limit, below), and the downloaded file is " +
+            "deleted when you stop watching. A debrid service avoids all this (see below the switch).")
+    }
 }

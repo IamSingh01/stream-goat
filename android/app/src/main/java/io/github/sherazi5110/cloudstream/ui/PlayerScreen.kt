@@ -451,7 +451,10 @@ private fun LoadingOverlay(c: PlayerController, onChoose: () -> Unit) {
             Text(c.response.name, style = MaterialTheme.typography.displayMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Text(if (c.playables.size > 1) c.playable.label else c.api.name, style = MaterialTheme.typography.titleMedium, color = Palette.muted, modifier = Modifier.padding(top = 6.dp))
             Spacer(Modifier.height(24.dp))
+            val torrent = c.torrentStatus
             val status = when {
+                torrent != null && !c.started -> "Torrent · " + (if (torrent.peers == 0 && torrent.ready == 0f) torrent.phase
+                    else "${torrent.peers} peer${if (torrent.peers == 1) "" else "s"} · ${"%.1f".format(torrent.bytesPerSecond / 1_048_576.0)} MB/s · buffering ${(torrent.ready * 100).toInt()}%")
                 c.current != null -> "Starting ${c.current!!.name}…"
                 c.searching -> "Looking for sources…"
                 c.links.isEmpty() -> c.searchError ?: "No sources found"

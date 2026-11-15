@@ -159,7 +159,11 @@ class PlayerController(
             when (event) {
                 is LinkEvent.Link -> {
                     val link = event.link
-                    if (link.type == ExtractorLinkType.MAGNET || link.type == ExtractorLinkType.TORRENT) return@collect
+                    // Torrents play only with torrent streaming on (Settings → Player); otherwise they're counted, to say so.
+                    if (io.github.sherazi5110.cloudstream.Torrents.isTorrent(link) && !io.github.sherazi5110.cloudstream.Torrents.enabled) {
+                        skippedTorrents++
+                        return@collect
+                    }
                     if (links.none { it.url == link.url }) links.add(link)
                     // The source that last played this title starts as soon as it's found (Continue Watching, Resume).
                     if (autoPlay && current == null && io.github.sherazi5110.cloudstream.LastSource.find(api.name, response.url, listOf(link)) != null) {
@@ -174,14 +178,31 @@ class PlayerController(
                     searching = false
                     event.error?.let { searchError = it.message ?: it.toString() }
                     if (autoPlay && current == null) ranked().firstOrNull()?.let { play(it) }
-                    if (links.isEmpty()) searchError = searchError ?: "No sources found"
+                    if (links.isEmpty()) searchError = if (skippedTorrents > 0)
+                        "Only torrent sources were found ($skippedTorrents). Turn on Settings → Player → Torrent streaming, or set the add-on " +
+                            "up with a debrid service (Torrentio: torrentio.strem.fun/configure)."
+                    else searchError ?: "No sources found"
                 }
             }
         }
     }
 
-    /** Best first: closest to the preferred quality without going over it. */
-    fun ranked(): List<ExtractorLink> = Engine.rank(links.toList())
+    /** Best first: closest to the preferred quality without going over it; torrents after direct links. */
+    fun ranked(): List<ExtractorLink> = Engine.rank(links.toList()).sortedBy { io.github.sherazi5110.cloudstream.Torrents.isTorrent(it) }
+
+    /** Torrent sources left out because torrent streaming is off. */
+    private var skippedTorrents = 0
+    /** While a torrent connects and buffers: peers, speed, how much of the start is there. */
+    var torrentStatus by mutableStateOf<io.github.sherazi5110.cloudstream.Torrents.Status?>(null)
+        private set
+    private var torrentJob: Job? = null
+    private var openTorrent: String? = null
+
+    private fun closeTorrent() {
+        torrentJob?.cancel()
+        torrentStatus = null
+        openTorrent?.let { uri -> openTorrent = null; Thread { io.github.sherazi5110.cloudstream.Torrents.close(uri) }.start() }
+    }
 
     /**
      * Like the official app: while the extension is still finding links nothing starts, so the best of all of
@@ -252,6 +273,27 @@ class PlayerController(
 
     /** Starts [link] ([variantUrl]: one of its qualities instead), keeping the position when switching mid-playback. */
     fun play(link: ExtractorLink, variantUrl: String? = null) {
+        if (variantUrl == null && openTorrent != null && openTorrent != link.url) closeTorrent()
+        // A torrent: join it and buffer its start, then play it from this device's own little server.
+        if (variantUrl == null && io.github.sherazi5110.cloudstream.Torrents.isTorrent(link)) {
+            grace?.cancel(); watchdog?.cancel()
+            current = link
+            tried += link.url
+            error = null; ended = false; buffering = true
+            openTorrent = link.url
+            torrentJob?.cancel()
+            torrentJob = scope.launch {
+                val local = runCatching { io.github.sherazi5110.cloudstream.Torrents.open(link.url) { st -> torrentStatus = st } }
+                if (current?.url != link.url) return@launch
+                local.onSuccess { url -> play(link, url) }.onFailure { e ->
+                    if (e is kotlinx.coroutines.CancellationException) return@onFailure
+                    torrentStatus = null
+                    App.toast("Torrent: ${e.message}")
+                    failover()
+                }
+            }
+            return
+        }
         grace?.cancel()
         playCalledAt = android.os.SystemClock.elapsedRealtime()
         val keep = if (started) time.takeIf { it > 0 } ?: startAt else startAt
@@ -297,7 +339,7 @@ class PlayerController(
         // a TV channel after 12 s (it has nothing else to wait for).
         watchdog?.cancel()
         if (!started) watchdog = scope.launch {
-            delay(if (api is io.github.sherazi5110.cloudstream.LiveApi) 12_000 else 25_000)
+            delay(if (api is io.github.sherazi5110.cloudstream.LiveApi) 12_000 else if (io.github.sherazi5110.cloudstream.Torrents.isTorrent(link)) 60_000 else 25_000)
             if (!started && current?.url == link.url) failover()
         }
         selectedSubtitle?.let { url ->
@@ -569,6 +611,7 @@ class PlayerController(
     fun release() {
         io.github.sherazi5110.cloudstream.CrashReport.playing(null)
         save()
+        closeTorrent()
         scope.cancel()
         main.removeCallbacksAndMessages(null)
         player.setEventListener(null)
