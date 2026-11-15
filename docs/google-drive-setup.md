@@ -53,10 +53,12 @@ For a local build, set the same two environment variables before running Gradle.
 ## What users see
 
 Settings → *Updates and backup* (Android) or *Storage* (Windows/Linux) → **Google Drive backup → Sign in with
-Google**: a code and a QR code for google.com/device. After signing in, a backup already in the account is
-offered for restoring; otherwise this device's backup is saved there. With *Back up automatically* on (default),
-it's uploaded whenever something changed (checked every 15 minutes, and on Android when the app is put away).
-On a fresh install, the first screen has **Restore from Google Drive**.
+Google**: a code and a QR code for google.com/device. Each device keeps its own backup file
+(`stream-goat-backup-<device>.json`), so a phone and a TV on one account don't overwrite each other. After signing
+in, the other devices' backups are offered for restoring (pick the phone's on the TV); otherwise this device's backup
+is saved there. With *Back up automatically* on (default), it's uploaded whenever something changed (checked every 5
+minutes, and on Android when the app is put away). **Restore** lists every device's backup; old ones can be
+deleted there. On a fresh install, the first screen has **Restore from Google Drive**.
 
 Users can remove the backup in Google Drive → Settings → *Manage apps* → Stream Goat → *Delete hidden app data*,
 and Stream Goat's access in their Google account → *Security → Third-party apps*.

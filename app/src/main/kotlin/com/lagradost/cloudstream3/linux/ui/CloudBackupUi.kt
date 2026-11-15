@@ -67,25 +67,37 @@ class CloudSignInSheet(private val onDone: () -> Unit) : StackPane(), Disposable
     }
 
     companion object {
-        /** A backup already in the account is offered; otherwise this computer's is saved there. */
+        /** Backups of other devices (the phone's, the TV's) are offered; otherwise this computer's is saved there. */
         fun afterSignIn(onDone: () -> Unit) {
             ui.launch {
-                val remote = runCatching { CloudBackup.remote() }.getOrNull()
-                if (remote != null) offerRestore(remote, onDone)
+                val list = runCatching { CloudBackup.backups() }.getOrDefault(emptyList())
+                if (list.any { !it.mine }) offerRestore(list, onDone)
                 else runCatching { CloudBackup.backupNow() }.onSuccess { Toasts.show("Backed up to Google Drive"); onDone() }
             }
         }
 
-        fun offerRestore(remote: CloudBackup.Remote, onDone: () -> Unit) {
+        private fun label(r: CloudBackup.Remote): String =
+            (r.device ?: "A device") + (if (r.mine) " (this computer)" else "") + " · saved " +
+                (if (r.time > 0) java.time.Instant.ofEpochMilli(r.time).atZone(java.time.ZoneId.systemDefault())
+                    .format(java.time.format.DateTimeFormatter.ofPattern("d MMM, HH:mm")) else r.modified) +
+                (r.app?.let { " · Stream Goat $it" } ?: "")
+
+        /** Every device's backup: pick the one to restore here. */
+        fun offerRestore(list: List<CloudBackup.Remote>, onDone: () -> Unit) {
+            val labels = list.map(::label)
+            val pick = javafx.scene.control.ChoiceDialog(labels.first(), labels).apply {
+                headerText = "Restore a backup"
+                contentText = "Each signed-in device keeps its own backup. Restore:"
+            }.showAndWait().orElse(null) ?: return
+            val remote = list[labels.indexOf(pick)]
             val alert = javafx.scene.control.Alert(javafx.scene.control.Alert.AlertType.CONFIRMATION,
-                "Google Drive has a backup" + (remote.device?.let { " from $it" } ?: "") + ", saved " + remote.modified.replace('T', ' ').substringBefore('.') +
-                    (remote.app?.let { " (Stream Goat $it)" } ?: "") + ".\n\nRestore it? This replaces this computer's settings, profiles, " +
+                "${label(remote)}.\n\nRestore it? This replaces this computer's settings, profiles, " +
                     "My list, history, repositories and extensions with the backup's.",
-                javafx.scene.control.ButtonType.OK, javafx.scene.control.ButtonType.CANCEL).apply { headerText = "Restore your backup?" }
+                javafx.scene.control.ButtonType.OK, javafx.scene.control.ButtonType.CANCEL).apply { headerText = "Restore this backup?" }
             if (alert.showAndWait().orElse(null) != javafx.scene.control.ButtonType.OK) return
             Toasts.show("Restoring…")
             ui.launch {
-                runCatching { CloudBackup.restore() }
+                runCatching { CloudBackup.restore(remote) }
                     .onSuccess { got -> Toasts.show("Restored${if (got.isNotEmpty()) " with ${got.size} extension(s)" else ""}. Restart the app to finish.", seconds = 10.0) }
                     .onFailure { Toasts.show("Couldn't restore: ${it.message}") }
                 onDone()
@@ -116,8 +128,8 @@ fun cloudBackupRows(row: (String, String?, Node) -> Node, refresh: () -> Unit): 
                 },
                 button("Restore", Icons.CLOUD_DOWNLOAD, "btn-ghost", "btn-small") {
                     ui.launch {
-                        runCatching { CloudBackup.remote() }.onSuccess { r ->
-                            if (r == null) Toasts.show("There's no backup in this Google account yet") else CloudSignInSheet.offerRestore(r, refresh)
+                        runCatching { CloudBackup.backups() }.onSuccess { list ->
+                            if (list.isEmpty()) Toasts.show("There's no backup in this Google account yet") else CloudSignInSheet.offerRestore(list, refresh)
                         }.onFailure { Toasts.show("Couldn't reach Google Drive: ${it.message}") }
                     }
                 },
@@ -125,6 +137,6 @@ fun cloudBackupRows(row: (String, String?, Node) -> Node, refresh: () -> Unit): 
                     ui.launch { CloudBackup.signOut(); Toasts.show("Signed out. The backup stays in your Google Drive."); refresh() }
                 },
             )),
-        row("Back up automatically", "When something changed, every 15 minutes.", Switch(CloudBackup.auto) { CloudBackup.auto = it }),
+        row("Back up automatically", "When something changed, every 5 minutes. Each device keeps its own backup.", Switch(CloudBackup.auto) { CloudBackup.auto = it }),
     )
 }

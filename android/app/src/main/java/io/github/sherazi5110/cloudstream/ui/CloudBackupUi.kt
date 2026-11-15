@@ -7,14 +7,18 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.CloudUpload
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Devices
 import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -40,16 +44,18 @@ import kotlinx.coroutines.launch
 /** Google Drive backup: what's open right now (the dialogs can be opened from Settings or the first-run screen). */
 object CloudUi {
     var signingIn by mutableStateOf(false)
-    /** A backup found in the account, offered for restoring. */
-    var offerRestore by mutableStateOf<CloudBackup.Remote?>(null)
+    /** Every device's backup in the account, to pick one to restore (the phone's on the TV…). */
+    var choosing by mutableStateOf<List<CloudBackup.Remote>?>(null)
+    /** The backup picked, waiting for "Restore". */
+    var confirm by mutableStateOf<CloudBackup.Remote?>(null)
     var restored by mutableStateOf(false)
 
-    /** Sign in (if needed), then offer the backup found in the account. */
+    /** Sign in (if needed), then list the backups in the account. */
     fun restoreFromDrive() {
         if (!CloudBackup.state.value.signedIn) { signingIn = true; return }
         App.scope.launch {
-            runCatching { CloudBackup.remote() }
-                .onSuccess { r -> if (r == null) App.toast("There's no backup in this Google account yet") else offerRestore = r }
+            runCatching { CloudBackup.backups() }
+                .onSuccess { list -> if (list.isEmpty()) App.toast("There's no backup in this Google account yet") else choosing = list }
                 .onFailure { App.toast("Couldn't reach Google Drive: ${it.message}") }
         }
     }
@@ -72,6 +78,10 @@ private fun ago(ms: Long): String {
         else -> "${min / (24 * 60)} days ago"
     }
 }
+
+/** "Lenovo TB522FU · 3 min ago · Stream Goat 8.0.1" */
+private fun CloudBackup.Remote.describe(): String =
+    listOfNotNull(ago(time), app?.let { "Stream Goat $it" }).joinToString(" · ")
 
 private fun date(iso: String): String = runCatching {
     java.time.Instant.parse(iso).atZone(java.time.ZoneId.systemDefault())
@@ -96,7 +106,7 @@ internal fun CloudBackupSection() {
     Text("Signed in as ${state.email ?: "your Google account"}", style = MaterialTheme.typography.bodyLarge)
     Hint("Last backup: ${ago(state.lastBackup)}" + (state.busy?.let { " · $it" } ?: "") + (state.error?.let { " · Problem: $it" } ?: ""))
     var auto by remember { mutableStateOf(CloudBackup.auto) }
-    SwitchRow("Back up automatically", "When something changed: every 15 minutes, and when you leave the app.", auto) { auto = it; CloudBackup.auto = it }
+    SwitchRow("Back up automatically", "When something changed: every 5 minutes, and when you leave the app. Each device keeps its own backup.", auto) { auto = it; CloudBackup.auto = it }
     Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(top = 6.dp)) {
         PillButton("Back up now", Icons.Filled.CloudUpload, compact = true) {
             App.scope.launch {
@@ -115,7 +125,8 @@ internal fun CloudBackupSection() {
 @Composable
 fun CloudDialogs() {
     if (CloudUi.signingIn) SignInDialog()
-    CloudUi.offerRestore?.let { RestoreDialog(it) }
+    CloudUi.choosing?.let { BackupPicker(it) }
+    CloudUi.confirm?.let { RestoreDialog(it) }
     if (CloudUi.restored) {
         val context = LocalContext.current
         SimpleDialog("Restored", { CloudUi.restored = false }, confirm = "Restart now", onConfirm = { restartApp(context) }) {
@@ -134,10 +145,10 @@ private fun SignInDialog() {
             runCatching { CloudBackup.finishSignIn(s) }.onSuccess {
                 CloudUi.signingIn = false
                 App.toast("Signed in as ${CloudBackup.state.value.email ?: "your Google account"}")
-                // A backup already in the account is offered; otherwise this device's is saved there now.
+                // Backups of other devices (the phone's, on the TV) are offered; otherwise this device's is saved now.
                 App.scope.launch {
-                    val remote = runCatching { CloudBackup.remote() }.getOrNull()
-                    if (remote != null) CloudUi.offerRestore = remote
+                    val list = runCatching { CloudBackup.backups() }.getOrDefault(emptyList())
+                    if (list.any { !it.mine }) CloudUi.choosing = list
                     else runCatching { CloudBackup.backupNow() }.onSuccess { App.toast("Backed up to Google Drive") }
                 }
             }.onFailure { error = it.message }
@@ -168,20 +179,49 @@ internal fun SignInBody(signIn: CloudBackup.SignIn?, error: String?) {
         }
 }
 
+/** Every device's backup in the account: pick one to restore, or delete an old device's. */
+@Composable
+private fun BackupPicker(list: List<CloudBackup.Remote>) {
+    var backups by remember(list) { mutableStateOf(list) }
+    SimpleDialog("Restore a backup", { CloudUi.choosing = null }) {
+        Hint("Each device that's signed in keeps its own backup. Pick the one to copy to this device.")
+        backups.forEach { r ->
+            Row(
+                Modifier.padding(top = 6.dp).fillMaxWidth().card(RoundedCornerShape(12.dp), focusScale = 1.02f) { CloudUi.choosing = null; CloudUi.confirm = r }
+                    .background(Palette.surfaceHigh, RoundedCornerShape(12.dp)).padding(horizontal = 14.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Icon(Icons.Filled.Devices, null, tint = Palette.muted, modifier = Modifier.size(24.dp))
+                Column(Modifier.weight(1f)) {
+                    Text((r.device ?: "A device") + if (r.mine) " (this device)" else "", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
+                    Text(r.describe(), style = MaterialTheme.typography.bodySmall, color = Palette.muted)
+                }
+                Icon(Icons.Filled.Delete, "Delete this backup", tint = Palette.muted, modifier = Modifier.size(36.dp).card(RoundedCornerShape(50)) {
+                    App.scope.launch {
+                        runCatching { CloudBackup.delete(r) }.onSuccess { backups = backups - r; App.toast("Backup deleted") }
+                            .onFailure { App.toast("Couldn't delete: ${it.message}") }
+                    }
+                }.padding(7.dp))
+            }
+        }
+        if (backups.isEmpty()) Hint("No backups left in this Google account.")
+    }
+}
+
 @Composable
 private fun RestoreDialog(remote: CloudBackup.Remote) {
     val context = LocalContext.current
-    SimpleDialog("Restore your backup?", { CloudUi.offerRestore = null }, confirm = "Restore", onConfirm = {
-        CloudUi.offerRestore = null
+    SimpleDialog("Restore this backup?", { CloudUi.confirm = null }, confirm = "Restore", onConfirm = {
+        CloudUi.confirm = null
         App.toast("Restoring…")
         App.scope.launch {
-            runCatching { CloudBackup.restore() }
+            runCatching { CloudBackup.restore(remote) }
                 .onSuccess { CloudUi.restored = true }
                 .onFailure { App.toast("Couldn't restore: ${it.message}") }
         }
     }) {
-        Hint("Google Drive has a backup" + (remote.device?.let { " from $it" } ?: "") + ", saved ${date(remote.modified)}" +
-            (remote.app?.let { " (Stream Goat $it)" } ?: "") + ".")
+        Hint("The backup" + (remote.device?.let { " from $it" } ?: "") + (if (remote.mine) " (this device)" else "") +
+            ", saved ${date(remote.modified)}" + (remote.app?.let { " (Stream Goat $it)" } ?: "") + ".")
         Hint("Restoring replaces this device's settings, profiles, My list, history, repositories and extensions with the backup's. " +
             "The extensions are downloaded again.")
     }

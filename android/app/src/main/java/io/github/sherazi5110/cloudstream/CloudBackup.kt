@@ -29,14 +29,18 @@ import java.security.MessageDigest
  * The same works on phones, Android TV and Windows/Linux.
  *
  * The backup (the same file as Settings → Backup) is kept in the Drive's hidden app folder (scope drive.appdata):
- * the app sees only its own file there, never the rest of the Drive. With automatic backup on, it's uploaded when
- * something changed (checked every 15 minutes and when the app goes to the background).
+ * the app sees only its own files there, never the rest of the Drive. Each device keeps its own backup file, so a
+ * phone and a TV on the same account don't overwrite each other, and Restore lists every device's backup (restore
+ * the phone's on the TV). With automatic backup on, it's uploaded when something changed (checked every 5 minutes
+ * and when the app goes to the background).
  *
  * The Google client id comes from the build (GitHub secrets GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET, see
  * docs/google-drive-setup.md). Builds without it show that Google sign-in isn't set up.
  */
 object CloudBackup {
-    const val FILE_NAME = "stream-goat-backup.json"
+    const val FILE_PREFIX = "stream-goat-backup"
+    /** Automatic backup: checked this often, uploaded only when something changed. */
+    const val AUTO_INTERVAL_MS = 5 * 60_000L
     const val SCOPE = "https://www.googleapis.com/auth/drive.appdata"
 
     /** Google's addresses; tests point them at a local server. */
@@ -75,6 +79,12 @@ object CloudBackup {
     var auto: Boolean
         get() = prefs.getBoolean("auto", true)
         set(v) { prefs.edit().putBoolean("auto", v).apply() }
+
+    /** This installation's own backup file in Drive (never part of a backup, so a restore keeps it). */
+    val deviceId: String
+        get() = prefs.getString("device_id", null) ?: java.util.UUID.randomUUID().toString().also {
+            prefs.edit().putString("device_id", it).commit()
+        }
 
     // ------------------------------------------------------------------ sign-in
 
@@ -193,17 +203,36 @@ object CloudBackup {
 
     // ------------------------------------------------------------------ backup file
 
-    /** The backup in Drive: when it was saved and by which device. */
-    data class Remote(val id: String, val modified: String, val device: String?, val app: String?, val size: Long)
+    /** A backup in Drive: which device saved it, when, with which app version. */
+    data class Remote(val id: String, val modified: String, val device: String?, val app: String?, val size: Long, val deviceId: String?) {
+        /** This device's own backup. */
+        val mine: Boolean get() = deviceId != null && deviceId == CloudBackup.deviceId
+        /** When it was saved, in milliseconds (0 if unknown). */
+        val time: Long get() = runCatching { java.time.Instant.parse(modified).toEpochMilli() }.getOrDefault(0)
+    }
 
-    suspend fun remote(): Remote? {
-        val q = URLEncoder.encode("name = '$FILE_NAME' and trashed = false", "UTF-8")
+    /** Every device's backup in this account, newest first. */
+    suspend fun backups(): List<Remote> {
+        val q = URLEncoder.encode("name contains '$FILE_PREFIX' and trashed = false", "UTF-8")
         val (code, body) = drive(Request.Builder().url(
-            "${endpoints.drive}/files?spaces=appDataFolder&q=$q&pageSize=1&orderBy=modifiedTime%20desc&fields=files(id,modifiedTime,size,appProperties)"))
+            "${endpoints.drive}/files?spaces=appDataFolder&q=$q&pageSize=50&orderBy=modifiedTime%20desc&fields=files(id,name,modifiedTime,size,appProperties)"))
         if (code != 200) throw CloudException("Drive answered $code")
-        val f = JSONObject(body).optJSONArray("files")?.optJSONObject(0) ?: return null
-        val props = f.optJSONObject("appProperties")
-        return Remote(f.getString("id"), f.optString("modifiedTime"), props?.optString("device"), props?.optString("app"), f.optString("size").toLongOrNull() ?: 0)
+        val files = JSONObject(body).optJSONArray("files") ?: return emptyList()
+        return (0 until files.length()).map { i ->
+            val f = files.getJSONObject(i)
+            val props = f.optJSONObject("appProperties")
+            Remote(f.getString("id"), f.optString("modifiedTime"), props?.optString("device")?.ifBlank { null }, props?.optString("app")?.ifBlank { null },
+                f.optString("size").toLongOrNull() ?: 0, props?.optString("deviceId")?.ifBlank { null })
+        }.sortedByDescending { it.time }
+    }
+
+    /** The newest backup of any device. */
+    suspend fun remote(): Remote? = backups().firstOrNull()
+
+    /** Removes one device's backup (an old phone, a reset TV). */
+    suspend fun delete(remote: Remote) {
+        val (code, _) = drive(Request.Builder().url("${endpoints.drive}/files/${remote.id}").delete())
+        if (code !in 200..299 && code != 404) throw CloudException("Drive answered $code")
     }
 
     private val backupLock = Mutex()
@@ -215,9 +244,9 @@ object CloudBackup {
         if (onlyIfChanged && hash == prefs.getString("last_hash", null)) return false
         publish(busy = "Backing up…")
         try {
-            val existing = remote()
-            val meta = JSONObject().put("name", FILE_NAME)
-                .put("appProperties", JSONObject().put("device", "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}").put("app", runCatching { App.context.packageManager.getPackageInfo(App.context.packageName, 0).versionName }.getOrNull() ?: "?"))
+            val existing = backups().firstOrNull { it.deviceId == deviceId }
+            val meta = JSONObject().put("name", "$FILE_PREFIX-$deviceId.json")
+                .put("appProperties", JSONObject().put("device", "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}").put("app", runCatching { App.context.packageManager.getPackageInfo(App.context.packageName, 0).versionName }.getOrNull() ?: "?").put("deviceId", deviceId))
             if (existing == null) meta.put("parents", org.json.JSONArray().put("appDataFolder"))
             val body = MultipartBody.Builder().setType("multipart/related".toMediaType())
                 .addPart(meta.toString().toRequestBody(json))
@@ -236,11 +265,14 @@ object CloudBackup {
         }
     }
 
-    /** Downloads the backup and restores it; then the missing extensions are downloaded. Returns their names. */
-    suspend fun restore(): List<String> = backupLock.withLock {
+    /**
+     * Downloads a backup ([which], or the newest of any device) and restores it; then the missing extensions are
+     * downloaded. Returns their names.
+     */
+    suspend fun restore(which: Remote? = null): List<String> = backupLock.withLock {
         publish(busy = "Restoring…")
         try {
-            val r = remote() ?: throw CloudException("There's no backup in this Google account yet")
+            val r = which ?: remote() ?: throw CloudException("There's no backup in this Google account yet")
             val (code, content) = drive(Request.Builder().url("${endpoints.drive}/files/${r.id}?alt=media"))
             if (code != 200) throw CloudException("Drive answered $code")
             withContext(Dispatchers.IO) { Backup.import(content) }
@@ -266,14 +298,14 @@ object CloudBackup {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var loop: Job? = null
 
-    /** Starts the automatic backup (every 15 minutes, only when something changed). */
+    /** Starts the automatic backup (every 5 minutes, only when something changed). */
     fun startAuto(firstDelayMs: Long = 60_000) {
         if (loop?.isActive == true) return
         loop = scope.launch {
             delay(firstDelayMs)
             while (isActive) {
                 soonNow()
-                delay(15 * 60_000L)
+                delay(AUTO_INTERVAL_MS)
             }
         }
     }

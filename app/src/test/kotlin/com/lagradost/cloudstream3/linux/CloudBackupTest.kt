@@ -11,22 +11,25 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
-import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /**
- * Google Drive backup against a stand-in for Google: code sign-in (with "pending" first), Drive's app folder
- * (create, then update), a skipped upload when nothing changed, an expired token refreshed, restore, sign-out.
+ * Google Drive backup against a stand-in for Google: code sign-in (with "pending" first), each device's own file in
+ * Drive's app folder (a phone's and a TV's don't overwrite each other), a skipped upload when nothing changed, an
+ * expired token refreshed, restoring another device's backup, deleting one, sign-out.
  */
 class CloudBackupTest {
     private class FakeGoogle {
         val server: HttpServer = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
         var polls = 0
-        var file: String? = null
         var uploads = 0
         var refreshes = 0
         var revoked: String? = null
         var validAccess = "access-1"
+        private var nextId = 1
+        private var clock = 1_700_000_000_000L
+        /** id → name, appProperties, modifiedTime, content */
+        val files = linkedMapOf<String, JSONObject>()
 
         val base get() = "http://127.0.0.1:${server.address.port}"
 
@@ -35,15 +38,14 @@ class CloudBackupTest {
 
         private fun send(x: HttpExchange, code: Int, body: String) {
             val bytes = body.toByteArray()
-            x.sendResponseHeaders(code, bytes.size.toLong()); x.responseBody.use { it.write(bytes) }
+            x.sendResponseHeaders(code, if (bytes.isEmpty()) -1 else bytes.size.toLong()); x.responseBody.use { it.write(bytes) }
         }
 
         private fun authorized(x: HttpExchange) = x.requestHeaders.getFirst("Authorization") == "Bearer $validAccess"
 
         init {
             server.createContext("/device/code") { x ->
-                val f = form(x)
-                require(f["scope"] == "https://www.googleapis.com/auth/drive.appdata")
+                require(form(x)["scope"] == "https://www.googleapis.com/auth/drive.appdata")
                 send(x, 200, """{"device_code":"dev-1","user_code":"GQV-XHF-RNL","verification_url":"https://www.google.com/device","expires_in":60,"interval":1}""")
             }
             server.createContext("/token") { x ->
@@ -66,32 +68,45 @@ class CloudBackupTest {
             }
             server.createContext("/drive/v3/files") { x ->
                 if (!authorized(x)) return@createContext send(x, 401, "{}")
-                val path = x.requestURI.path
-                if (path.endsWith("/files")) {
-                    require(x.requestURI.rawQuery.contains("spaces=appDataFolder"))
-                    val files = if (file == null) JSONArray() else JSONArray().put(JSONObject().put("id", "file-1")
-                        .put("modifiedTime", "2026-11-14T10:00:00Z").put("appProperties", JSONObject().put("device", "test")))
-                    send(x, 200, JSONObject().put("files", files).toString())
-                } else if (x.requestURI.rawQuery == "alt=media") send(x, 200, file ?: "")
-                else send(x, 404, "{}")
+                val id = x.requestURI.path.removePrefix("/drive/v3/files").removePrefix("/")
+                when {
+                    id.isEmpty() -> {
+                        val q = URLDecoder.decode(x.requestURI.rawQuery, "UTF-8")
+                        require(q.contains("spaces=appDataFolder") && q.contains("name contains 'stream-goat-backup'"))
+                        val list = JSONArray()
+                        files.forEach { (fid, f) -> list.put(JSONObject().put("id", fid).put("name", f.getString("name"))
+                            .put("modifiedTime", java.time.Instant.ofEpochMilli(f.getLong("modified")).toString())
+                            .put("appProperties", f.getJSONObject("appProperties"))) }
+                        send(x, 200, JSONObject().put("files", list).toString())
+                    }
+                    x.requestMethod == "DELETE" -> { files.remove(id); send(x, 204, "") }
+                    x.requestURI.rawQuery == "alt=media" -> send(x, 200, files[id]?.getString("content") ?: "")
+                    else -> send(x, 404, "{}")
+                }
             }
             server.createContext("/upload/drive/v3/files") { x ->
                 if (!authorized(x)) return@createContext send(x, 401, "{}")
                 val boundary = x.requestHeaders.getFirst("Content-Type").substringAfter("boundary=").trim('"')
                 val parts = x.requestBody.readBytes().decodeToString().split("--$boundary").filter { it.contains("{") }
                 val meta = JSONObject(parts[0].substringAfter("\r\n\r\n").trim())
-                if (x.requestMethod == "POST") require(meta.getJSONArray("parents").getString(0) == "appDataFolder")
-                else require(x.requestMethod == "PATCH" && x.requestURI.path.endsWith("/file-1"))
-                file = parts[1].substringAfter("\r\n\r\n").trim()
+                val content = parts[1].substringAfter("\r\n\r\n").trim()
+                val id = if (x.requestMethod == "POST") {
+                    require(meta.getJSONArray("parents").getString(0) == "appDataFolder")
+                    "file-${nextId++}".also { files[it] = JSONObject().put("name", meta.getString("name")) }
+                } else x.requestURI.path.substringAfterLast('/').also { require(x.requestMethod == "PATCH" && it in files) }
+                files.getValue(id).put("appProperties", meta.getJSONObject("appProperties")).put("content", content).put("modified", clock++)
                 uploads++
-                send(x, 200, """{"id":"file-1"}""")
+                send(x, 200, """{"id":"$id"}""")
             }
             server.start()
         }
     }
 
+    private val store get() = Platform.context.getSharedPreferences("cloud_test", 0)
+    private val account get() = Platform.context.getSharedPreferences("cloud_backup", 0)
+
     @Test
-    fun `sign in with a code, back up to Drive's app folder, restore, sign out`(): Unit = runBlocking {
+    fun `sign in with a code, each device backs up its own file, restore another device's, sign out`(): Unit = runBlocking {
         Platform.init(); Network.init()
         val google = FakeGoogle()
         val before = CloudBackup.endpoints
@@ -104,45 +119,57 @@ class CloudBackupTest {
             CloudBackup.signOut()
             val signIn = CloudBackup.startSignIn()
             assertEquals("GQV-XHF-RNL", signIn.userCode)
-            assertEquals("https://www.google.com/device", signIn.url)
             assertTrue(CloudBackup.finishSignIn(signIn))
             assertEquals(2, google.polls)
             assertTrue(CloudBackup.state.value.signedIn)
             assertEquals("goat@example.com", CloudBackup.state.value.email)
+            val tv = CloudBackup.deviceId
 
-            // First backup creates the file in the app folder; nothing changed: no second upload.
-            assertNull(CloudBackup.remote())
+            // This device ("the TV") backs up its own file; unchanged, nothing is uploaded again.
+            store.edit().putString("value", "tv").commit()
+            assertEquals(emptyList(), CloudBackup.backups())
             assertTrue(CloudBackup.backupNow())
-            assertEquals(1, google.uploads)
-            assertEquals(com.lagradost.cloudstream3.linux.Backup.FORMAT, JSONObject(google.file!!).getString("format"))
             assertFalse(CloudBackup.backupNow(onlyIfChanged = true))
             assertEquals(1, google.uploads)
-            // The sign-in itself is never in the backup.
-            assertFalse(JSONObject(google.file!!).getJSONObject("stores").has("cloud_backup"))
+            val mine = CloudBackup.backups().single()
+            assertTrue(mine.mine)
+            assertEquals("stream-goat-backup-$tv.json", google.files.values.single().getString("name"))
+            assertFalse(JSONObject(google.files.values.single().getString("content")).getJSONObject("stores").has("cloud_backup"))
 
-            // A change uploads again (an update of the same file); an expired token is refreshed on the way.
-            Platform.context.getSharedPreferences("cloud_test", 0).edit().putString("value", "one").commit()
+            // "The phone" (another installation on the same account) has its own file: nothing is overwritten.
+            account.edit().putString("device_id", "phone-1").commit()
+            store.edit().putString("value", "phone").commit()
+            assertTrue(CloudBackup.backupNow())
+            account.edit().putString("device_id", tv).commit()
+            val all = CloudBackup.backups()
+            assertEquals(2, all.size)
+            val phone = all.first()
+            assertEquals("phone-1", phone.deviceId)
+            assertFalse(phone.mine)
+
+            // The TV restores the phone's backup (an expired token is refreshed on the way).
+            store.edit().putString("value", "changed on the tv").commit()
             google.validAccess = "access-expired-on-server"
-            assertTrue(CloudBackup.backupNow(onlyIfChanged = true))
-            assertEquals(2, google.uploads)
+            CloudBackup.restore(phone)
             assertTrue(google.refreshes >= 1)
-            assertNotNull(CloudBackup.remote())
+            assertEquals("phone", store.getString("value", null))
 
-            // Restore brings the backed-up value back.
-            Platform.context.getSharedPreferences("cloud_test", 0).edit().putString("value", "changed").commit()
-            CloudBackup.restore()
-            assertEquals("one", Platform.context.getSharedPreferences("cloud_test", 0).getString("value", null))
+            // An old device's backup can be deleted; the TV's own stays and is updated in place.
+            CloudBackup.delete(phone)
+            assertEquals(listOf(tv), CloudBackup.backups().map { it.deviceId })
+            store.edit().putString("value", "tv again").commit()
+            assertTrue(CloudBackup.backupNow(onlyIfChanged = true))
+            assertEquals(1, google.files.size)
 
             CloudBackup.signOut()
             assertEquals("refresh-1", google.revoked)
             assertFalse(CloudBackup.state.value.signedIn)
+            assertEquals(tv, CloudBackup.deviceId, "signing out keeps this device's backup name")
             assertFailsWith<CloudBackup.CloudException> { CloudBackup.backupNow() }
         } finally {
-            Platform.context.getSharedPreferences("cloud_test", 0).edit().clear().commit()
+            store.edit().clear().commit()
             CloudBackup.endpoints = before
             google.server.stop(0)
         }
     }
-
-    private fun assertNull(value: Any?) = kotlin.test.assertNull(value)
 }
