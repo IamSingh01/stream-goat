@@ -167,7 +167,7 @@ fun PlayerScreen(screen: Screen.Player) {
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     DisposableEffect(lifecycle) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_STOP) { if (c.player.isPlaying) c.player.pause(); c.save() }
+            if (event == Lifecycle.Event.ON_STOP) { if (c.playing) c.pause(); c.save() }
         }
         lifecycle.addObserver(observer)
         onDispose { lifecycle.removeObserver(observer) }
@@ -206,8 +206,8 @@ fun PlayerScreen(screen: Screen.Player) {
                 poke++
                 when (e.nativeKeyEvent.keyCode) {
                     KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_SPACE -> { c.togglePause(); true }
-                    KeyEvent.KEYCODE_MEDIA_PLAY -> { c.player.play(); true }
-                    KeyEvent.KEYCODE_MEDIA_PAUSE -> { c.player.pause(); true }
+                    KeyEvent.KEYCODE_MEDIA_PLAY -> { c.resume(); true }
+                    KeyEvent.KEYCODE_MEDIA_PAUSE -> { c.pause(); true }
                     KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> { c.seekBy(30_000); true }
                     KeyEvent.KEYCODE_MEDIA_REWIND -> { c.seekBy(-30_000); true }
                     KeyEvent.KEYCODE_MEDIA_NEXT -> { c.next?.let { Nav.replace(Screen.Player(c.api, c.response, it)) }; true }

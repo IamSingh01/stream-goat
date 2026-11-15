@@ -80,9 +80,20 @@ object CrashReport {
                 appendLine(header())
                 appendLine("Exit: ${last.description ?: "-"} (reason ${last.reason}, status ${last.status})")
                 appendLine("When: ${date(last.timestamp)}")
+                // What the screen was waiting for: the main thread's stack from Android's report.
+                if (last.reason == ApplicationExitInfo.REASON_ANR) mainThreadStack(last)?.let { appendLine(); appendLine(it) }
             }
         }.getOrNull()
     }
+
+    /** The "main" thread of an ANR trace (Android 11+), the first 40 lines. */
+    private fun mainThreadStack(info: ApplicationExitInfo): String? = runCatching {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return null
+        val text = info.traceInputStream?.use { it.readBytes().decodeToString() } ?: return null
+        val start = text.indexOf("\n\"main\"").takeIf { it >= 0 } ?: return null
+        val end = text.indexOf("\n\n", start + 1).takeIf { it > 0 } ?: text.length
+        text.substring(start + 1, end).lines().take(40).joinToString("\n")
+    }.getOrNull()
 
     private fun header(): String {
         val version = runCatching { App.context.packageManager.getPackageInfo(App.context.packageName, 0).versionName }.getOrNull()
