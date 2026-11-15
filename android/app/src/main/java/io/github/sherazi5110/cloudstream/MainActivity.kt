@@ -36,12 +36,26 @@ class MainActivity : com.lagradost.cloudstream3.MainActivity() {
         setContent {
             CloudStreamTheme {
                 AppRoot()
+                // Over every screen, the player included.
+                io.github.sherazi5110.cloudstream.ui.GlitchDialog()
+                io.github.sherazi5110.cloudstream.ui.GitHubReportQr()
                 if (intro.value) io.github.sherazi5110.cloudstream.ui.IntroScreen { endIntro() }
             }
         }
     }
 
     private val intro = androidx.compose.runtime.mutableStateOf(false)
+    private val shake by lazy { ShakeToReport(this) }
+
+    override fun onResume() {
+        super.onResume()
+        shake.start()
+    }
+
+    override fun onPause() {
+        shake.stop()
+        super.onPause()
+    }
 
     private fun endIntro() {
         if (!intro.value) return

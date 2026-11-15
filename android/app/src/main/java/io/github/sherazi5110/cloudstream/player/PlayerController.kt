@@ -399,6 +399,8 @@ class PlayerController(
         }
         io.github.sherazi5110.cloudstream.CrashReport.playing("${api.name}: ${response.name} (${playable.label}); source ${link.name} [${link.type}] from " +
             "${runCatching { Uri.parse(link.url).host }.getOrNull() ?: "?"}")
+        io.github.sherazi5110.cloudstream.GlitchReport.step("Playing source ${link.name} [${link.type}] from ${runCatching { Uri.parse(link.url).host }.getOrNull() ?: "?"}" +
+            (variant?.let { " at ${it.label}" } ?: ""))
         // Opening stops the previous source first, which waits for its network reads to end: on a slow host that
         // took seconds and froze the screen ("not responding"). Like VLC for Android, it runs on its own thread.
         val rate = speed

@@ -468,8 +468,18 @@ private fun AboutSection() {
         com.lagradost.cloudstream3.CloudStreamApp.openBrowser("https://github.com/sherazi5110/stream-goat", context.findActivity())
     }
     // A problem without a crash: GitHub's new-issue page with the device and version filled in (a QR code on TVs).
-    PillButton("Report a problem", null, primary = false, compact = true, modifier = Modifier.padding(top = 8.dp)) {
-        reportOnGitHub(context, null)
+    PillButton("Report a glitch or problem", null, primary = false, compact = true, modifier = Modifier.padding(top = 8.dp)) {
+        // From Settings there's no screen to picture: the last steps say where it happened.
+        io.github.sherazi5110.cloudstream.GlitchReport.draft = io.github.sherazi5110.cloudstream.GlitchReport.Draft(
+            "Settings (reported from Settings → About)", io.github.sherazi5110.cloudstream.GlitchReport.steps(), null)
+    }
+    Hint(if (App.isTv) "Tip: to include a picture of a screen, choose Report a glitch in the profile menu (top right) or the player's top bar."
+        else "Tip: to include a picture of a screen, shake the phone there, choose Report a glitch in the profile menu, or tap the bug button in the player.")
+    if (!App.isTv) {
+        var shake by remember { mutableStateOf(io.github.sherazi5110.cloudstream.Settings.shakeToReport) }
+        SwitchRow("Shake to report a glitch", "A firm shake opens Report a glitch with a picture of the screen", shake) {
+            shake = it; io.github.sherazi5110.cloudstream.Settings.shakeToReport = it
+        }
     }
     Hint("GPL-3.0. Extensions and their content come from third parties; this app hosts nothing.")
 }

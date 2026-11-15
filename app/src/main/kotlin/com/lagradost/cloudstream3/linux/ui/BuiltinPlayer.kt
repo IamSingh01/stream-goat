@@ -238,7 +238,8 @@ class BuiltinPlayer(
         sourceChip.text = if (quality.isBlank() || link.name.contains(quality, true)) link.name else "${link.name} · $quality"
         val (url, options) = mrl(link)
         val opts = options.toMutableList()
-        enhancing = enhanceOverride ?: Picture.enhance(response, link)
+        // macOS: VLC's Mac build doesn't sharpen when it upscales (measured: slightly softer), so it's left off there.
+        enhancing = !com.lagradost.cloudstream3.linux.Os.isMac && (enhanceOverride ?: Picture.enhance(response, link))
         video.upscale = enhancing
         video.hdrFix = hdrOverride ?: Picture.hdrFix(link)
         // Seeking with :start-time works for files and HLS alike, before the first frame.
@@ -572,11 +573,11 @@ class BuiltinPlayer(
     internal fun showZoom() {
         val items = Zoom.entries.map { z ->
             PlayerMenu.Item(z.label, active = video.zoom == z) { setZoom(z); menu.close() }
-        } + listOf(
+        } + listOfNotNull(
             PlayerMenu.Item("Anime enhance (E)", hint = enhanceStatus(), active = enhancing, keepOpen = true) {
                 toggleEnhance()
                 showZoom()
-            },
+            }.takeIf { !com.lagradost.cloudstream3.linux.Os.isMac },
             PlayerMenu.Item("HDR colour fix", hint = if (video.hdrFix) "on" else if (Picture.looksHdr(current)) "off (source is HDR)" else "off", active = video.hdrFix, keepOpen = true) {
                 hdrOverride = !video.hdrFix
                 video.hdrFix = !video.hdrFix
@@ -908,7 +909,7 @@ class BuiltinPlayer(
             KeyCode.A -> showAudio()
             // Z: the Picture menu (zoom, anime enhance, HDR); Shift+Z cycles the zoom; E: anime enhance on/off.
             KeyCode.Z -> if (e.isShiftDown) cycleZoom() else showZoom()
-            KeyCode.E -> toggleEnhance()
+            KeyCode.E -> if (!com.lagradost.cloudstream3.linux.Os.isMac) toggleEnhance()
             KeyCode.N -> playNext()
             KeyCode.G -> subDelay(-100)
             KeyCode.H -> subDelay(100)

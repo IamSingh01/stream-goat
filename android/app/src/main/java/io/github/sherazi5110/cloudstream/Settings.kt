@@ -184,6 +184,10 @@ object Settings {
     var subtitleNoAds: Boolean
         get() = string("subtitle_no_ads", "true") == "true"
         set(v) = put("subtitle_no_ads", v)
+    /** Phones: shaking opens Report a glitch. */
+    var shakeToReport: Boolean
+        get() = string("shake_to_report", "true") == "true"
+        set(v) = put("shake_to_report", v)
     var subtitleUppercase: Boolean
         get() = string("subtitle_upper", "false") == "true"
         set(v) = put("subtitle_upper", v)

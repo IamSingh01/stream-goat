@@ -55,6 +55,9 @@ fun CrashDialog() {
 /** The QR code for a GitHub report on TVs (no browser there): scan it with a phone. */
 private var githubQr by mutableStateOf<String?>(null)
 
+/** Shows [url] (a GitHub new-issue link) as a QR code to scan with a phone. */
+fun showGitHubQr(url: String) { githubQr = url }
+
 /** Opens GitHub's "new issue" page with [report] filled in; on a TV, shows it as a QR code for a phone instead. */
 fun reportOnGitHub(context: Context, report: String?) {
     if (!App.isTv) {

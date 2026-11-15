@@ -128,6 +128,8 @@ class PictureTest {
     @Test
     fun `anime enhance upscales low-quality animation closer to the original`() {
         if (!NativeDiscovery().discover()) { println("libVLC not installed; skipping"); return }
+        // macOS: the app leaves anime enhance off there (VLC's Mac build doesn't sharpen when it scales).
+        if (Os.isMac) { println("macOS: anime enhance is off; skipping"); return }
         // A cartoon frame drawn at 720p, encoded badly at 240p as a still clip, so whichever frame is grabbed matches.
         val media = tests.resolve("mock-archive/media")
         val ref = javax.imageio.ImageIO.read(media.resolve("anime-720p-frame8.png"))

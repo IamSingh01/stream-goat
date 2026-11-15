@@ -40,6 +40,7 @@ import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.AspectRatio
 import androidx.compose.material.icons.filled.Brightness6
+import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ClosedCaption
 import androidx.compose.material.icons.filled.Forward10
@@ -389,6 +390,11 @@ private fun Controls(c: PlayerController, onSheet: (Sheet) -> Unit, onLock: () -
                 Text(c.response.name, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 val sub = if (c.playables.size > 1) c.playable.label else c.current?.name
                 sub?.let { Text(it, style = MaterialTheme.typography.bodySmall, maxLines = 1) }
+            }
+            // Report a glitch: a picture of the player as it is now, the source playing and the last steps.
+            val reportCtx = androidx.compose.ui.platform.LocalContext.current
+            RoundIcon(Icons.Filled.BugReport, "Report a glitch", Modifier.padding(end = 8.dp)) {
+                io.github.sherazi5110.cloudstream.GlitchReport.start(reportCtx.findActivity())
             }
             if (!isTv) {
                 val ctx = androidx.compose.ui.platform.LocalContext.current

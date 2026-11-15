@@ -88,7 +88,6 @@ fun AppRoot() {
             UpdateDialog()
             DownloadChooserDialog()
             CrashDialog()
-            GitHubReportQr()
             CloudDialogs()
         }
     }

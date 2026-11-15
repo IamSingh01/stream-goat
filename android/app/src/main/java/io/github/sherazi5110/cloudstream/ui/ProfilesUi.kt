@@ -22,6 +22,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Edit
@@ -168,6 +169,15 @@ fun ProfileButton(size: Dp = 36.dp, showName: Boolean = false) {
                 )
             }
             HorizontalDivider()
+            val reportCtx = androidx.compose.ui.platform.LocalContext.current
+            DropdownMenuItem(text = { Text("Report a glitch") }, leadingIcon = { Icon(Icons.Filled.BugReport, null) },
+                onClick = {
+                    open = false
+                    // After the menu has closed, so the picture shows the screen, not the menu.
+                    android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                        io.github.sherazi5110.cloudstream.GlitchReport.start(reportCtx.findActivity())
+                    }, 350)
+                })
             DropdownMenuItem(text = { Text("Manage profiles") }, leadingIcon = { Icon(Icons.Filled.People, null) },
                 onClick = { open = false; ProfileUi.guarded { ProfileUi.picker = true } })
             if (me.kids) DropdownMenuItem(text = { Text("Exit kids profile") }, leadingIcon = { Icon(Icons.AutoMirrored.Filled.Logout, null) },

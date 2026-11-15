@@ -92,5 +92,5 @@ object App {
     }
 
     /** Shows a short message from anywhere, like extensions do. */
-    fun toast(message: String) = CommonActivity.showToast(message)
+    fun toast(message: String) { GlitchReport.step("Message: $message"); CommonActivity.showToast(message) }
 }
