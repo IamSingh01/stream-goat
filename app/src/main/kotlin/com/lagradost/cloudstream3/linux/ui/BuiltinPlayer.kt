@@ -233,6 +233,9 @@ class BuiltinPlayer(
             play()
         }
         current = link
+        com.lagradost.cloudstream3.linux.Glitch.screen = "Player: $title (${api.name})"
+        com.lagradost.cloudstream3.linux.Glitch.playing = "$title (${api.name}), source ${link.name} [${link.type}] from " +
+            (runCatching { java.net.URI(link.url).host }.getOrNull() ?: "?")
         spinner.isVisible = true
         val quality = Qualities.getStringByInt(link.quality)
         sourceChip.text = if (quality.isBlank() || link.name.contains(quality, true)) link.name else "${link.name} · $quality"
@@ -277,6 +280,8 @@ class BuiltinPlayer(
 
     override fun quit(then: (() -> Unit)?) {
         if (finished) return
+        com.lagradost.cloudstream3.linux.Glitch.playing = null
+        com.lagradost.cloudstream3.linux.Glitch.step("Closed the player")
         leaving = then
         finish()
     }

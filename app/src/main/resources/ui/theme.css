@@ -827,3 +827,13 @@
 .suggest-row { -fx-padding: 9 12 9 12; -fx-background-radius: 10; -fx-cursor: hand; }
 .suggest-row.on, .suggest-row:hover { -fx-background-color: -cs-surface-3; }
 .suggest-text { -fx-text-fill: -cs-text; -fx-font-size: 14px; }
+
+/* ================= Report a glitch (its own small window) ================= */
+.glitch-window { -fx-background-color: -cs-surface; }
+.glitch-window .check-box { -fx-text-fill: -cs-muted; }
+.glitch-window .check-box .box { -fx-background-color: -cs-surface-3; -fx-background-radius: 4; }
+.glitch-window .check-box:selected .mark { -fx-background-color: white; }
+.glitch-window .check-box:selected .box { -fx-background-color: -cs-accent; }
+.glitch-shot { -fx-background-color: -cs-bg; -fx-background-radius: 8; -fx-padding: 6; }
+.glitch-details { -fx-font-family: "monospace"; -fx-font-size: 11px; }
+.glitch-details .content, .glitch-text .content { -fx-background-color: -cs-surface-2; }

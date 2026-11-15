@@ -47,6 +47,26 @@ object Screenshots {
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) { capture(window, "$prefix-nav.png") }
             System.exit(0)
         }
+        // CS_SCREENSHOT_ONLY=glitch: the Report a glitch window over the home page, then quit.
+        if (System.getenv("CS_SCREENSHOT_ONLY") == "glitch") {
+            kotlinx.coroutines.delay(1500)
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                com.lagradost.cloudstream3.linux.Glitch.step("Opened Details: Dune: Part Two (HDHub4U)")
+                GlitchWindow.report(window.stage)
+            }
+            kotlinx.coroutines.delay(1200)
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                val stage = javafx.stage.Window.getWindows().firstOrNull { (it as? javafx.stage.Stage)?.title == "Report a glitch" }
+                stage?.scene?.let { sc ->
+                    val img = sc.snapshot(null)
+                    val w = img.width.toInt(); val h = img.height.toInt()
+                    val px = IntArray(w * h)
+                    img.pixelReader.getPixels(0, 0, w, h, javafx.scene.image.PixelFormat.getIntArgbInstance(), px, 0, w)
+                    ImageIO.write(BufferedImage(w, h, BufferedImage.TYPE_INT_RGB).apply { setRGB(0, 0, w, h, px, 0, w) }, "png", File("$prefix-glitch.png"))
+                }
+            }
+            System.exit(0)
+        }
         if (System.getenv("CS_SCREENSHOT_ONLY") == "glass") {
             modeGlass(window, prefix)
         }

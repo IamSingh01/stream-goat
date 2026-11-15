@@ -29,7 +29,8 @@ class DetailsPage(
     private val name: String,
     private val poster: String?,
     private val posterHeaders: Map<String, String>?,
-) : StackPane(), Disposable, Refreshable {
+) : StackPane(), Disposable, Refreshable, GlitchNamed {
+    override val glitchName get() = "Details: $name (${api.name})"
     private val backdropLayer = StackPane()
     private val content = VBox(30.0).apply { pad(18.0, 40.0, 48.0, 40.0) }
     private var response: LoadResponse? = null

@@ -35,6 +35,7 @@ fun main(args: Array<String>) {
     val repoLink = args.firstOrNull()?.takeIf { it.startsWith("cloudstreamrepo://") || it.startsWith("https://cs.repo") }
     if (args.isEmpty() || args[0] == "gui" || repoLink != null) {
         Logs.init()
+        Glitch.install()
         Platform.init()
         Network.init()
         Thread { Os.registerLinkHandler() }.apply { isDaemon = true }.start()

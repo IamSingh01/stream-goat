@@ -968,13 +968,9 @@ class SettingsPage : StackPane(), Refreshable {
                 label("v${AppInfo.VERSION}", "tag", "accent")),
             row("Created by", AppInfo.CREDIT, label("", "muted")),
             row("Built on", "The upstream CloudStream library, libVLC through vlcj (player), JavaFX. Online subtitles: OpenSubtitles via the Stremio addon protocol.", label("", "muted")),
-            row("Report a problem", "Opens GitHub's new-issue page with your version and system filled in (needs a GitHub account).",
-                button("Report", Icons.BUG, "btn-ghost", "btn-small") {
-                    fun enc(v: String) = java.net.URLEncoder.encode(v, "UTF-8")
-                    val body = "**What happened** (what you were doing):\n\n\n**System**\n```\nStream Goat ${AppInfo.VERSION} on ${System.getProperty("os.name")} " +
-                        "${System.getProperty("os.version")} (${System.getProperty("os.arch")}), Java ${System.getProperty("java.version")}\n```\n"
-                    openUrl("https://github.com/sherazi5110/stream-goat/issues/new?title=${enc("Problem on ${com.lagradost.cloudstream3.linux.Os.name}")}&body=${enc(body)}")
-                }),
+            row("Report a glitch or problem", "Opens a short form, then GitHub's new-issue page with your version, system, last steps and the app's recent errors filled in (needs a GitHub account). " +
+                "To include a picture of a page, press ${if (com.lagradost.cloudstream3.linux.Os.isMac) "⌘⇧R" else "F12"} there, or choose Report a glitch in the profile menu.",
+                button("Report", Icons.BUG, "btn-ghost", "btn-small") { GlitchWindow.reportWithoutPicture(Nav.window.stage) }),
         ),
         section("Updates",
             row("Check for updates", "Looks for a newer release on GitHub.", updateButton()),

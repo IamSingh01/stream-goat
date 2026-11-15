@@ -153,6 +153,10 @@ class AppWindow(val stage: Stage) : StackPane() {
         Theme.onChange { applyTheme() }
 
         addEventFilter(KeyEvent.KEY_PRESSED) { e ->
+            // Report a glitch: F12, or ⌘⇧R on a Mac (also over the player).
+            if (e.code == KeyCode.F12 || (Os.isMac && e.isMetaDown && e.isShiftDown && e.code == KeyCode.R)) {
+                GlitchWindow.report(stage); e.consume(); return@addEventFilter
+            }
             (playerLayer.children.firstOrNull() as? PlayerKeys)?.let { it.handle(e); return@addEventFilter }
             when {
                 e.code == KeyCode.ESCAPE -> { if (closeOverlay() || back()) e.consume() }
@@ -275,6 +279,9 @@ class AppWindow(val stage: Stage) : StackPane() {
     /** Shows a page under the top bar; Home's banner runs underneath it, other pages start below. */
     private fun setContent(node: Node) {
         content.children.setAll(node)
+        com.lagradost.cloudstream3.linux.Glitch.screen = (node as? GlitchNamed)?.glitchName ?: "${currentTab.label}" +
+            (if (node !== pages[currentTab]) " → ${node.javaClass.simpleName.removeSuffix("Page")}" else "")
+        com.lagradost.cloudstream3.linux.Glitch.step("Opened ${com.lagradost.cloudstream3.linux.Glitch.screen}")
         val fullBleed = node is HomePage || node is LiveTvPage
         content.padding = if (fullBleed) Insets.EMPTY else Insets(TopBar.HEIGHT, 0.0, 0.0, 0.0)
         topBar.setSolid(!fullBleed)
@@ -353,6 +360,12 @@ class AppWindow(val stage: Stage) : StackPane() {
 
     fun startup(repoLink: String?) {
         Toast.showHandler = { msg -> Platform.runLater { Toasts.show(msg) } }
+        // The last run didn't close properly (a crash in the video engine, a force-quit freeze): say what's known.
+        com.lagradost.cloudstream3.linux.Glitch.pending?.let { report ->
+            if (System.getenv("CS_SCREENSHOT") == null) javafx.animation.PauseTransition(javafx.util.Duration.seconds(4.5)).apply {
+                setOnFinished { GlitchWindow.showCrash(stage, report) }
+            }.play()
+        }
         ui.launch {
             PluginManager.progress.collectLatest { p ->
                 (splash as? SplashScreen)?.status(if (p.total == 0) "Starting…" else "Loading extensions ${p.done}/${p.total}")
@@ -454,3 +467,6 @@ object Nav {
         window.push(DetailsPage(api, url, name, poster, null))
     }
 }
+
+/** A page that names itself in glitch reports ("Details: Dune (HDHub4U)"). */
+interface GlitchNamed { val glitchName: String }

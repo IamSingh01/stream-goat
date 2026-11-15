@@ -371,6 +371,7 @@ object Toasts {
     lateinit var host: VBox
 
     fun show(message: String, action: Pair<String, () -> Unit>? = null, seconds: Double = 4.0) {
+        com.lagradost.cloudstream3.linux.Glitch.step("Message: $message")
         if (!::host.isInitialized) return
         val box = hbox(14.0, label(message).apply { isWrapText = true; maxWidth = 520.0 }).apply {
             styleClass += "toast"
