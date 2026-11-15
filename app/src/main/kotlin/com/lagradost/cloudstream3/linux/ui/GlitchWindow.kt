@@ -41,10 +41,13 @@ object GlitchWindow {
     /** Settings → About: no picture (it would only show Settings); the last steps say where it happened. */
     fun reportWithoutPicture(owner: Stage) { if (open == null) show(owner, null, crash = null) }
 
+    /** A problem the app found itself (a working stream that wouldn't play): [details] lead the report. */
+    fun reportProblem(owner: Stage, details: String) { if (open == null) show(owner, null, crash = null, extra = details) }
+
     /** The last run didn't close properly: shows what's known about it. */
     fun showCrash(owner: Stage, report: String) = show(owner, null, report)
 
-    private fun show(owner: Stage, shot: WritableImage?, crash: String?) {
+    private fun show(owner: Stage, shot: WritableImage?, crash: String?, extra: String? = null) {
         val stage = Stage(StageStyle.DECORATED).apply {
             initOwner(owner)
             initModality(Modality.WINDOW_MODAL)
@@ -61,7 +64,8 @@ object GlitchWindow {
         }
         val keep = CheckBox(if (Os.isMac) "Save the screenshot to Downloads and copy it (paste it on GitHub with ⌘V)"
             else "Save the screenshot to Downloads and copy it (paste it on GitHub with Ctrl+V)").apply { isSelected = shot != null; isWrapText = true }
-        val details = TextArea(crash ?: Glitch.reportText(null)).apply {
+        fun report(saved: String?) = crash ?: ((extra?.let { it.trim() + "\n\n" } ?: "") + Glitch.reportText(saved))
+        val details = TextArea(report(null)).apply {
             isEditable = false; isWrapText = false; prefRowCount = 9
             styleClass += "glitch-details"
             isVisible = false; isManaged = false
@@ -81,8 +85,7 @@ object GlitchWindow {
                 Clipboard.getSystemClipboard().setContent(ClipboardContent().apply { putImage(shot); putFiles(listOf(file)) })
                 saved = "Downloads/Stream Goat/${file.name}"
             }.onFailure { Toasts.show("Couldn't save the screenshot: ${it.message}") }
-            val report = crash ?: Glitch.reportText(saved)
-            openUrl(Glitch.issueUrl(what.text.trim(), report, saved != null, crash = crash != null))
+            openUrl(Glitch.issueUrl(what.text.trim(), report(saved), saved != null, crash = crash != null))
             stage.close()
         }
 
@@ -102,7 +105,7 @@ object GlitchWindow {
         children += hbox(10.0,
             button("Copy details", null, "btn-ghost") {
                 Clipboard.getSystemClipboard().setContent(ClipboardContent().apply {
-                    putString((what.text.trim().takeIf { it.isNotBlank() }?.let { "$it\n\n" } ?: "") + (crash ?: Glitch.reportText(null)))
+                    putString((what.text.trim().takeIf { it.isNotBlank() }?.let { "$it\n\n" } ?: "") + report(null))
                 })
                 Toasts.show("Copied")
             },

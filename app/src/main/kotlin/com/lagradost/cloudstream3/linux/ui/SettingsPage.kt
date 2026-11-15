@@ -923,7 +923,33 @@ class SettingsPage : StackPane(), Refreshable {
         }
         val tabs = ChipGroup { i -> kind = kinds[i].first; layoutFields() }.apply { setItems(kinds.map { it.second }, 1) }
         layoutFields()
-        val form = VBox(12.0, tabs, row, extra, status).apply { styleClass += "card"; pad(16.0, 18.0) }
+        // iptv-org's whole list (10,000+ channels) is mostly region-locked elsewhere: say so, and offer one country.
+        val indexHint = label("That's iptv-org's whole list: 10,000+ channels from every country, and many play only in their own country " +
+            "or have stopped. Live TV opens on your country's channels from it, or add just one country below (smaller and quicker).", "muted").apply {
+            isWrapText = true; isVisible = false; isManaged = false
+        }
+        url.textProperty().addListener { _, _, t -> indexHint.isVisible = kind == LiveTv.Kind.M3U && LiveTv.isIptvOrgIndex(t.orEmpty()); indexHint.isManaged = indexHint.isVisible }
+        val allCountries = java.util.Locale.getISOCountries().map { it to LiveTv.countryName(it) }.sortedBy { it.second }
+        val home = LiveTv.homeCountry
+        val countryPick = javafx.scene.control.ComboBox<Pair<String, String>>().apply {
+            items.setAll(listOf(home to LiveTv.countryName(home) + " · your country") + allCountries)
+            selectionModel.select(0)
+            converter = object : javafx.util.StringConverter<Pair<String, String>>() {
+                override fun toString(p: Pair<String, String>?) = p?.second.orEmpty()
+                override fun fromString(s: String?) = null
+            }
+        }
+        val addCountry = button("Add its channels", Icons.ADD, "btn-ghost") {
+            val code = countryPick.value?.first ?: home
+            runAdd {
+                val (source, count) = LiveTv.add(LiveTv.Kind.M3U, LiveTv.iptvOrgCountryUrl(code), "${LiveTv.countryName(code)} (iptv-org)")
+                "Added ${source.name}: $count channels. They're in Live TV."
+            }
+        }
+        val byCountry = VBox(10.0, label("From iptv-org, the open list of publicly available channels, one country at a time. Region-locked channels " +
+            "from your own country play; channels with broken links are hidden by the automatic check.", "muted").apply { isWrapText = true },
+            hbox(10.0, countryPick, addCountry)).apply { styleClass += "card"; pad(16.0, 18.0) }
+        val form = VBox(12.0, tabs, row, extra, indexHint, status).apply { styleClass += "card"; pad(16.0, 18.0) }
         val sources = LiveTv.sources()
         val list = VBox().apply {
             styleClass += "card"; pad(4.0, 18.0)
@@ -947,8 +973,29 @@ class SettingsPage : StackPane(), Refreshable {
             label("Sources added here appear only in Live TV, never on Home or in Search. Works with Stremio and Nuvio TV add-ons, " +
                 "M3U playlists with optional XMLTV TV guides (by address or as a file), and Xtream Codes logins from IPTV providers.", "muted").apply { isWrapText = true; maxWidth = 860.0 },
             vbox(10.0, label("ADD A SOURCE", "section-label"), form),
+            vbox(10.0, label("FREE CHANNELS BY COUNTRY", "section-label"), byCountry),
             vbox(10.0, label("YOUR LIVE TV SOURCES", "section-label"), list),
             section("Options",
+                row("Check channels automatically", "When Live TV opens, the channels showing are tested in the background (each once a day) and " +
+                    "ones with broken links are hidden. A channel whose stream works but won't play is reported as a problem in the app instead.",
+                    Switch(LiveTv.autoCheck) { LiveTv.autoCheck = it }),
+                row("Hide channels that don't work", "Broken links found by the check, or that failed to play.",
+                    Switch(LiveTv.hideNotWorking) { LiveTv.hideNotWorking = it }),
+                row("Hide region-locked channels", "Channels marked as playing only in their own country are left out, except ones from your country.",
+                    Switch(LiveTv.hideRegionLocked) { LiveTv.hideRegionLocked = it }),
+                row("Your country", "For region-locked channels and the country Live TV opens on. From your system's region unless you pick one.",
+                    javafx.scene.control.ComboBox<Pair<String, String>>().apply {
+                        items.setAll(allCountries)
+                        selectionModel.select(allCountries.indexOfFirst { it.first == home }.coerceAtLeast(0))
+                        converter = object : javafx.util.StringConverter<Pair<String, String>>() {
+                            override fun toString(p: Pair<String, String>?) = p?.second.orEmpty()
+                            override fun fromString(s: String?) = null
+                        }
+                        valueProperty().addListener { _, _, v -> v?.let { LiveTv.homeCountry = it.first } }
+                    }),
+                row("Play channels with an expired certificate", "Many public channels' servers let their security certificate run out. When one " +
+                    "fails for that reason it's tried again accepting it, if the certificate is otherwise genuine (right address, trusted issuer). Only for Live TV streams.",
+                    Switch(LiveTv.allowExpired) { LiveTv.allowExpired = it }),
                 row("Refresh playlists every day", "Download channel lists again when they're more than a day old. Guides refresh every 12 hours.",
                     Switch(LiveTv.refreshDaily) { LiveTv.refreshDaily = it }),
                 row("Allow Live TV in kids profiles", "Kids then see only channels in children's groups (Kids, Cartoons, Animation, Family…).",

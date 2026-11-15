@@ -107,8 +107,14 @@ class LiveTvPage : StackPane(), Refreshable, TopBarActions, Disposable {
             loading = false
             val countries = all.mapNotNull { it.country }.distinct()
             countryButton.isVisible = countries.size > 1; countryButton.isManaged = countryButton.isVisible
+            // A list from many countries (iptv-org's whole list): open on the viewer's own.
+            val home = LiveTv.homeCountry
+            if (country == null && countries.size >= 5 && all.any { it.country?.split(';')?.contains(home) == true }) {
+                country = home; countryButton.text = LiveTv.countryName(home)
+            }
             renderHero()
             renderBody()
+            autoCheck()
             LiveTv.loadGuides(force)
         }
     }
@@ -157,14 +163,26 @@ class LiveTvPage : StackPane(), Refreshable, TopBarActions, Disposable {
         }
     }
 
-    private fun visible(): List<LiveTv.Channel> = all.filter {
-        (country == null || it.country?.split(';')?.contains(country) == true) && (!LiveTv.hideNotWorking || LiveTv.health(it)?.ok != false)
+    /** In the chosen country, and not region-locked to another one (Settings → Live TV). */
+    private fun inView(c: LiveTv.Channel) = (country == null || c.country?.split(';')?.contains(country) == true) &&
+        (!LiveTv.hideRegionLocked || !LiveTv.lockedOut(c))
+
+    private fun visible(): List<LiveTv.Channel> = all.filter { inView(it) && (!LiveTv.hideNotWorking || LiveTv.health(it)?.ok != false) }
+
+    private var checkTotal = 0
+
+    /** The automatic check: channels in view not checked in the last day, in the background; broken links then drop out. */
+    private fun autoCheck() {
+        if (!LiveTv.autoCheck || checkJob?.isActive == true) return
+        val todo = all.filter { inView(it) && LiveTv.stale(it) }
+        if (todo.isNotEmpty()) checkChannels(todo, quiet = true)
     }
 
-    private fun checkChannels() {
+    private fun checkChannels(only: List<LiveTv.Channel>? = null, quiet: Boolean = false) {
         if (checkJob?.isActive == true) { checkJob?.cancel(); return }
-        val list = all.filter { country == null || it.country?.split(';')?.contains(country) == true }
+        val list = only ?: all.filter { inView(it) }
         if (list.isEmpty()) return
+        checkTotal = list.size
         checkJob = ui.launch {
             checking = 0 to 0
             checkButton.text = "Stop checking"
@@ -175,7 +193,7 @@ class LiveTvPage : StackPane(), Refreshable, TopBarActions, Disposable {
             checking = null
             checkButton.text = "Check channels"
             renderBody()
-            if (ok != null) Toasts.show("$ok of ${list.size} channels work" + if (ok < list.size) ". Use \"Hide them\" to leave the others out." else "")
+            if (ok != null && !quiet) Toasts.show("$ok of ${list.size} channels work" + if (ok < list.size && !LiveTv.hideNotWorking) ". Use \"Hide them\" to leave the others out." else "")
         }
     }
 
@@ -183,14 +201,24 @@ class LiveTvPage : StackPane(), Refreshable, TopBarActions, Disposable {
     private fun healthBar(): Node? {
         checking?.let { (done, working) ->
             return hbox(10.0, ProgressIndicator().apply { setPrefSize(18.0, 18.0) },
-                label("Checking channels… $done of ${all.size} · $working work", "muted"),
+                label("Checking channels… $done of $checkTotal · $working work", "muted"),
                 button("Stop", null, "btn-ghost", "btn-small") { checkJob?.cancel() })
         }
-        val dead = all.count { LiveTv.health(it)?.ok == false }
-        if (dead == 0) return null
+        val dead = all.count { (country == null || it.country?.split(';')?.contains(country) == true) && LiveTv.health(it)?.ok == false }
+        val locked = all.count { (country == null || it.country?.split(';')?.contains(country) == true) && LiveTv.lockedOut(it) }
+        if (dead == 0 && locked == 0) return null
         val hide = LiveTv.hideNotWorking
-        return hbox(10.0, label(if (hide) "$dead channels that didn't answer the last check are hidden." else "$dead channels didn't answer the last check.", "muted"),
-            button(if (hide) "Show them" else "Hide them", null, "btn-ghost", "btn-small") { LiveTv.hideNotWorking = !hide; renderHero(); renderBody() })
+        val hideLocked = LiveTv.hideRegionLocked
+        val parts = mutableListOf<Node>()
+        if (dead > 0) {
+            parts += label(if (hide) "$dead channels with broken links are hidden." else "$dead channels have broken links.", "muted")
+            parts += button(if (hide) "Show them" else "Hide them", null, "btn-ghost", "btn-small") { LiveTv.hideNotWorking = !hide; renderHero(); renderBody() }
+        }
+        if (locked > 0) {
+            parts += label(if (hideLocked) "$locked region-locked to other countries are hidden." else "$locked are region-locked to other countries.", "muted")
+            parts += button(if (hideLocked) "Show them" else "Hide them", null, "btn-ghost", "btn-small") { LiveTv.hideRegionLocked = !hideLocked; renderHero(); renderBody() }
+        }
+        return hbox(10.0, *parts.toTypedArray())
     }
 
     // ---------- top bar menus ----------
@@ -215,9 +243,10 @@ class LiveTvPage : StackPane(), Refreshable, TopBarActions, Disposable {
     private fun countryMenu() {
         val counts = all.flatMap { it.country?.split(';').orEmpty() }.filter { it.isNotBlank() }.groupingBy { it }.eachCount()
         val rows = mutableListOf(Popover.row(null, "All countries", null, country == null) { country = null; countryButton.text = "All countries"; renderBody(); renderHero() })
-        counts.entries.sortedByDescending { it.value }.take(40).forEach { (code, n) ->
+        val home = LiveTv.homeCountry
+        counts.entries.sortedWith(compareByDescending<Map.Entry<String, Int>> { it.key == home }.thenByDescending { it.value }).take(60).forEach { (code, n) ->
             val name = java.util.Locale("", code).getDisplayCountry(java.util.Locale.ENGLISH).ifBlank { code }
-            rows += Popover.row(null, name, "$n", code == country) { country = code; countryButton.text = name; group = ALL; renderBody(); renderHero() }
+            rows += Popover.row(null, name + if (code == home) " · your country" else "", "$n", code == country) { country = code; countryButton.text = name; group = ALL; renderBody(); renderHero(); autoCheck() }
         }
         val panel = Popover.panel(*rows.toTypedArray())
         Popover.show(countryButton, ScrollPane(panel).apply { maxHeight = 460.0; isFitToWidth = true; hbarPolicy = ScrollPane.ScrollBarPolicy.NEVER }, alignRight = false)

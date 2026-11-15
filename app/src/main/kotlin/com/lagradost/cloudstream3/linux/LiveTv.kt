@@ -161,7 +161,7 @@ object LiveTv {
     suspend fun diagnose(url: String, headers: Map<String, String> = emptyMap()): String? = withContext(Dispatchers.IO) {
         if (!url.startsWith("http://") && !url.startsWith("https://")) return@withContext null
         val client = app.baseClient.newBuilder().callTimeout(12, java.util.concurrent.TimeUnit.SECONDS)
-            .connectTimeout(8, java.util.concurrent.TimeUnit.SECONDS).build()
+            .connectTimeout(8, java.util.concurrent.TimeUnit.SECONDS).build().let { if (allowExpired) ExpiredCertTrust.client(it) else it }
         val request = okhttp3.Request.Builder().url(url).apply {
             headers.forEach { (k, v) -> runCatching { header(k, v) } }
             if (headers.keys.none { it.equals("User-Agent", true) }) header("User-Agent", com.lagradost.cloudstream3.USER_AGENT)
@@ -364,9 +364,45 @@ object LiveTv {
     /** The last check's result for [c], or null if it hasn't been checked (or not in the last 7 days). */
     fun health(c: Channel): Health? = healthMap()[c.key]?.takeIf { System.currentTimeMillis() - it.at < 7 * 24 * 3600_000L }
 
-    /** Leave out channels the last check found not working. */
+    /** The viewer's country (two letters), for region-locked channels: chosen in Settings → Live TV, else the system's region. */
+    var homeCountry: String
+        get() = prefs.getString("home_country", null)?.ifBlank { null } ?: java.util.Locale.getDefault().country.uppercase().ifBlank { "US" }
+        set(v) { prefs.edit().putString("home_country", v.uppercase()).apply(); changed() }
+
+    /** Leave out channels marked as playing only in their own country, unless that's [homeCountry] (on by default). */
+    var hideRegionLocked: Boolean
+        get() = prefs.getString("hide_region_locked", null) != "false"
+        set(v) { prefs.edit().putString("hide_region_locked", v.toString()).apply(); changed() }
+
+    /** Marked region-locked, and not for the viewer's country. */
+    fun lockedOut(c: Channel): Boolean = c.regionLocked && !c.country.equals(homeCountry, ignoreCase = true)
+
+    /** A country code in words: "PK" → "Pakistan". */
+    fun countryName(code: String): String = java.util.Locale("", code.uppercase()).getDisplayCountry(java.util.Locale.ENGLISH).ifBlank { code.uppercase() }
+
+    /** iptv-org's free channels for one country, instead of its whole list (index.m3u, 10,000+ channels). */
+    fun iptvOrgCountryUrl(code: String) = "https://iptv-org.github.io/iptv/countries/${code.lowercase()}.m3u"
+    fun isIptvOrgIndex(url: String) = Regex("""iptv-org\.github\.io/iptv/index(\.\w+)?\.m3u""").containsMatchIn(url)
+
+    /** Not checked in the last day: due for the automatic check. */
+    fun stale(c: Channel): Boolean = healthMap()[c.key]?.let { System.currentTimeMillis() - it.at > 24 * 3600_000L } ?: true
+
+    /** Check the channels showing in the background when Live TV opens (each at most once a day). On by default. */
+    var autoCheck: Boolean
+        get() = prefs.getString("auto_check", null) != "false"
+        set(v) { prefs.edit().putString("auto_check", v.toString()).apply() }
+
+    /**
+     * Play channels whose server's security certificate has expired (but is otherwise genuine): on by default, since
+     * public lists have many. Only for Live TV streams, never logins.
+     */
+    var allowExpired: Boolean
+        get() = prefs.getString("allow_expired", null) != "false"
+        set(v) { prefs.edit().putString("allow_expired", v.toString()).apply() }
+
+    /** Leave out channels the last check found not working (on by default). */
     var hideNotWorking: Boolean
-        get() = prefs.getString("hide_not_working", null) == "true"
+        get() = prefs.getString("hide_not_working", null) != "false"
         set(v) { prefs.edit().putString("hide_not_working", v.toString()).apply(); changed() }
 
     /**
@@ -375,9 +411,11 @@ object LiveTv {
      * behind it is gone. [onProgress] gets (checked, working) as it goes. Returns how many work.
      */
     suspend fun check(list: List<Channel>, onProgress: (Int, Int) -> Unit = { _, _ -> }): Int = withContext(Dispatchers.IO) {
-        val client = app.baseClient.newBuilder().connectTimeout(8, java.util.concurrent.TimeUnit.SECONDS)
-            .readTimeout(8, java.util.concurrent.TimeUnit.SECONDS).callTimeout(15, java.util.concurrent.TimeUnit.SECONDS).build()
-        val gate = kotlinx.coroutines.sync.Semaphore(12)
+        // 24 at a time with short waits: a public list of 10,000 channels takes minutes, not an hour.
+        val client = app.baseClient.newBuilder().connectTimeout(6, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(6, java.util.concurrent.TimeUnit.SECONDS).callTimeout(10, java.util.concurrent.TimeUnit.SECONDS).build()
+            .let { if (allowExpired) ExpiredCertTrust.client(it) else it }
+        val gate = kotlinx.coroutines.sync.Semaphore(24)
         val done = java.util.concurrent.atomic.AtomicInteger()
         val working = java.util.concurrent.atomic.AtomicInteger()
         val results = java.util.concurrent.ConcurrentHashMap<String, Health>()
@@ -397,17 +435,27 @@ object LiveTv {
             }
         } finally {
             // Also when stopped half-way: what was checked is kept.
-            val map = healthMap()
-            synchronized(map) {
-                map.putAll(results)
-                val o = JSONObject()
-                map.forEach { (k, h) -> o.put(k, JSONObject().put("ok", h.ok).put("at", h.at).put("why", h.why ?: "")) }
-                runCatching { healthFile.writeText(o.toString()) }
-            }
-            changed()
+            saveHealth(results)
         }
         working.get()
     }
+
+    private fun saveHealth(results: Map<String, Health>) {
+        val map = healthMap()
+        synchronized(map) {
+            map.putAll(results)
+            val o = JSONObject()
+            map.forEach { (k, h) -> o.put(k, JSONObject().put("ok", h.ok).put("at", h.at).put("why", h.why ?: "")) }
+            runCatching { healthFile.writeText(o.toString()) }
+        }
+        changed()
+    }
+
+    /** A channel that failed to play (and its backups too): counted as not working, like a check would. */
+    fun markNotWorking(key: String, why: String?) = saveHealth(mapOf(key to Health(false, System.currentTimeMillis(), why ?: "didn't play")))
+
+    /** A channel that played: counted as working again. */
+    fun markWorking(key: String) { if (healthMap()[key]?.ok == false) saveHealth(mapOf(key to Health(true, System.currentTimeMillis()))) }
 
     /** null when the stream answers like a stream; otherwise why not, in a few words. */
     private fun probe(client: okhttp3.OkHttpClient, url: String, headers: Map<String, String>, depth: Int): String? {
@@ -421,7 +469,7 @@ object LiveTv {
                 404, 410 -> "gone (HTTP ${r.code})"
                 else -> "HTTP ${r.code}"
             }
-            val buffer = ByteArray(16 * 1024)
+            val buffer = ByteArray(8 * 1024)
             var n = 0
             r.body.byteStream().use { input ->
                 while (n < buffer.size) { val got = input.read(buffer, n, buffer.size - n); if (got < 0) break; n += got; if (depth > 0 && n >= 2048) break }
@@ -528,6 +576,9 @@ object LiveTv {
 """ else "") + "</body></html>"
     }
 
+    /** iptv-org ids carry the country: "HumTV.pk@SD" → "pk". */
+    internal fun countryOfId(id: String?): String? = id?.let { Regex("""\.([a-z]{2})(?:@|$)""", RegexOption.IGNORE_CASE).find(it)?.groupValues?.get(1) }
+
     /** #EXTM3U playlists: attributes, #EXTVLCOPT headers and the "url|Header=value" form. */
     fun parseM3u(sourceId: String, text: String): List<Channel> {
         val out = mutableListOf<Channel>()
@@ -579,7 +630,7 @@ object LiveTv {
                         out += Channel("$sourceId:${out.size}:${url.hashCode()}", sourceId, name, attrs["tvg-logo"]?.ifBlank { null },
                             (attrs["group-title"] ?: extGroup)?.split(';')?.map { it.trim() }?.filter { it.isNotEmpty() }?.joinToString(";")?.ifBlank { null },
                             url, headers,
-                            attrs["tvg-id"]?.ifBlank { null }, attrs["tvg-country"]?.ifBlank { null }?.uppercase(),
+                            attrs["tvg-id"]?.ifBlank { null }, (attrs["tvg-country"]?.ifBlank { null } ?: countryOfId(attrs["tvg-id"]))?.uppercase(),
                             attrs["tvg-chno"]?.toIntOrNull() ?: (out.size + 1), locked)
                     }
                     info = null
@@ -770,7 +821,7 @@ object LiveApi : MainAPI() {
     override val supportedTypes = setOf(TvType.Live)
 
     /** A channel as the "url" this API loads: everything needed to play it. */
-    fun data(c: LiveTv.Channel) = JSONObject().put("url", c.url).put("headers", JSONObject(c.headers)).put("name", c.name).put("logo", c.logo ?: "")
+    fun data(c: LiveTv.Channel) = JSONObject().put("url", c.url).put("headers", JSONObject(c.headers)).put("name", c.name).put("logo", c.logo ?: "").put("key", c.key)
         .apply {
             if (LiveTv.plainRetry(c)) put("plain", true)
             val alts = LiveTv.alternatives(c)
@@ -781,6 +832,11 @@ object LiveApi : MainAPI() {
 
     /** The link name of the plain-http retry (see [LiveTv.retryPlain]). */
     const val PLAIN = "Live (unencrypted)"
+
+    /** The link name of the retry that accepts an expired certificate (see [LiveTv.allowExpired]). */
+    const val EXPIRED = "Live (expired certificate)"
+    /** Marks that link's address apart from the first try's (the player tries each address once). */
+    const val EXPIRED_MARK = "#sg-expired-certificate"
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse? = null
 
@@ -803,6 +859,11 @@ object LiveApi : MainAPI() {
         val headers = h?.keySet()?.associateWith { h.getString(it) }.orEmpty()
         val type = if (url.substringBefore('?').endsWith(".m3u8")) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
         callback(newExtractorLink(o.optString("name", "Live TV"), "Live", url, type) {
+            this.headers = headers
+            headers["Referer"]?.let { referer = it }
+        })
+        // A server whose certificate is genuine but out of date (common in public lists): tried when the first fails.
+        if (LiveTv.allowExpired && url.startsWith("https://")) callback(newExtractorLink(o.optString("name", "Live TV"), EXPIRED, url + EXPIRED_MARK, type) {
             this.headers = headers
             headers["Referer"]?.let { referer = it }
         })
