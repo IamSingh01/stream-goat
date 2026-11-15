@@ -59,6 +59,8 @@ object CloudBackup {
         val revoke: String = "https://oauth2.googleapis.com/revoke",
         val drive: String = "https://www.googleapis.com/drive/v3",
         val upload: String = "https://www.googleapis.com/upload/drive/v3",
+        /** Google's older sign-in address, used when the one above can't be found (see [fallbackUrl]). */
+        val authFallback: String? = "https://accounts.google.com/o/oauth2",
     )
     @Volatile var endpoints = Endpoints()
 
@@ -112,11 +114,28 @@ object CloudBackup {
     private val json = "application/json; charset=UTF-8".toMediaType()
 
     private suspend fun call(request: Request): Pair<Int, String> = withContext(Dispatchers.IO) {
+        fun send(r: Request) = client.newCall(r).execute().use { it.code to (it.body?.string() ?: "") }
         try {
-            client.newCall(request).execute().use { it.code to (it.body?.string() ?: "") }
+            send(request)
         } catch (e: java.net.UnknownHostException) {
-            throw CloudException("Couldn't reach Google (${request.url.host}): this network doesn't find it. If an ad blocker, a VPN " +
-                "or Private DNS is on, allow googleapis.com there, or try another network.")
+            // Sign-in can also go through accounts.google.com, which any device that signs in to Google can find.
+            val other = fallbackUrl(request.url.toString(), endpoints)
+            val second = other?.let { runCatching { send(request.newBuilder().url(it).build()) } }
+            second?.getOrNull()?.let { return@withContext it }
+            val tried = (second?.exceptionOrNull() as? java.net.UnknownHostException)?.message?.let { "; $it" } ?: ""
+            throw CloudException("Couldn't reach Google: ${e.message}$tried. If an ad blocker, a VPN or Private DNS is on, " +
+                "allow googleapis.com there, or try another network.")
+        }
+    }
+
+    /** The same sign-in step at Google's older address (device code, token, revoke), or null. */
+    internal fun fallbackUrl(url: String, e: Endpoints = endpoints): String? {
+        val base = e.authFallback ?: return null
+        return when (url) {
+            e.deviceCode -> "$base/device/code"
+            e.token -> "$base/token"
+            e.revoke -> "$base/revoke"
+            else -> null
         }
     }
 
@@ -125,27 +144,34 @@ object CloudBackup {
      * filter: "Unable to resolve host oauth2.googleapis.com", reported from a tablet), asks Cloudflare's, then
      * Google's DNS over HTTPS, reached by IP address, so no local DNS is needed.
      */
-    internal class RescueDns(private val first: Dns, private val rescuers: List<Dns> = defaultRescuers) : Dns {
+    internal class RescueDns(private val first: Dns, private val rescuers: List<Pair<String, Dns>> = defaultRescuers) : Dns {
         override fun lookup(hostname: String): List<InetAddress> {
             try {
                 return first.lookup(hostname)
             } catch (e: java.net.UnknownHostException) {
-                for (r in rescuers) {
-                    val found = runCatching { r.lookup(hostname) }.getOrNull()
-                    if (!found.isNullOrEmpty()) return found
+                // What each one answered goes into the message, so a report shows what blocks it.
+                val why = mutableListOf("this device: ${e.message?.substringAfterLast(": ")?.take(70) ?: "no answer"}")
+                for ((name, r) in rescuers) {
+                    try {
+                        val found = r.lookup(hostname)
+                        if (found.isNotEmpty()) return found
+                        why += "$name: no answer"
+                    } catch (x: Exception) {
+                        why += "$name: ${(x.message ?: x.javaClass.simpleName).take(70)}"
+                    }
                 }
-                throw e
+                throw java.net.UnknownHostException("$hostname not found (${why.joinToString("; ")})")
             }
         }
 
         companion object {
-            private val defaultRescuers: List<Dns> by lazy {
+            private val defaultRescuers: List<Pair<String, Dns>> by lazy {
                 val boot = OkHttpClient.Builder().callTimeout(8, TimeUnit.SECONDS).build()
                 listOf(
-                    "https://cloudflare-dns.com/dns-query" to listOf("1.1.1.1", "1.0.0.1"),
-                    "https://dns.google/dns-query" to listOf("8.8.8.8", "8.8.4.4"),
-                ).map { (url, ips) ->
-                    DnsOverHttps.Builder().client(boot).url(url.toHttpUrl()).bootstrapDnsHosts(ips.map { InetAddress.getByName(it) }).build()
+                    Triple("Cloudflare", "https://cloudflare-dns.com/dns-query", listOf("1.1.1.1", "1.0.0.1")),
+                    Triple("Google DNS", "https://dns.google/dns-query", listOf("8.8.8.8", "8.8.4.4")),
+                ).map { (name, url, ips) ->
+                    name to DnsOverHttps.Builder().client(boot).url(url.toHttpUrl()).bootstrapDnsHosts(ips.map { InetAddress.getByName(it) }).build()
                 }
             }
         }

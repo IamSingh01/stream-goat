@@ -124,14 +124,24 @@ class CloudBackupTest {
     fun `a DNS without an answer for Google falls back to DNS over HTTPS`() {
         val blocked = okhttp3.Dns { throw java.net.UnknownHostException("Unable to resolve host \"$it\": No address associated with hostname") }
         val local = java.net.InetAddress.getByName("127.0.0.1")
-        val rescued = CloudBackup.RescueDns(blocked, listOf(okhttp3.Dns { throw java.net.UnknownHostException("down") }, okhttp3.Dns { listOf(local) }))
+        val rescued = CloudBackup.RescueDns(blocked, listOf("Cloudflare" to okhttp3.Dns { throw java.net.UnknownHostException("down") }, "Google" to okhttp3.Dns { listOf(local) }))
         assertEquals(listOf(local), rescued.lookup("oauth2.googleapis.com"))
-        // Nothing answers: the original error.
-        val none = CloudBackup.RescueDns(blocked, listOf(okhttp3.Dns { emptyList() }))
+        // Nothing answers: the message says what each one said.
+        val none = CloudBackup.RescueDns(blocked, listOf("Cloudflare" to okhttp3.Dns { emptyList() }, "Google" to okhttp3.Dns { throw java.net.SocketTimeoutException("timeout") }))
         val error = runCatching { none.lookup("oauth2.googleapis.com") }.exceptionOrNull()
-        assertTrue(error is java.net.UnknownHostException && error.message!!.contains("No address"))
+        assertTrue(error is java.net.UnknownHostException)
+        assertEquals("oauth2.googleapis.com not found (this device: No address associated with hostname; Cloudflare: no answer; Google: timeout)", error!!.message)
         // A working DNS is used as it is.
         assertEquals(listOf(local), CloudBackup.RescueDns(okhttp3.Dns { listOf(local) }, emptyList()).lookup("oauth2.googleapis.com"))
+    }
+
+    @Test
+    fun `sign-in steps have a second address at accounts google com`() {
+        val e = CloudBackup.Endpoints()
+        assertEquals("https://accounts.google.com/o/oauth2/device/code", CloudBackup.fallbackUrl(e.deviceCode, e))
+        assertEquals("https://accounts.google.com/o/oauth2/token", CloudBackup.fallbackUrl(e.token, e))
+        assertEquals("https://accounts.google.com/o/oauth2/revoke", CloudBackup.fallbackUrl(e.revoke, e))
+        assertEquals(null, CloudBackup.fallbackUrl("${e.drive}/files", e))
     }
 
     @Test
