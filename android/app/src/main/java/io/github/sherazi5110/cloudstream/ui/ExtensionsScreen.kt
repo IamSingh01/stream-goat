@@ -158,6 +158,16 @@ fun ExtensionsScreen() {
                         runCatching { settings.invoke(activity) }
                             .onFailure { App.toast("Couldn't open its settings: ${it.message ?: it}") }
                     }
+                    // A failed one (e.g. its file is missing after restoring a backup): download it again in one tap.
+                    if (failure != null) IconAction(Icons.Filled.Refresh, "Reinstall") {
+                        App.toast("Reinstalling ${data.name ?: data.internalName}…")
+                        scope.launch {
+                            val r = withContext(Dispatchers.IO) { PluginManager.reinstall(data.internalName) }
+                            PluginManager.bumpVersion()
+                            r.onSuccess { App.toast("${data.name ?: data.internalName} works again") }
+                                .onFailure { App.toast("Couldn't reinstall: ${it.message ?: it}") }
+                        }
+                    }
                     IconAction(Icons.Filled.Delete, "Uninstall") { PluginManager.uninstall(data.internalName); PluginManager.bumpVersion() }
                 }
             }

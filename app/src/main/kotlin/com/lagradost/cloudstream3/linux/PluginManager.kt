@@ -89,8 +89,13 @@ object PluginManager {
         all.map { data ->
             async(Engine.dispatcher) {
                 val file = File(data.filePath)
-                if (!file.exists()) failures[data.internalName] = IllegalStateException("Missing file ${data.filePath}")
-                else loadPlugin(file, data)
+                if (file.exists()) loadPlugin(file, data)
+                else {
+                    // A restored backup (maybe from another device) lists extensions without their files: download them.
+                    runCatching { redownload(data) }
+                        .onSuccess { (f, d) -> failures.remove(data.internalName); loadPlugin(f, d) }
+                        .onFailure { failures[data.internalName] = IllegalStateException("Its file is missing and couldn't be downloaded again (${it.message ?: it}). Use Reinstall.") }
+                }
                 _progress.value = _progress.value.let { it.copy(done = it.done + 1) }
             }
         }.awaitAll()
@@ -168,6 +173,42 @@ object PluginManager {
         com.lagradost.cloudstream3.actions.VideoClickActionHolder.removeFrom(owner)
         runCatching { plugin.loader.close() }
         android.content.res.AssetManager.unregister(java.io.File(absolutePath))
+        changed()
+    }
+
+    /**
+     * The file of an installed extension that isn't on this computer (a restored backup, perhaps from a phone):
+     * from its repository's current list (the native .jar when there is one), else from the address it was
+     * installed from. Returns the file and the updated record.
+     */
+    private suspend fun redownload(data: PluginData): Pair<File, PluginData> {
+        val repo = RepositoryManager.getRepositories().firstOrNull { it.url == data.repositoryUrl }
+        val w = repo?.let { r -> runCatching { RepositoryManager.getRepoPlugins(r) }.getOrNull()?.firstOrNull { it.plugin.internalName == data.internalName } }
+        if (w != null) {
+            val p = w.plugin
+            val useJar = p.jarUrl != null
+            val file = RepositoryManager.pluginPath(p.internalName, w.repositoryData.url, if (useJar) "jar" else "cs3")
+            if (useJar) RepositoryManager.download(p.jarUrl!!, file, p.jarHash) else RepositoryManager.download(p.url, file, p.fileHash)
+            val fresh = PluginData(p.internalName, p.url, true, file.absolutePath, p.version, w.repositoryData.url, p.name)
+            record(fresh)
+            return file to fresh
+        }
+        val url = data.url ?: throw IllegalStateException(if (repo == null) "its repository isn't added" else "${repo.name} no longer lists it")
+        val file = RepositoryManager.pluginPath(data.internalName, data.repositoryUrl ?: "restored", "cs3")
+        RepositoryManager.download(url, file, null)
+        val moved = data.copy(filePath = file.absolutePath)
+        record(moved)
+        return file to moved
+    }
+
+    /** The "Reinstall" button: downloads [internalName] again (as after a restore) and loads it. */
+    suspend fun reinstall(internalName: String): Result<Unit> = runCatching {
+        val data = installed().first { it.internalName == internalName }
+        unloadPlugin(File(data.filePath).absolutePath)
+        File(data.filePath).delete()
+        val (file, fresh) = redownload(data)
+        failures.remove(internalName)
+        loadPlugin(file, fresh).getOrThrow()
         changed()
     }
 

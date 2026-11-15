@@ -76,12 +76,54 @@ object PluginManager {
         runCatching { android.os.Process.setThreadPriority(LOAD_PRIORITY) }
         try {
             val file = File(data.filePath)
-            if (!file.exists()) failures[data.internalName] = IllegalStateException("Missing file ${data.filePath}")
-            else loadPlugin(file, data)
+            if (file.exists()) loadPlugin(file, data)
+            else {
+                // A restored backup lists extensions without their files: download each one again.
+                runCatching { redownload(data) }
+                    .onSuccess { (f, d) -> failures.remove(data.internalName); loadPlugin(f, d) }
+                    .onFailure { failures[data.internalName] = IllegalStateException("Its file is missing and couldn't be downloaded again (${it.message ?: it}). Tap Reinstall.") }
+            }
         } finally {
             runCatching { android.os.Process.setThreadPriority(Engine.EXTENSION_PRIORITY) }
         }
         _progress.value = _progress.value.let { it.copy(done = it.done + 1) }
+    }
+
+    /**
+     * The file of an installed extension that isn't on this device (a restored backup, or a backup from another
+     * device): from the address it was installed from, else from its repository's current list. Returns the file
+     * and the (possibly moved) record.
+     */
+    private suspend fun redownload(data: PluginData): Pair<File, PluginData> {
+        val own = File(data.filePath).takeIf { it.absolutePath.startsWith(RepositoryManager.extensionsDir.absolutePath) }
+        val target = own ?: RepositoryManager.pluginPath(data.internalName, data.repositoryUrl ?: "restored", "cs3")
+        val direct = data.url?.let { url -> runCatching { RepositoryManager.download(url, target, null) } }
+        if (direct?.isSuccess == true) {
+            val moved = data.copy(filePath = target.absolutePath)
+            if (moved != data) record(moved)
+            return target to moved
+        }
+        // The address changed (a new version): find it in the repository again.
+        val repo = RepositoryManager.getRepositories().firstOrNull { it.url == data.repositoryUrl }
+            ?: throw (direct?.exceptionOrNull() ?: IllegalStateException("no download address"))
+        val w = RepositoryManager.getRepoPlugins(repo)?.firstOrNull { it.plugin.internalName == data.internalName }
+            ?: throw IllegalStateException("${repo.name} no longer lists it")
+        val file = RepositoryManager.pluginPath(w.plugin.internalName, w.repositoryData.url, "cs3")
+        RepositoryManager.download(w.plugin.url, file, w.plugin.fileHash)
+        val fresh = PluginData(w.plugin.internalName, w.plugin.url, true, file.absolutePath, w.plugin.version, w.repositoryData.url, w.plugin.name)
+        record(fresh)
+        return file to fresh
+    }
+
+    /** The "Reinstall" button: downloads [internalName] again (as after a restore) and loads it. */
+    suspend fun reinstall(internalName: String): Result<Unit> = runCatching {
+        val data = installed().first { it.internalName == internalName }
+        unloadPlugin(File(data.filePath).absolutePath)
+        File(data.filePath).delete()
+        val (file, fresh) = redownload(data)
+        failures.remove(internalName)
+        loadPlugin(file, fresh).getOrThrow()
+        changed()
     }
 
     /** Extensions loading at start: one per core (2 to 4), see loadAll. */
