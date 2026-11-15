@@ -167,7 +167,14 @@ suspend fun cli(args: List<String>): Int {
                 }
             } else {
                 val clean = results.count { it.value.getOrNull()?.isEmpty() == true }
+                val works = results.count { it.value.getOrNull()?.none { i -> i.matters } == true }
                 println("$clean of ${files.size} extensions: every reference resolves")
+                println("$works of ${files.size} extensions: nothing that could stop browsing or playing (Android screens and guarded checks left out)")
+                results.forEach { (f, r) ->
+                    val m = r.getOrNull()?.filter { it.matters }.orEmpty()
+                    if (m.isNotEmpty()) println("MATTERS ${f.parentFile?.name}/${f.nameWithoutExtension}: " +
+                        m.map { "${it.kind} ${it.owner.replace('/', '.')}${if (it.member.isNotEmpty()) "." + it.member.substringBefore('(') else ""} (in ${it.usedIn.replace('/', '.')})" }.distinct().take(8).joinToString(" | "))
+                }
                 results.forEach { (f, r) ->
                     val issues = r.getOrElse { e -> println("ERROR ${f.parentFile?.name}/${f.name}: $e"); null } ?: return@forEach
                     if (issues.isNotEmpty()) println("ISSUES ${f.parentFile?.name}/${f.nameWithoutExtension}: " +

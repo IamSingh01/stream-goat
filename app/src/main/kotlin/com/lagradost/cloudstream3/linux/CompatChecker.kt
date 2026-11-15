@@ -18,8 +18,56 @@ import java.util.zip.ZipFile
  * NoSuchMethodError at runtime, often swallowed by the extension as "no results".
  */
 object CompatChecker {
-    data class Issue(val kind: String, val owner: String, val member: String, val usedIn: String) {
+    /**
+     * [handled]: the reference sits inside the extension's own catch-all (runCatching, try/catch Throwable), so a
+     * missing piece only makes that step fall back (e.g. "is this a TV?" on Windows), it doesn't stop the extension.
+     */
+    data class Issue(val kind: String, val owner: String, val member: String, val usedIn: String, val handled: Boolean = false) {
+        /** Code of an Android screen of the extension (its settings, dialogs, Compose UI): not used to browse or play. */
+        val screenOnly: Boolean get() = isScreenCode(usedIn.substringBeforeLast('.')) || isUiApi(owner)
+        /** Could stop the extension from browsing or playing here. */
+        val matters: Boolean get() = !handled && !screenOnly
         override fun toString() = "$kind ${owner.replace('/', '.')}${if (member.isNotEmpty()) ".$member" else ""}  (used in ${usedIn.replace('/', '.')})"
+    }
+
+    private val screenWords = listOf("Settings", "Dialog", "Fragment", "Composable", "Compose", "Adapter", "Preference",
+        "BackButton", "AppRestart", "Activity", "BottomSheet")
+    private val screenEndings = listOf("View", "Layout", "Widget", "Screen", "Sheet", "Ui", "UI", "Button", "Holder")
+
+    /** Android's screen toolkits (views, dialogs, fragments, Compose): only used to show an extension's own screens. */
+    fun isUiApi(internalName: String): Boolean = listOf("android/view/", "android/widget/", "androidx/fragment/", "androidx/appcompat/",
+        "androidx/compose/", "androidx/recyclerview/", "androidx/preference/", "com/google/android/material/", "android/app/Dialog",
+        "android/app/AlertDialog", "android/content/DialogInterface", "androidx/activity/").any { internalName.startsWith(it) }
+
+    /** An extension class that belongs to its Android screens, by package (…/ui/, …/compose/, …/settings/) or name. */
+    fun isScreenCode(internalName: String): Boolean {
+        val pkg = internalName.substringBeforeLast('/', "").lowercase()
+        if (listOf("ui", "compose", "settings", "views", "widget", "widgets", "dialogs").any { "/$pkg/".contains("/$it/") }) return true
+        val simple = internalName.substringAfterLast('/').substringBefore('$')
+        return simple == "R" || internalName.substringAfterLast('/').startsWith("R$") || screenWords.any { simple.contains(it) } ||
+            screenEndings.any { simple.endsWith(it) }
+    }
+
+    /**
+     * Instructions inside a handler that catches everything (catch Throwable, runCatching; translated from dex
+     * these show as catch-any). A try/finally also catches "any" but rethrows: those don't count.
+     */
+    private fun handledRanges(method: org.objectweb.asm.tree.MethodNode): List<IntRange> {
+        val insns = method.instructions
+        return method.tryCatchBlocks.filter { tc ->
+            tc.type == null || tc.type in setOf("java/lang/Throwable", "java/lang/Error", "java/lang/LinkageError", "java/lang/NoClassDefFoundError")
+        }.filter { tc ->
+            // Follow the handler to its first unconditional exit: a rethrow means "finally".
+            var n: org.objectweb.asm.tree.AbstractInsnNode? = tc.handler
+            var steps = 0
+            while (n != null && steps++ < 400) {
+                val op = n.opcode
+                if (op == org.objectweb.asm.Opcodes.ATHROW) return@filter false
+                if (op == org.objectweb.asm.Opcodes.GOTO || op in org.objectweb.asm.Opcodes.IRETURN..org.objectweb.asm.Opcodes.RETURN) return@filter true
+                n = n.next
+            }
+            true
+        }.map { tc -> insns.indexOf(tc.start) until insns.indexOf(tc.end) }
     }
 
     private val runtime: ClassLoader = CompatChecker::class.java.classLoader
@@ -52,25 +100,32 @@ object CompatChecker {
             (listOfNotNull(cls.superName) + cls.interfaces).forEach { checkClass(it, own, cls.name, issues) }
             for (method in cls.methods) {
                 val where = "${cls.name}.${method.name}"
-                for (insn in method.instructions) {
+                val caught = handledRanges(method)
+                for ((index, insn) in method.instructions.withIndex()) {
+                    val found = linkedSetOf<Issue>()
                     when (insn) {
                         is MethodInsnNode -> if (insn.owner.startsWith("[")) Unit
-                        else if (checkClass(insn.owner, own, where, issues) && resolveMethod(insn.owner, insn.name, insn.desc, own) == false) {
-                            issues += Issue("missing method", insn.owner, insn.name + insn.desc, where)
+                        else if (checkClass(insn.owner, own, where, found) && resolveMethod(insn.owner, insn.name, insn.desc, own) == false) {
+                            found += Issue("missing method", insn.owner, insn.name + insn.desc, where)
                         }
                         // Compose's $stable flags from host classes are handled when the extension loads (ComposeStable).
                         is FieldInsnNode -> if (insn.name == "\$stable" && insn.desc == "I" && insn.owner !in own) Unit
-                        else if (checkClass(insn.owner, own, where, issues) && resolveField(insn.owner, insn.name, own) == false) {
-                            issues += Issue("missing field", insn.owner, insn.name, where)
+                        else if (checkClass(insn.owner, own, where, found) && resolveField(insn.owner, insn.name, own) == false) {
+                            found += Issue("missing field", insn.owner, insn.name, where)
                         }
                         is TypeInsnNode -> Type.getObjectType(insn.desc).let { t ->
                             val name = if (t.sort == Type.ARRAY) t.elementType.takeIf { it.sort == Type.OBJECT }?.internalName else t.internalName
-                            if (name != null) checkClass(name, own, where, issues)
+                            if (name != null) checkClass(name, own, where, found)
                         }
                     }
+                    if (found.isEmpty()) continue
+                    val inCatch = caught.any { index in it }
+                    found.forEach { issues += if (inCatch) it.copy(handled = true) else it }
                 }
             }
         }
+        // A reference that is also used outside a catch-all counts as not handled.
+        issues.removeAll { it.handled && it.copy(handled = false) in issues }
         return issues.toList()
     }
 
