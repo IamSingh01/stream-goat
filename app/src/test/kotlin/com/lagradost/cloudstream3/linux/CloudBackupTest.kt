@@ -121,6 +121,20 @@ class CloudBackupTest {
     private val account get() = Platform.context.getSharedPreferences("cloud_backup", 0)
 
     @Test
+    fun `a DNS without an answer for Google falls back to DNS over HTTPS`() {
+        val blocked = okhttp3.Dns { throw java.net.UnknownHostException("Unable to resolve host \"$it\": No address associated with hostname") }
+        val local = java.net.InetAddress.getByName("127.0.0.1")
+        val rescued = CloudBackup.RescueDns(blocked, listOf(okhttp3.Dns { throw java.net.UnknownHostException("down") }, okhttp3.Dns { listOf(local) }))
+        assertEquals(listOf(local), rescued.lookup("oauth2.googleapis.com"))
+        // Nothing answers: the original error.
+        val none = CloudBackup.RescueDns(blocked, listOf(okhttp3.Dns { emptyList() }))
+        val error = runCatching { none.lookup("oauth2.googleapis.com") }.exceptionOrNull()
+        assertTrue(error is java.net.UnknownHostException && error.message!!.contains("No address"))
+        // A working DNS is used as it is.
+        assertEquals(listOf(local), CloudBackup.RescueDns(okhttp3.Dns { listOf(local) }, emptyList()).lookup("oauth2.googleapis.com"))
+    }
+
+    @Test
     fun `sign in with a code, each device backs up its own file, restore another device's, sign out`(): Unit = runBlocking {
         Platform.init(); Network.init()
         val google = FakeGoogle()

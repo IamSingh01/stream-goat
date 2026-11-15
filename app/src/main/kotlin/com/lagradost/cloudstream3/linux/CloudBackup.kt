@@ -14,13 +14,19 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import okhttp3.Dns
 import okhttp3.FormBody
+import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.OkHttpClient
+import okhttp3.dnsoverhttps.DnsOverHttps
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
+import java.net.InetAddress
 import java.net.URLEncoder
+import java.util.concurrent.TimeUnit
 import java.security.MessageDigest
 
 /**
@@ -96,11 +102,53 @@ object CloudBackup {
 
     class CloudException(message: String) : Exception(message)
 
-    private val client get() = app.baseClient
+    /** The app's connection (and DNS setting), with [RescueDns] for when that DNS has no answer for Google. */
+    @Volatile private var built: Pair<OkHttpClient, OkHttpClient>? = null
+    private val client: OkHttpClient get() {
+        val base = app.baseClient
+        built?.takeIf { it.first === base }?.let { return it.second }
+        return base.newBuilder().dns(RescueDns(base.dns)).build().also { built = base to it }
+    }
     private val json = "application/json; charset=UTF-8".toMediaType()
 
     private suspend fun call(request: Request): Pair<Int, String> = withContext(Dispatchers.IO) {
-        client.newCall(request).execute().use { it.code to (it.body?.string() ?: "") }
+        try {
+            client.newCall(request).execute().use { it.code to (it.body?.string() ?: "") }
+        } catch (e: java.net.UnknownHostException) {
+            throw CloudException("Couldn't reach Google (${request.url.host}): this network doesn't find it. If an ad blocker, a VPN " +
+                "or Private DNS is on, allow googleapis.com there, or try another network.")
+        }
+    }
+
+    /**
+     * Looks a name up with the app's DNS first; when that has no answer (Private DNS, an ad blocker or a router
+     * filter: "Unable to resolve host oauth2.googleapis.com", reported from a tablet), asks Cloudflare's, then
+     * Google's DNS over HTTPS, reached by IP address, so no local DNS is needed.
+     */
+    internal class RescueDns(private val first: Dns, private val rescuers: List<Dns> = defaultRescuers) : Dns {
+        override fun lookup(hostname: String): List<InetAddress> {
+            try {
+                return first.lookup(hostname)
+            } catch (e: java.net.UnknownHostException) {
+                for (r in rescuers) {
+                    val found = runCatching { r.lookup(hostname) }.getOrNull()
+                    if (!found.isNullOrEmpty()) return found
+                }
+                throw e
+            }
+        }
+
+        companion object {
+            private val defaultRescuers: List<Dns> by lazy {
+                val boot = OkHttpClient.Builder().callTimeout(8, TimeUnit.SECONDS).build()
+                listOf(
+                    "https://cloudflare-dns.com/dns-query" to listOf("1.1.1.1", "1.0.0.1"),
+                    "https://dns.google/dns-query" to listOf("8.8.8.8", "8.8.4.4"),
+                ).map { (url, ips) ->
+                    DnsOverHttps.Builder().client(boot).url(url.toHttpUrl()).bootstrapDnsHosts(ips.map { InetAddress.getByName(it) }).build()
+                }
+            }
+        }
     }
 
     private fun form(vararg pairs: Pair<String, String>) = FormBody.Builder().apply { pairs.forEach { add(it.first, it.second) } }.build()
