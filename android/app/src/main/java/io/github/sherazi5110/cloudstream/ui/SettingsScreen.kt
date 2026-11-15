@@ -24,6 +24,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Extension
@@ -303,6 +304,29 @@ private fun LiveTvSection() {
     var user by remember { mutableStateOf("") }
     var pass by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
+    // A playlist file on the device (downloaded .m3u / .m3u8): copied into the app, so it stays after the original moves.
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val pickFile = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.OpenDocument()) { uri: android.net.Uri? ->
+        uri ?: return@rememberLauncherForActivityResult
+        busy = true
+        scope.launch {
+            val r = withContext(Dispatchers.IO) {
+                runCatching {
+                    val display = context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+                        if (c.moveToFirst()) c.getString(0) else null
+                    } ?: uri.lastPathSegment?.substringAfterLast('/') ?: "playlist.m3u"
+                    val base = display.substringBeforeLast('.').replace(Regex("[^A-Za-z0-9 ._-]"), "_").ifBlank { "playlist" }
+                    val dir = java.io.File(context.filesDir, "livetv-files").apply { mkdirs() }
+                    val file = java.io.File(dir, "$base.m3u")
+                    context.contentResolver.openInputStream(uri)!!.use { input -> file.outputStream().use { input.copyTo(it) } }
+                    LiveTv.add(LiveTv.Kind.M3U, file.toURI().toString(), name.ifBlank { base }, epg)
+                }
+            }
+            busy = false
+            r.onSuccess { (src, n) -> App.toast("${src.name}: $n channels"); name = ""; epg = ""; version++ }
+                .onFailure { App.toast(it.message ?: "Couldn't read that playlist file") }
+        }
+    }
     ChoiceChips(LiveTv.Kind.entries, { it.label }, { it == kind }) { kind = it }
     OutlinedTextField(url, { url = it }, singleLine = true, modifier = Modifier.fillMaxWidth().padding(top = 8.dp), label = {
         Text(when (kind) { LiveTv.Kind.M3U -> "Playlist address (.m3u)"; LiveTv.Kind.XTREAM -> "Server address"; LiveTv.Kind.STREMIO -> "Add-on manifest address" })
@@ -325,8 +349,12 @@ private fun LiveTvSection() {
                     .onFailure { App.toast(it.message ?: "Couldn't add that source") }
             }
         }
+        if (kind == LiveTv.Kind.M3U) PillButton("Choose a file", Icons.Filled.FolderOpen, primary = false, compact = true, modifier = Modifier.padding(start = 10.dp)) {
+            if (!busy) runCatching { pickFile.launch(arrayOf("*/*")) }.onFailure { App.toast("No file picker on this device") }
+        }
         if (busy) Spinner(Modifier.padding(start = 12.dp).size(28.dp))
     }
+    if (kind == LiveTv.Kind.M3U) Hint("Or choose a playlist file (.m3u, .m3u8) saved on this device.")
     Heading("Options")
     var daily by remember { mutableStateOf(LiveTv.refreshDaily) }
     SwitchRow("Refresh channel lists daily", "Otherwise they're kept until you refresh them on the Live TV page.", daily) { daily = it; LiveTv.refreshDaily = it }
@@ -407,6 +435,10 @@ private fun AboutSection() {
     }
     PillButton("Source code on GitHub", null, primary = false, compact = true) {
         com.lagradost.cloudstream3.CloudStreamApp.openBrowser("https://github.com/sherazi5110/stream-goat", context.findActivity())
+    }
+    // A problem without a crash: GitHub's new-issue page with the device and version filled in (a QR code on TVs).
+    PillButton("Report a problem", null, primary = false, compact = true, modifier = Modifier.padding(top = 8.dp)) {
+        reportOnGitHub(context, null)
     }
     Hint("GPL-3.0. Extensions and their content come from third parties; this app hosts nothing.")
 }

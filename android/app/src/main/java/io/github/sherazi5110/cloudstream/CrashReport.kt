@@ -42,6 +42,25 @@ object CrashReport {
     }
 
     /** What is playing, kept on disk so a crash of the video engine itself (no Java error) can still say it. */
+    /**
+     * GitHub's "new issue" page with the report filled in (the person reviews it and presses Submit; nothing is sent
+     * by the app itself, so no GitHub key ships in it). [maxReport] keeps the link short enough for a QR code on TVs.
+     */
+    fun issueUrl(report: String?, maxReport: Int = 5500): String {
+        val title = report?.lineSequence()?.firstOrNull()?.take(80) ?: "Problem report"
+        val body = buildString {
+            appendLine("**What happened** (what you were doing):")
+            appendLine()
+            appendLine()
+            appendLine("**Report from the app**")
+            appendLine("```")
+            appendLine(report?.take(maxReport) ?: header())
+            appendLine("```")
+        }
+        fun enc(v: String) = java.net.URLEncoder.encode(v, "UTF-8")
+        return "https://github.com/sherazi5110/stream-goat/issues/new?title=${enc(title)}&body=${enc(body)}"
+    }
+
     fun playing(what: String?) {
         prefs.edit().apply { if (what == null) remove("playing") else putString("playing", what) }.apply()
     }
@@ -95,7 +114,7 @@ object CrashReport {
         text.substring(start + 1, end).lines().take(40).joinToString("\n")
     }.getOrNull()
 
-    private fun header(): String {
+    internal fun header(): String {
         val version = runCatching { App.context.packageManager.getPackageInfo(App.context.packageName, 0).versionName }.getOrNull()
         return "Stream Goat $version on ${Build.MANUFACTURER} ${Build.MODEL}, Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT}), ${Build.SUPPORTED_ABIS.firstOrNull()}"
     }

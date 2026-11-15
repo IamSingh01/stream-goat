@@ -151,8 +151,12 @@ fun LiveTvScreen() {
     var channels by remember { mutableStateOf<List<LiveTv.Channel>?>(null) }
     var guideVersion by remember { mutableIntStateOf(0) }
     var force by remember { mutableStateOf(false) }
-    LaunchedEffect(version, force) {
-        channels = LiveTv.channels(force = force)
+    // One source or all of them, as on Windows/Linux ("All sources ▾").
+    var sourceId by remember { mutableStateOf<String?>(null) }
+    var pickingSource by remember { mutableStateOf(false) }
+    LaunchedEffect(version, force, sourceId) {
+        if (sourceId != null && LiveTv.sources().none { it.id == sourceId && it.enabled }) sourceId = null
+        channels = LiveTv.channels(sourceId, force = force)
         force = false
         runCatching { LiveTv.loadGuides() }
         guideVersion++
@@ -172,14 +176,30 @@ fun LiveTvScreen() {
         all.isEmpty() && !App.online() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             OfflineState { force = true; version++ }
         }
-        else -> LiveContent(all, now, guideVersion, scope) { force = true; version++ }
+        else -> LiveContent(all, now, guideVersion, scope, LiveTv.sources().firstOrNull { it.id == sourceId }?.name ?: "All sources",
+            onSources = { pickingSource = true }) { force = true; version++ }
+    }
+    if (pickingSource) SimpleDialog("Live TV sources", { pickingSource = false }) {
+        @Composable
+        fun row(title: String, sub: String?, on: Boolean, onClick: () -> Unit) {
+            Row(Modifier.fillMaxWidth().padding(vertical = 3.dp).card(RoundedCornerShape(12.dp)) { onClick(); pickingSource = false }
+                .background(if (on) Palette.accent.copy(alpha = 0.25f) else Palette.surfaceHigh, RoundedCornerShape(12.dp))
+                .padding(horizontal = 14.dp, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                sub?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = Palette.muted) }
+            }
+        }
+        row("All sources", null, sourceId == null) { sourceId = null }
+        LiveTv.sources().filter { it.enabled }.forEach { s -> row(s.name, s.kind.label, s.id == sourceId) { sourceId = s.id } }
+        row("Refresh channels and guide", null, false) { force = true; version++ }
+        row("Live TV sources…", null, false) { ProfileUi.guarded { if (isWideNow) Nav.select(Tab.MORE) else Nav.open(Screen.SettingsPage(Section.LIVETV.name)) } }
     }
 }
 
 private var isWideNow = false
 
 @Composable
-private fun LiveContent(all: List<LiveTv.Channel>, now: Long, guideVersion: Int, scope: CoroutineScope, onRefresh: () -> Unit) {
+private fun LiveContent(all: List<LiveTv.Channel>, now: Long, guideVersion: Int, scope: CoroutineScope, sourceName: String, onSources: () -> Unit, onRefresh: () -> Unit) {
     val wide = isWide
     isWideNow = wide
     var favVersion by remember { mutableIntStateOf(0) }
@@ -210,6 +230,9 @@ private fun LiveContent(all: List<LiveTv.Channel>, now: Long, guideVersion: Int,
 
     val toolbar: @Composable () -> Unit = {
             Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("$sourceName ▾", style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier
+                    .padding(end = 10.dp).widthIn(max = 220.dp).card(RoundedCornerShape(50)) { onSources() }
+                    .background(Palette.surfaceHigh, RoundedCornerShape(50)).padding(horizontal = 16.dp, vertical = 11.dp))
                 OutlinedTextField(query, { query = it }, singleLine = true, placeholder = { Text("Search channels") },
                     leadingIcon = { Icon(Icons.Filled.Search, null) }, shape = RoundedCornerShape(50),
                     colors = OutlinedTextFieldDefaults.colors(unfocusedContainerColor = Palette.surface, focusedContainerColor = Palette.surface,
