@@ -25,9 +25,12 @@ dependencies {
     // JavaFX 21 LTS (runs on the Java 21 Ubuntu ships); GPU-accelerated, CSS-styled UI.
     // JavaFX ships per-system native code: build on Windows for the Windows version.
     val windows = System.getProperty("os.name").startsWith("Windows", ignoreCase = true)
+    val mac = System.getProperty("os.name").startsWith("Mac", ignoreCase = true)
+    val arm = System.getProperty("os.arch") == "aarch64"
     val fxPlatform = when {
         windows -> "win"
-        System.getProperty("os.arch") == "aarch64" -> "linux-aarch64"
+        mac -> if (arm) "mac-aarch64" else "mac"
+        arm -> "linux-aarch64"
         else -> "linux"
     }
     for (module in listOf("base", "graphics", "controls")) {
@@ -157,6 +160,49 @@ val packageWindows by tasks.registering(Exec::class) {
             addAll(listOf("--win-per-user-install", "--win-menu", "--win-menu-group", "Stream Goat", "--win-shortcut"))
             addAll(listOf("--win-upgrade-uuid", "6f1c2b9e-4d1a-4c2e-9a57-3e5b8d0c7a41"))
             addAll(listOf("--about-url", "https://github.com/sherazi5110/stream-goat"))
+        }
+    })
+}
+
+// macOS (Apple Silicon): Stream Goat.app with its own Java runtime and VLC, and a .dmg, built with the JDK's
+// jpackage on a Mac (CI: .github/workflows/macos.yml). The VLC folder is VLC.app's Contents/MacOS (lib/, plugins/).
+//   ./gradlew :app:packageMac -PvlcDir=/path/to/vlc                      -> build/jpackage-mac/Stream Goat.app
+//   ./gradlew :app:packageMac -PvlcDir=... -PjpackageType=dmg             -> build/jpackage-mac/Stream Goat-<v>.dmg
+val packageMac by tasks.registering(Exec::class) {
+    group = "distribution"
+    dependsOn(tasks.installDist)
+    val lib = layout.buildDirectory.dir("install/cloudstream-linux/lib")
+    val input = layout.buildDirectory.dir("jpackage-mac-input")
+    val out = layout.buildDirectory.dir("jpackage-mac")
+    val version = file("src/main/kotlin/com/lagradost/cloudstream3/linux/ui/AppWindow.kt").readText()
+        .let { Regex("VERSION = \"([0-9.]+)").find(it)!!.groupValues[1] }
+    val type = (findProperty("jpackageType") as String?) ?: "app-image"
+    doFirst {
+        val inDir = input.get().asFile.apply { deleteRecursively(); mkdirs() }
+        lib.get().asFile.copyRecursively(inDir)
+        // VLC's lib/ and plugins/ go into Stream Goat.app/Contents/app/vlc; see Os.bundledVlcDir.
+        (findProperty("vlcDir") as String?)?.let { file(it).copyRecursively(inDir.resolve("vlc")) }
+        if (type == "app-image") out.get().asFile.deleteRecursively()
+    }
+    commandLine(buildList {
+        addAll(listOf("jpackage", "--type", type, "--name", "Stream Goat", "--app-version", version))
+        addAll(listOf("--vendor", "Syed Ali Hamza", "--dest", out.get().asFile.path))
+        addAll(listOf("--description", "Stream Goat: movies, series, anime and Live TV from CloudStream extensions"))
+        if (type == "app-image") {
+            addAll(listOf("--input", input.get().asFile.path, "--main-jar", "app.jar", "--main-class", application.mainClass.get()))
+            addAll(listOf("--icon", rootProject.file("packaging/macos/StreamGoat.icns").path))
+            addAll(listOf("--mac-package-identifier", "io.github.sherazi5110.streamgoat", "--mac-package-name", "Stream Goat"))
+            addAll(listOf("--mac-app-category", "public.app-category.entertainment"))
+            addAll(listOf("--jlink-options", "--strip-debug --no-man-pages --no-header-files --strip-native-commands"))
+            addAll(listOf("--add-modules", listOf(
+                "java.base", "java.desktop", "java.logging", "java.management", "java.naming", "java.net.http",
+                "java.prefs", "java.scripting", "java.sql", "java.xml", "jdk.charsets", "jdk.crypto.ec",
+                "jdk.localedata", "jdk.unsupported", "jdk.zipfs", "jdk.httpserver",
+            ).joinToString(",")))
+            application.applicationDefaultJvmArgs.forEach { addAll(listOf("--java-options", it)) }
+        } else {
+            // The .dmg wraps the app image built (and signed) first, with a link to Applications to drag it to.
+            addAll(listOf("--app-image", out.get().asFile.resolve("Stream Goat.app").path))
         }
     })
 }

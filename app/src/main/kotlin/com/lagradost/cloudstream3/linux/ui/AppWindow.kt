@@ -1,5 +1,6 @@
 package com.lagradost.cloudstream3.linux.ui
 
+import com.lagradost.cloudstream3.linux.Os
 import android.widget.Toast
 import com.lagradost.cloudstream3.MainAPI
 import com.lagradost.cloudstream3.SearchResponse
@@ -40,7 +41,7 @@ import kotlin.system.exitProcess
 
 object AppInfo {
     const val NAME = "Stream Goat"
-    const val VERSION = "8.0.2"
+    const val VERSION = "9.0.1"
     const val CREDIT = "Syed Ali Hamza"
 }
 
@@ -155,9 +156,13 @@ class AppWindow(val stage: Stage) : StackPane() {
             (playerLayer.children.firstOrNull() as? PlayerKeys)?.let { it.handle(e); return@addEventFilter }
             when {
                 e.code == KeyCode.ESCAPE -> { if (closeOverlay() || back()) e.consume() }
-                e.code == KeyCode.F11 -> { stage.isFullScreen = !stage.isFullScreen; e.consume() }
+                e.code == KeyCode.F11 || (Os.isMac && e.code == KeyCode.F && e.isControlDown && e.isMetaDown) ->
+                    { stage.isFullScreen = !stage.isFullScreen; e.consume() }
                 e.code == KeyCode.LEFT && e.isAltDown -> { back(); e.consume() }
-                (e.code == KeyCode.F && e.isControlDown) || (e.code == KeyCode.SLASH && e.target !is javafx.scene.control.TextInputControl) -> {
+                // macOS: ⌘[ goes back, ⌘W closes the window (⌘Q quits through the app menu).
+                Os.isMac && e.isMetaDown && e.code == KeyCode.OPEN_BRACKET -> { back(); e.consume() }
+                Os.isMac && e.isMetaDown && e.code == KeyCode.W -> { stage.close(); e.consume() }
+                (e.code == KeyCode.F && e.isShortcutDown && !(Os.isMac && e.isControlDown)) || (e.code == KeyCode.SLASH && e.target !is javafx.scene.control.TextInputControl) -> {
                     show(Tab.SEARCH); (pages[Tab.SEARCH] as? SearchPage)?.focusField(); e.consume()
                 }
             }

@@ -1,5 +1,6 @@
 package com.lagradost.cloudstream3.linux.ui
 
+import com.lagradost.cloudstream3.linux.Os
 import com.lagradost.cloudstream3.linux.AppDirs
 import com.lagradost.cloudstream3.linux.CompatChecker
 import com.lagradost.cloudstream3.linux.DnsProvider
@@ -1005,9 +1006,9 @@ class SettingsPage : StackPane(), Refreshable {
     /** Every shortcut in one searchable list. */
     private fun shortcuts(): List<Node> {
         val all = listOf(
-            Triple("Anywhere", "/  or  Ctrl+F", "Search"),
-            Triple("Anywhere", "Esc  or  Alt+←", "Back / close"),
-            Triple("Anywhere", "F11", "Full screen"),
+            Triple("Anywhere", "/  or  ${Os.shortcutKey}F", "Search"),
+            Triple("Anywhere", if (Os.isMac) "Esc  or  ⌘[" else "Esc  or  Alt+←", "Back / close"),
+            Triple("Anywhere", if (Os.isMac) "⌃⌘F  or  F11" else "F11", "Full screen"),
             Triple("Player", "Space  or  K", "Play / pause"),
             Triple("Player", "←  /  →  (J / L)", "Seek 10 seconds"),
             Triple("Player", "Shift + ←  /  →", "Seek 1 minute"),

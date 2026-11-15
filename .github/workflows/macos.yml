@@ -1,0 +1,151 @@
+name: macOS
+
+# The Mac app (Apple Silicon): Stream Goat.app with its own Java runtime and VLC, in a .dmg.
+# Built and tested on a real Apple Silicon Mac; on a version tag the .dmg is attached to the release.
+on:
+  push:
+    branches: [main, macos]
+    tags: ["v*", "V*", "[0-9]*"]
+  pull_request:
+
+jobs:
+  macos:
+    runs-on: macos-14   # Apple Silicon (M1)
+    permissions:
+      contents: write
+    env:
+      VLC_VERSION: "3.0.21"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Fetch pinned upstream sources
+        run: ./scripts/fetch-upstream.sh
+
+      - name: VLC for Apple Silicon
+        # VideoLAN's arm64 build; only the engine (lib/ and plugins/ from VLC.app) is kept, not VLC's own interface.
+        run: |
+          base="https://download.videolan.org/pub/videolan/vlc/$VLC_VERSION/macosx"
+          curl -fsSL --retry 3 -o vlc.dmg "$base/vlc-$VLC_VERSION-arm64.dmg"
+          actual=$(shasum -a 256 vlc.dmg | cut -d' ' -f1)
+          if curl -fsSL --retry 3 -o vlc.dmg.sha256 "$base/vlc-$VLC_VERSION-arm64.dmg.sha256"; then
+            expected=$(cut -d' ' -f1 vlc.dmg.sha256)
+            [ "$expected" = "$actual" ] || { echo "::error::VLC download checksum mismatch ($actual, expected $expected)"; exit 1; }
+            echo "VLC checksum OK: $actual"
+          else
+            echo "::warning::VideoLAN published no .sha256 for this file; downloaded sha256 is $actual"
+          fi
+          hdiutil attach -nobrowse -readonly -mountpoint /Volumes/vlc vlc.dmg > /dev/null
+          src="/Volumes/vlc/VLC.app/Contents/MacOS"
+          mkdir -p vlc
+          cp -RL "$src/lib" vlc/
+          cp -RL "$src/plugins" vlc/
+          hdiutil detach /Volumes/vlc > /dev/null
+          rm -f vlc/plugins/libmacosx_plugin.dylib vlc/plugins/liblua_plugin.dylib
+          ls vlc/lib
+          du -sh vlc
+          echo "VLC_DIR=$PWD/vlc" >> "$GITHUB_ENV"
+
+      - name: Test
+        # The same tests as on Linux and Windows: extensions (.cs3 and .jar), sources, the header proxy, subtitles,
+        # downloads, backup and libVLC playback with the bundled VLC.
+        run: |
+          if ! ./gradlew :app:test -PvlcDir="$VLC_DIR/lib"; then
+            python - <<'PY'
+          import glob, xml.etree.ElementTree as ET
+          for f in glob.glob("app/build/test-results/test/*.xml"):
+              for case in ET.parse(f).getroot().iter("testcase"):
+                  for fail in list(case.findall("failure")) + list(case.findall("error")):
+                      msg = (fail.get("message") or fail.text or "").replace("\n", " ")[:400]
+                      print(f"::error title={case.get('classname').split('.')[-1]}: {case.get('name')[:80]}::{msg}")
+          PY
+            exit 1
+          fi
+
+      - name: Mac app and disk image (.dmg)
+        env:
+          # Google Drive backup: the project's Google sign-in client (docs/google-drive-setup.md); empty without it.
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+        run: |
+          ./gradlew :app:packageMac -PvlcDir="$VLC_DIR"
+          app="app/build/jpackage-mac/Stream Goat.app"
+          # No Apple developer certificate: sign it "ad hoc" so Apple Silicon runs it (macOS then asks once, in
+          # System Settings → Privacy & Security → Open Anyway).
+          codesign --force --deep --sign - "$app"
+          codesign --verify --deep --strict "$app" && echo "signature OK"
+          ./gradlew :app:packageMac -PvlcDir="$VLC_DIR" -PjpackageType=dmg
+          VERSION=$(grep -o 'VERSION = "[^"]*"' app/src/main/kotlin/com/lagradost/cloudstream3/linux/ui/AppWindow.kt | cut -d'"' -f2)
+          mkdir -p build/macos
+          cp app/build/jpackage-mac/Stream\ Goat-*.dmg "build/macos/streamgoat-macos-arm64-$VERSION.dmg"
+          ls -la build/macos
+          du -sh "$app"
+
+      - name: Check the packaged app
+        # The packaged app's own checker must find its Java, extensions folder and the bundled VLC.
+        run: |
+          app="app/build/jpackage-mac/Stream Goat.app"
+          out=$(CLOUDSTREAM_HOME="$PWD/doctor-home" "$app/Contents/MacOS/Stream Goat" doctor 2>&1 || true)
+          echo "$out"
+          ls "$app/Contents/app/vlc/lib" | head
+          if ! echo "$out" | grep -q "libVLC    3\."; then
+            echo "$out" | tail -25 | while IFS= read -r line; do echo "::warning title=doctor::${line:0:300}"; done
+            echo "::error::The packaged app didn't find its bundled VLC"; exit 1
+          fi
+
+      - name: Screenshots of the app window
+        # Starts the packaged app in screenshot mode (the same tours as on Linux); the pictures are in the artifact.
+        run: |
+          mkdir -p shots
+          app="app/build/jpackage-mac/Stream Goat.app/Contents/MacOS/Stream Goat"
+          for tour in nav settings7; do
+            CS_SCREENSHOT="$PWD/shots/mac-$tour" CS_SCREENSHOT_ONLY=$tour CLOUDSTREAM_HOME="$PWD/shot-home" timeout 180 "$app" || true
+          done
+          ls shots
+          [ -n "$(ls shots)" ] || { echo "::error::No screenshots were taken"; exit 1; }
+          pip install -q pillow
+          python - <<'PY'
+          import glob
+          from PIL import Image
+          for f in sorted(glob.glob("shots/*.png")):
+              im = Image.open(f).convert("RGB")
+              small = im.resize((200, int(200 * im.height / im.width)))
+              colours = len(set(small.getdata()))
+              print(f"::notice title=screenshot::{f.split('/')[-1]} {im.width}x{im.height}, {colours} colours")
+              if colours < 50: print(f"::error::{f} looks blank")
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: streamgoat-macos
+          path: |
+            build/macos/*.dmg
+            shots/*.png
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build/macos/*.dmg
+
+      - name: Test build (pull requests)
+        # Also on the "test-build" pre-release (see build.yml), next to the Android and Windows files.
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'picture-keys'  # only the test branch, not small fixes
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: test-build
+          target_commitish: ${{ github.event.pull_request.head.sha }}
+          name: Test build (not a release)
+          prerelease: true
+          make_latest: false
+          files: build/macos/*.dmg
