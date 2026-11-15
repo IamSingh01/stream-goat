@@ -328,6 +328,12 @@ CI (`.github/workflows/build.yml`) runs the tests on every push and publishes th
 
 The upstream versions are pinned in `scripts/fetch-upstream.sh` (`CS_COMMIT`, `NICEHTTP_TAG`).
 
+## Support
+
+Stream Goat is free, with no ads and no tracking. If you enjoy it, you can support it here:
+
+[![Buy me a coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-%E2%98%95-ffdd00?style=for-the-badge&labelColor=1a1205)](https://buymeacoffee.com/syedalihamza)
+
 ## License
 
 GPL-3.0, the same as CloudStream, whose library sources this project compiles.
