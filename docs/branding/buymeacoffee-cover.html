@@ -1,0 +1,51 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<style>
+  html, body { margin: 0; }
+  body { width: var(--w); height: var(--h); overflow: hidden; background: #07080d;
+    font-family: Inter, "Segoe UI", system-ui, -apple-system, Roboto, sans-serif; color: #eef1f8; }
+  .stage { position: relative; width: 100%; height: 100%; overflow: hidden;
+    background:
+      radial-gradient(ellipse 38% 90% at 50% 45%, rgba(40, 80, 170, .55), transparent 70%),
+      radial-gradient(ellipse 30% 80% at 10% 100%, rgba(232, 25, 79, .22), transparent 70%),
+      radial-gradient(ellipse 30% 80% at 92% 0%, rgba(140, 80, 255, .22), transparent 70%),
+      linear-gradient(180deg, #0b0e1a, #07080d); }
+  /* Screenshots at the sides, tilted and fading into the background: decoration, fine if cropped. */
+  .shot { position: absolute; border-radius: calc(var(--u) * 14px); overflow: hidden; box-shadow: 0 30px 80px rgba(0,0,0,.7);
+    border: 1px solid rgba(255,255,255,.08); }
+  .shot img { display: block; width: 100%; height: auto; }
+  .left  { width: calc(var(--u) * 640px); left: calc(var(--u) * -70px); top: calc(var(--u) * 70px);
+    transform: perspective(1400px) rotateY(24deg) rotateZ(-2deg); opacity: .78; }
+  .left2 { width: calc(var(--u) * 520px); left: calc(var(--u) * 240px); top: calc(var(--u) * 300px);
+    transform: perspective(1400px) rotateY(24deg) rotateZ(-2deg); opacity: .55; }
+  .right { width: calc(var(--u) * 640px); right: calc(var(--u) * -70px); top: calc(var(--u) * 70px);
+    transform: perspective(1400px) rotateY(-24deg) rotateZ(2deg); opacity: .78; }
+  .phone { width: calc(var(--u) * 190px); right: calc(var(--u) * 380px); top: calc(var(--u) * 150px); border-radius: calc(var(--u) * 26px);
+    border: calc(var(--u) * 6px) solid #1b1f2c; transform: rotate(6deg); opacity: .92; }
+  .fade { position: absolute; inset: 0; background:
+    linear-gradient(90deg, rgba(7,8,13,.15) 0%, rgba(7,8,13,.85) 30%, rgba(7,8,13,.92) 50%, rgba(7,8,13,.85) 70%, rgba(7,8,13,.15) 100%); }
+  .center { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); text-align: center; width: calc(var(--u) * 1180px); }
+  .brand { display: flex; align-items: center; justify-content: center; gap: calc(var(--u) * 34px); }
+  .brand img { width: calc(var(--u) * 190px); height: calc(var(--u) * 190px); border-radius: calc(var(--u) * 42px);
+    box-shadow: 0 0 calc(var(--u) * 80px) rgba(110, 160, 255, .45); }
+  h1 { margin: 0; font-size: calc(var(--u) * 132px); line-height: 1; letter-spacing: calc(var(--u) * -3px); font-weight: 800; }
+  .tag { margin: calc(var(--u) * 26px) 0 0; font-size: calc(var(--u) * 30px); color: #b7c0d6; font-weight: 500; }
+  .tag b { color: #fff; font-weight: 700; }
+  .coffee { display: inline-block; margin-top: calc(var(--u) * 26px); padding: calc(var(--u) * 12px) calc(var(--u) * 28px);
+    border-radius: 999px; font-size: calc(var(--u) * 30px); font-weight: 700; color: #1a1205;
+    background: linear-gradient(90deg, #ffdd00, #ffb800); box-shadow: 0 calc(var(--u) * 10px) calc(var(--u) * 40px) rgba(255, 200, 0, .35); }
+</style></head>
+<body>
+<div class="stage">
+  <div class="shot left"><img src="player.png"></div>
+  <div class="shot left2"><img src="livetv-guide.png"></div>
+  <div class="shot right"><img src="home.png"></div>
+  <div class="shot phone"><img src="phone.png"></div>
+  <div class="fade"></div>
+  <div class="center">
+    <div class="brand"><img src="logo.svg"><h1>Stream Goat</h1></div>
+    <p class="tag">Free &amp; open-source streaming for <b>Android</b>, <b>TV</b>, <b>Windows</b>, <b>Linux</b> &amp; the <b>web</b></p>
+    <div class="coffee">☕ Every coffee keeps the goat streaming</div>
+  </div>
+</div>
+</body></html>

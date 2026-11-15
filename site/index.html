@@ -88,6 +88,12 @@
   .pill:hover { background: rgba(79, 141, 255, .26); }
   .feature.new { border-color: rgba(79, 141, 255, .45); background: linear-gradient(160deg, #16223f, var(--card) 60%); }
   .more { text-align: center; margin-top: 22px; }
+  .btn.coffee { background: #ffdd00; border-color: #ffdd00; color: #1a1205; }
+  header.top nav a.donate { color: #1a1205; background: #ffdd00; padding: 2px 12px; border-radius: 999px; font-weight: 700; }
+  header.top nav a.donate:hover { color: #1a1205; filter: brightness(1.08); }
+  .support { background: linear-gradient(135deg, #2a2208, #0e1018 70%); border: 1px solid rgba(255, 221, 0, .35);
+    border-radius: var(--radius); padding: 32px; text-align: center; }
+  .support h2 { margin-top: 0; }
   .tvbox { scroll-margin-top: 76px; margin-top: 16px; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 22px 26px; }
   .tvbox h3 { margin: 0 0 4px; font-size: 21px; }
   .tvbox ol { margin: 10px 0 0; padding-left: 22px; color: var(--muted); }
@@ -123,6 +129,7 @@
       <a href="#screenshots">Screenshots</a>
       <a href="app/">Web version</a>
       <a href="https://github.com/sherazi5110/stream-goat">GitHub</a>
+      <a class="donate" href="https://buymeacoffee.com/syedalihamza" target="_blank" rel="noopener">☕ Donate</a>
     </nav>
   </div>
 </header>
@@ -262,13 +269,24 @@
   </div>
 </section>
 
+<section id="support">
+  <div class="wrap">
+    <div class="support">
+      <h2>Support Stream Goat</h2>
+      <p class="sub" style="margin-bottom:20px">Stream Goat is free, with no ads and no tracking, and made in my spare time.
+        If you enjoy it, a coffee helps keep the updates coming. Thank you! 🐐</p>
+      <a class="btn coffee" href="https://buymeacoffee.com/syedalihamza" target="_blank" rel="noopener">☕ Buy me a coffee</a>
+    </div>
+  </div>
+</section>
+
 <footer>
   <div class="wrap">
     <img src="logo.svg" alt=""><br>
     <b>Stream Goat</b>, created by <b>Syed Ali Hamza</b>.<br>
     Free software under GPL-3.0 · <a href="https://github.com/sherazi5110/stream-goat">Source code on GitHub</a><br>
     Stream Goat doesn't host any content: what you watch comes from the extensions and add-ons you choose to install.<br>
-    <a href="privacy.html">Privacy policy</a>
+    <a href="privacy.html">Privacy policy</a> · <a href="https://buymeacoffee.com/syedalihamza" target="_blank" rel="noopener">Buy me a coffee</a>
   </div>
 </footer>
 
