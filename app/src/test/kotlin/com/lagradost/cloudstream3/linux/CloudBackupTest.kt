@@ -30,6 +30,8 @@ class CloudBackupTest {
         private var clock = 1_700_000_000_000L
         /** id → name, appProperties, modifiedTime, content */
         val files = linkedMapOf<String, JSONObject>()
+        /** Folders the app made: id → name. */
+        val folders = linkedMapOf<String, String>()
 
         val base get() = "http://127.0.0.1:${server.address.port}"
 
@@ -45,7 +47,8 @@ class CloudBackupTest {
 
         init {
             server.createContext("/device/code") { x ->
-                require(form(x)["scope"] == "https://www.googleapis.com/auth/drive.appdata")
+                // Google's code sign-in refuses drive.appdata ("Invalid device flow scope"); drive.file is allowed.
+                if (form(x)["scope"] != "https://www.googleapis.com/auth/drive.file") return@createContext send(x, 400, """{"error":"invalid_scope"}""")
                 send(x, 200, """{"device_code":"dev-1","user_code":"GQV-XHF-RNL","verification_url":"https://www.google.com/device","expires_in":60,"interval":1}""")
             }
             server.createContext("/token") { x ->
@@ -70,9 +73,21 @@ class CloudBackupTest {
                 if (!authorized(x)) return@createContext send(x, 401, "{}")
                 val id = x.requestURI.path.removePrefix("/drive/v3/files").removePrefix("/")
                 when {
+                    id.isEmpty() && x.requestMethod == "POST" -> {
+                        val meta = JSONObject(x.requestBody.readBytes().decodeToString())
+                        require(meta.getString("mimeType") == "application/vnd.google-apps.folder")
+                        val fid = "folder-${nextId++}"; folders[fid] = meta.getString("name")
+                        send(x, 200, """{"id":"$fid"}""")
+                    }
+                    id.isEmpty() && URLDecoder.decode(x.requestURI.rawQuery, "UTF-8").contains("application/vnd.google-apps.folder") -> {
+                        val q = URLDecoder.decode(x.requestURI.rawQuery, "UTF-8")
+                        val list = JSONArray()
+                        folders.filter { q.contains("name = '${it.value}'") }.keys.forEach { list.put(JSONObject().put("id", it)) }
+                        send(x, 200, JSONObject().put("files", list).toString())
+                    }
                     id.isEmpty() -> {
                         val q = URLDecoder.decode(x.requestURI.rawQuery, "UTF-8")
-                        require(q.contains("spaces=appDataFolder") && q.contains("name contains 'stream-goat-backup'"))
+                        require(!q.contains("spaces=appDataFolder") && q.contains("name contains 'stream-goat-backup'"))
                         val list = JSONArray()
                         files.forEach { (fid, f) -> list.put(JSONObject().put("id", fid).put("name", f.getString("name"))
                             .put("modifiedTime", java.time.Instant.ofEpochMilli(f.getLong("modified")).toString())
@@ -91,7 +106,7 @@ class CloudBackupTest {
                 val meta = JSONObject(parts[0].substringAfter("\r\n\r\n").trim())
                 val content = parts[1].substringAfter("\r\n\r\n").trim()
                 val id = if (x.requestMethod == "POST") {
-                    require(meta.getJSONArray("parents").getString(0) == "appDataFolder")
+                    require(meta.getJSONArray("parents").getString(0) in folders)
                     "file-${nextId++}".also { files[it] = JSONObject().put("name", meta.getString("name")) }
                 } else x.requestURI.path.substringAfterLast('/').also { require(x.requestMethod == "PATCH" && it in files) }
                 files.getValue(id).put("appProperties", meta.getJSONObject("appProperties")).put("content", content).put("modified", clock++)
@@ -143,6 +158,8 @@ class CloudBackupTest {
             account.edit().putString("device_id", tv).commit()
             val all = CloudBackup.backups()
             assertEquals(2, all.size)
+            // Both went into one "Stream Goat backups" folder in My Drive.
+            assertEquals(listOf("Stream Goat backups"), google.folders.values.toList())
             val phone = all.first()
             assertEquals("phone-1", phone.deviceId)
             assertFalse(phone.mine)

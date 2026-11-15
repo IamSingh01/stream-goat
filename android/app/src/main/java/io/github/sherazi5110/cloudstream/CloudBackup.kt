@@ -28,8 +28,9 @@ import java.security.MessageDigest
  * limited-input devices"): this app shows a code, you enter it at google.com/device on your phone or computer.
  * The same works on phones, Android TV and Windows/Linux.
  *
- * The backup (the same file as Settings → Backup) is kept in the Drive's hidden app folder (scope drive.appdata):
- * the app sees only its own files there, never the rest of the Drive. Each device keeps its own backup file, so a
+ * The backup (the same file as Settings → Backup) is kept in a "Stream Goat backups" folder in My Drive (scope
+ * drive.file: the app sees only the files it created itself, never the rest of the Drive; Google's code sign-in
+ * doesn't allow the hidden app folder, drive.appdata). Each device keeps its own backup file, so a
  * phone and a TV on the same account don't overwrite each other, and Restore lists every device's backup (restore
  * the phone's on the TV). With automatic backup on, it's uploaded when something changed (checked every 5 minutes
  * and when the app goes to the background).
@@ -41,7 +42,9 @@ object CloudBackup {
     const val FILE_PREFIX = "stream-goat-backup"
     /** Automatic backup: checked this often, uploaded only when something changed. */
     const val AUTO_INTERVAL_MS = 5 * 60_000L
-    const val SCOPE = "https://www.googleapis.com/auth/drive.appdata"
+    const val SCOPE = "https://www.googleapis.com/auth/drive.file"
+    /** The folder in My Drive the backups go to (created with the first backup). */
+    const val FOLDER = "Stream Goat backups"
 
     /** Google's addresses; tests point them at a local server. */
     class Endpoints(
@@ -215,7 +218,7 @@ object CloudBackup {
     suspend fun backups(): List<Remote> {
         val q = URLEncoder.encode("name contains '$FILE_PREFIX' and trashed = false", "UTF-8")
         val (code, body) = drive(Request.Builder().url(
-            "${endpoints.drive}/files?spaces=appDataFolder&q=$q&pageSize=50&orderBy=modifiedTime%20desc&fields=files(id,name,modifiedTime,size,appProperties)"))
+            "${endpoints.drive}/files?q=$q&pageSize=50&orderBy=modifiedTime%20desc&fields=files(id,name,modifiedTime,size,appProperties)"))
         if (code != 200) throw CloudException("Drive answered $code")
         val files = JSONObject(body).optJSONArray("files") ?: return emptyList()
         return (0 until files.length()).map { i ->
@@ -224,6 +227,18 @@ object CloudBackup {
             Remote(f.getString("id"), f.optString("modifiedTime"), props?.optString("device")?.ifBlank { null }, props?.optString("app")?.ifBlank { null },
                 f.optString("size").toLongOrNull() ?: 0, props?.optString("deviceId")?.ifBlank { null })
         }.sortedByDescending { it.time }
+    }
+
+    /** The "Stream Goat backups" folder: the one the app made before (on any device), or a new one. */
+    private suspend fun folder(): String {
+        val q = URLEncoder.encode("mimeType = 'application/vnd.google-apps.folder' and name = '$FOLDER' and trashed = false", "UTF-8")
+        val (code, body) = drive(Request.Builder().url("${endpoints.drive}/files?q=$q&pageSize=10&orderBy=createdTime&fields=files(id)"))
+        if (code != 200) throw CloudException("Drive answered $code")
+        JSONObject(body).optJSONArray("files")?.optJSONObject(0)?.optString("id")?.ifBlank { null }?.let { return it }
+        val meta = JSONObject().put("name", FOLDER).put("mimeType", "application/vnd.google-apps.folder")
+        val (made, answer) = drive(Request.Builder().url("${endpoints.drive}/files?fields=id").post(meta.toString().toRequestBody(json)))
+        if (made !in 200..299) throw CloudException("Drive answered $made: ${answer.take(200)}")
+        return JSONObject(answer).getString("id")
     }
 
     /** The newest backup of any device. */
@@ -247,7 +262,7 @@ object CloudBackup {
             val existing = backups().firstOrNull { it.deviceId == deviceId }
             val meta = JSONObject().put("name", "$FILE_PREFIX-$deviceId.json")
                 .put("appProperties", JSONObject().put("device", "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}").put("app", runCatching { App.context.packageManager.getPackageInfo(App.context.packageName, 0).versionName }.getOrNull() ?: "?").put("deviceId", deviceId))
-            if (existing == null) meta.put("parents", org.json.JSONArray().put("appDataFolder"))
+            if (existing == null) meta.put("parents", org.json.JSONArray().put(folder()))
             val body = MultipartBody.Builder().setType("multipart/related".toMediaType())
                 .addPart(meta.toString().toRequestBody(json))
                 .addPart(content.toRequestBody(json))

@@ -45,7 +45,7 @@ class CloudSignInSheet(private val onDone: () -> Unit) : StackPane(), Disposable
                         Toasts.show("Code copied")
                     }),
                 label("Then choose your Google account and allow Stream Goat to keep its backup in your Drive. " +
-                    "Stream Goat only sees its own hidden backup file there. This moves on by itself.", "muted").apply { isWrapText = true },
+                    "Stream Goat only sees the files it made there. This moves on by itself.", "muted").apply { isWrapText = true },
             )
             runCatching { CloudBackup.finishSignIn(s) }.onFailure { show("Couldn't sign in: ${it.message}"); return@launch }
             Toasts.show("Signed in as ${CloudBackup.state.value.email ?: "your Google account"}")
@@ -112,7 +112,7 @@ fun cloudBackupRows(row: (String, String?, Node) -> Node, refresh: () -> Unit): 
     val s = CloudBackup.state.value
     if (!s.signedIn) return listOf(row("Google Drive backup",
         "Sign in with your Google account to keep this backup in your Google Drive, automatically, and restore it on another device " +
-            "or after reinstalling. Stream Goat only sees its own hidden backup file there, never your other files.",
+            "or after reinstalling. It goes in a \"Stream Goat backups\" folder: Stream Goat only sees the files it made, never your other files.",
         button("Sign in with Google", Icons.CLOUD_UPLOAD, "btn-accent", "btn-small") { Nav.window.showOverlay(CloudSignInSheet(refresh)) }))
     val last = if (s.lastBackup <= 0) "not yet" else java.time.Instant.ofEpochMilli(s.lastBackup).atZone(java.time.ZoneId.systemDefault())
         .format(java.time.format.DateTimeFormatter.ofPattern("d MMM, HH:mm"))

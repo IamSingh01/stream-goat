@@ -55,7 +55,7 @@ The `.deb` and Flatpak bring everything they need (VLC is installed with the `.d
 ## New in 8.0.1
 
 - **Google Drive backup:** sign in with a code (works on Android TV too) and your settings, profiles, lists,
-  history, repositories and extensions are backed up every 5 minutes to a hidden app folder in your Drive, one
+  history, repositories and extensions are backed up every 5 minutes to a "Stream Goat backups" folder in your Drive, one
   backup per device; restore the phone's on the TV, or everything after reinstalling.
 - **Downloads like IDM:** files in 4 MB pieces over 8 connections at once, streams several segments at a time, with
   speed and time left; pieces survive pauses and restarts. **Choose the source and quality** when you press Download.

@@ -296,7 +296,19 @@ class CloudSignInTest {
         paparazzi.snapshot("cloud-sign-in") {
             CloudStreamTheme {
                 io.github.sherazi5110.cloudstream.ui.SimpleDialog("Sign in with Google", {}) {
-                    io.github.sherazi5110.cloudstream.ui.SignInBody(signIn, null)
+                    io.github.sherazi5110.cloudstream.ui.SignInBody(signIn, null, tv = true)
+                }
+            }
+        }
+    }
+
+    @Test
+    fun signInCodePhone() {
+        val signIn = CloudBackup.SignIn("GQV-XHF-RNL", "https://www.google.com/device", "dev", 5, Long.MAX_VALUE)
+        paparazzi.snapshot("cloud-sign-in-phone") {
+            CloudStreamTheme {
+                io.github.sherazi5110.cloudstream.ui.SimpleDialog("Sign in with Google", {}) {
+                    io.github.sherazi5110.cloudstream.ui.SignInBody(signIn, null, tv = false)
                 }
             }
         }

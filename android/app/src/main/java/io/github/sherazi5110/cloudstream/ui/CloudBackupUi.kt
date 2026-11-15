@@ -17,6 +17,7 @@ import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Devices
 import androidx.compose.material.icons.filled.Logout
+import androidx.compose.material.icons.filled.OpenInBrowser
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -99,7 +100,7 @@ internal fun CloudBackupSection() {
     }
     if (!state.signedIn) {
         Hint("Sign in with your Google account to keep this backup in your Google Drive, automatically, and restore it on " +
-            "another device or after reinstalling. Stream Goat only sees its own hidden backup file there, never your other files.")
+            "another device or after reinstalling. It goes in a \"Stream Goat backups\" folder: Stream Goat only sees the files it made, never your other files.")
         PillButton("Sign in with Google", Icons.Filled.CloudUpload, compact = true, modifier = Modifier.padding(top = 6.dp)) { CloudUi.signingIn = true }
         return
     }
@@ -159,11 +160,27 @@ private fun SignInDialog() {
 
 /** The code to enter at google.com/device, with a QR code for the page. */
 @Composable
-internal fun SignInBody(signIn: CloudBackup.SignIn?, error: String?) {
+internal fun SignInBody(signIn: CloudBackup.SignIn?, error: String?, tv: Boolean = isTv) {
         val s = signIn
         when {
             error != null -> Hint("Couldn't sign in: $error")
             s == null -> Hint("Getting a code from Google…")
+            // A phone can't scan its own screen: copy the code and open Google's page in the browser, then come back.
+            !tv -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Your code", style = MaterialTheme.typography.bodyMedium)
+                Text(s.userCode, fontSize = 30.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, letterSpacing = 3.sp,
+                    color = Palette.accent)
+                PillButton("Copy the code and open Google", Icons.Filled.OpenInBrowser, compact = true) {
+                    runCatching {
+                        (App.context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager)
+                            .setPrimaryClip(android.content.ClipData.newPlainText("Google code", s.userCode))
+                        App.context.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(s.url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                    }.onFailure { App.toast("Open ${s.url} in a browser and enter ${s.userCode}") }
+                }
+                Hint("Paste the code there, choose your Google account and allow Stream Goat to keep its backups in your Drive. " +
+                    "Then come back: this screen moves on by itself.")
+                Hint("Or on another phone or computer, open ${s.url.removePrefix("https://").removePrefix("www.")} and enter the code.")
+            }
             else -> Row(horizontalArrangement = Arrangement.spacedBy(20.dp), verticalAlignment = Alignment.CenterVertically) {
                 val qr = remember(s.url) { qrBitmap(s.url, 360).asImageBitmap() }
                 Image(qr, "QR code for ${s.url}", Modifier.size(150.dp).background(Color.White, RoundedCornerShape(8.dp)).padding(6.dp))
