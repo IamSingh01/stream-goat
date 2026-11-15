@@ -50,14 +50,15 @@
 
   <h2>Optional: Google Drive backup</h2>
   <p>If you choose <b>Sign in with Google</b> (Settings → Updates and backup), Stream Goat asks Google for permission
-  to use your Google Drive's hidden <b>app data folder</b> (the <code>drive.appdata</code> permission). With it, the app:</p>
+  to use only the files it creates in your Google Drive (the <code>drive.file</code> permission). With it, the app:</p>
   <ul>
-    <li>stores one backup file there for each of your devices that is signed in: your settings, profiles, My list,
+    <li>stores one backup file for each of your devices that is signed in, in a folder named <b>Stream Goat
+    backups</b> in your Drive: your settings, profiles, My list,
     history and progress, repositories, the list of extensions and their settings, Live TV sources and Stremio
     add-ons, as listed above; it is updated every 5 minutes when something changed;</li>
     <li>reads these files back when you restore (for example your phone's backup on your TV), deletes one when you
     ask it to, and shows the email address of the account you signed in with;</li>
-    <li>cannot see, open or change any other file in your Google Drive.</li>
+    <li>cannot see, open or change any other file in your Google Drive, only the files it created.</li>
   </ul>
   <p>The backup goes directly between your device and Google; the developer never receives it or your sign-in. The
   sign-in is kept only on the device you signed in on and is never part of the backup. Stream Goat does not use
@@ -65,14 +66,14 @@
   <p>Stream Goat's use and transfer to any other app of information received from Google APIs will adhere to the
   <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data Policy</a>,
   including the Limited Use requirements.</p>
-  <p><b>To remove it:</b> choose <b>Sign out</b> in the app (this also withdraws the app's access); delete the backup in
-  Google Drive → Settings → <i>Manage apps</i> → Stream Goat → <i>Delete hidden app data</i>; and you can withdraw
+  <p><b>To remove it:</b> choose <b>Sign out</b> in the app (this also withdraws the app's access); delete the
+  <i>Stream Goat backups</i> folder in your Google Drive like any other file; and you can withdraw
   access at any time in your Google Account → Security → <i>Third-party apps &amp; services</i>.</p>
 
   <h2>The web version</h2>
   <p>The web version (sherazi5110.github.io/stream-goat/app/) keeps the same kinds of data in your browser's storage,
   with automatic backup copies there too (every 5 minutes when something changed). If you sign in with Google there,
-  it uses the same hidden app data folder as described above, for its own backup and to bring over the Stremio add-ons
+  it uses the same Stream Goat backups folder as described above, for its own backup and to bring over the Stremio add-ons
   of your Stream Goat app's backup. Google's access in a browser lasts an hour and is kept in that browser only.</p>
 
   <h2>Extensions and add-ons</h2>

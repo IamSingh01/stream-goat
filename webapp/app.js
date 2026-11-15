@@ -276,9 +276,13 @@ const localBackups = {
   },
 };
 
-/** Google Drive backup (the same hidden app folder the Stream Goat apps use), with Google sign-in for websites. */
+/**
+ * Google Drive backup, in the "Stream Goat backups" folder the Stream Goat apps use (scope drive.file: only the files
+ * Stream Goat made are visible to it), with Google sign-in for websites.
+ */
 const cloud = {
-  SCOPE: "https://www.googleapis.com/auth/drive.appdata",
+  SCOPE: "https://www.googleapis.com/auth/drive.file",
+  FOLDER: "Stream Goat backups",
   get clientId() { return (window.STREAMGOAT_CONFIG || {}).googleClientId || ""; },
   get configured() { return !!this.clientId; },
   get signedIn() { return !!store.get("google", null); },
@@ -323,7 +327,7 @@ const cloud = {
   /** Every backup in the account: this website's ("web") and the Stream Goat apps' (phone, TV, PC). */
   async backups() {
     const q = encodeURIComponent("(name contains 'stream-goat-backup' or name contains 'stream-goat-web') and trashed = false");
-    const r = await this.api(`/drive/v3/files?spaces=appDataFolder&q=${q}&pageSize=50&orderBy=modifiedTime%20desc&fields=files(id,name,modifiedTime,appProperties)`);
+    const r = await this.api(`/drive/v3/files?q=${q}&pageSize=50&orderBy=modifiedTime%20desc&fields=files(id,name,modifiedTime,appProperties)`);
     return (r.files || []).map((f) => ({ id: f.id, web: f.name.startsWith("stream-goat-web"), modified: Date.parse(f.modifiedTime) || 0,
       device: (f.appProperties || {}).device || "A device", app: (f.appProperties || {}).app || "", mine: (f.appProperties || {}).deviceId === deviceId() }));
   },
@@ -333,7 +337,7 @@ const cloud = {
     if (onlyIfChanged && hash === store.get("lastCloudHash", "")) return false;
     const mine = (await this.backups()).find((b) => b.mine && b.web);
     const meta = { name: `stream-goat-web-${deviceId()}.json`, appProperties: { device: deviceName(), app: "web", deviceId: deviceId() } };
-    if (!mine) meta.parents = ["appDataFolder"];
+    if (!mine) meta.parents = [await this.folder()];
     const boundary = "sg" + Math.random().toString(36).slice(2);
     const body = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(meta)}\r\n` +
       `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(data)}\r\n--${boundary}--`;
@@ -355,6 +359,15 @@ const cloud = {
       return n ? `Added ${n} Stremio add-on(s) from ${b.device}` : `${b.device} has no Stremio add-ons to bring here`;
     }
     throw new Error("That backup isn't one this website can read");
+  },
+  /** The "Stream Goat backups" folder (made by any Stream Goat app or this website before), or a new one. */
+  async folder() {
+    const q = encodeURIComponent(`mimeType = 'application/vnd.google-apps.folder' and name = '${this.FOLDER}' and trashed = false`);
+    const r = await this.api(`/drive/v3/files?q=${q}&pageSize=10&orderBy=createdTime&fields=files(id)`);
+    if (r.files && r.files.length) return r.files[0].id;
+    const made = await this.api("/drive/v3/files?fields=id", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: this.FOLDER, mimeType: "application/vnd.google-apps.folder" }) });
+    return made.id;
   },
   async remove(b) { await this.api(`/drive/v3/files/${b.id}`, { method: "DELETE" }); },
   signOut() {
@@ -1120,7 +1133,7 @@ function renderAccount() {
   }
   if (!cloud.signedIn) {
     box.innerHTML = `<p class="muted small">Sign in with Google to back up to your Google Drive, every 5 minutes, and to bring your Stremio add-ons over
-      from the Stream Goat app on your phone or TV. Stream Goat only sees its own hidden backup files in your Drive, never your other files.</p>
+      from the Stream Goat app on your phone or TV. They go in a "Stream Goat backups" folder in your Drive: Stream Goat only sees the files it made, never your other files.</p>
       <button class="google-btn" id="gsign">${icons.google} Sign in with Google</button>`;
     box.querySelector("#gsign").addEventListener("click", async () => {
       try { await cloud.connect(true); toast(`Signed in as ${cloud.email}`); await afterSignIn(); renderAccount(); } catch (e) { toast(e.message); }
