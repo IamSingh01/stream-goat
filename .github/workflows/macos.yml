@@ -10,7 +10,7 @@ on:
 
 jobs:
   macos:
-    runs-on: macos-14   # Apple Silicon (M1)
+    runs-on: macos-15   # Apple Silicon
     permissions:
       contents: write
     env:
