@@ -17,7 +17,7 @@ library and downloads carry over.)*
 > **[report it / create an issue](https://github.com/sherazi5110/stream-goat/issues/new)**. In the app you can also use
 > *Settings → About → Report a problem*, which fills in your version and device for you.
 
-**[Website](https://sherazi5110.github.io/stream-goat/)** · **[Download](https://github.com/sherazi5110/stream-goat/releases/latest)** · **[Open the web version](https://sherazi5110.github.io/stream-goat/app/)** (any phone or browser, Stremio add-ons) · **[Full install guide](INSTALL.md)**
+**[Website](https://sherazi5110.github.io/stream-goat/)** · **[Download](https://github.com/sherazi5110/stream-goat/releases/latest)** · **[Open the web version](https://sherazi5110.github.io/stream-goat/app/)** (any phone or browser, Stremio add-ons) · **[Full install guide](INSTALL.md)** · **[Test Pre-released version]([https://sherazi5110.github.io/stream-goat/](https://github.com/sherazi5110/stream-goat/releases/tag/test-build))** 
 
 ## Download for your device
 
