@@ -2,6 +2,11 @@ package io.github.sherazi5110.cloudstream.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.ui.draw.shadow
+import androidx.compose.foundation.border
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -27,9 +32,6 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -143,54 +145,74 @@ fun TopBar(modifier: Modifier = Modifier, start: @Composable () -> Unit = {}) {
     }
 }
 
-/** Portrait: Home · Live TV · Search · My list · More. */
+/** The pill bars' look: a dark rounded capsule with a faint edge, the chosen tab a lighter pill inside it. */
+private val pillColor: Color get() = Color(0xFF16161B).copy(alpha = 0.94f)
+private val pillEdge: Color get() = Color.White.copy(alpha = 0.10f)
+private val chosenColor: Color get() = Color.White.copy(alpha = 0.14f)
+
+/** Portrait: a floating pill: Home · Live TV · Search · My list | Settings. The chosen tab shows its name. */
 @Composable
 private fun BottomBar() {
-    NavigationBar(containerColor = Palette.background.copy(alpha = 0.97f)) {
-        visibleTabs(listOf(Tab.HOME, Tab.LIVE, Tab.SEARCH, Tab.LIBRARY, Tab.MORE)).forEach { tab ->
-            val selected = Nav.tab == tab || (tab == Tab.MORE && Nav.tab == Tab.EXTENSIONS)
-            NavigationBarItem(
-                selected = selected,
-                onClick = { Nav.select(tab) },
-                icon = { Icon(tab.icon(), tab.label) },
-                label = { Text(if (tab == Tab.MORE) "More" else tab.label, maxLines = 1) },
-                colors = NavigationBarItemDefaults.colors(
-                    selectedIconColor = Palette.accent, selectedTextColor = Palette.accent,
-                    indicatorColor = Palette.accent.copy(alpha = 0.18f),
-                    unselectedIconColor = Palette.muted, unselectedTextColor = Palette.muted,
-                ),
-            )
+    Box(Modifier.fillMaxWidth().navigationBarsPadding().padding(start = 12.dp, end = 12.dp, top = 6.dp, bottom = 10.dp), contentAlignment = Alignment.Center) {
+        Row(
+            Modifier.shadow(12.dp, RoundedCornerShape(50)).background(pillColor, RoundedCornerShape(50))
+                .border(1.dp, pillEdge, RoundedCornerShape(50)).padding(5.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            visibleTabs(listOf(Tab.HOME, Tab.LIVE, Tab.SEARCH, Tab.LIBRARY)).forEach { tab -> PillItem(tab, tab.icon(), vertical = false) }
+            Box(Modifier.padding(horizontal = 6.dp).width(1.dp).height(22.dp).background(Color.White.copy(alpha = 0.18f)))
+            PillItem(Tab.MORE, Icons.Filled.Settings, vertical = false)
         }
     }
 }
 
-/** Wide: the Linux app's icon rail. */
+/** Wide (tablet, TV, landscape): a vertical pill beside the page, the logo above it and the profile below. */
 @Composable
 private fun Rail() {
     Column(
-        Modifier.fillMaxHeight().width(76.dp).background(Palette.rail).systemBarsPadding().padding(vertical = 16.dp),
+        Modifier.fillMaxHeight().width(84.dp).systemBarsPadding().padding(vertical = 14.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Logo(42.dp)
-        Spacer(Modifier.size(14.dp))
-        visibleTabs(listOf(Tab.HOME, Tab.LIVE, Tab.SEARCH, Tab.LIBRARY, Tab.EXTENSIONS)).forEach { RailItem(it, it.icon()) }
         Spacer(Modifier.weight(1f))
-        if (!ProfileUi.current.kids) RailItem(Tab.MORE, Icons.Filled.Settings)
+        Column(
+            Modifier.shadow(12.dp, RoundedCornerShape(50)).background(pillColor, RoundedCornerShape(50))
+                .border(1.dp, pillEdge, RoundedCornerShape(50)).padding(6.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            visibleTabs(listOf(Tab.HOME, Tab.LIVE, Tab.SEARCH, Tab.LIBRARY, Tab.EXTENSIONS)).forEach { PillItem(it, it.icon(), vertical = true) }
+            if (!ProfileUi.current.kids) {
+                Box(Modifier.padding(vertical = 2.dp).height(1.dp).width(22.dp).background(Color.White.copy(alpha = 0.18f)))
+                PillItem(Tab.MORE, Icons.Filled.Settings, vertical = true)
+            }
+        }
+        Spacer(Modifier.weight(1f))
         ProfileButton(36.dp)
     }
 }
 
+/** One tab in a pill bar: chosen = a lighter inner pill (with its name in the bottom bar). */
 @Composable
-private fun RailItem(tab: Tab, icon: ImageVector) {
-    val selected = Nav.tab == tab && Nav.stack.isEmpty()
-    val shape = RoundedCornerShape(14.dp)
-    Box(
-        Modifier.size(48.dp).card(shape, focusScale = 1.1f) { Nav.select(tab) }
-            .background(if (selected) Palette.accent.copy(alpha = 0.22f) else Color.Transparent, shape),
-        contentAlignment = Alignment.Center,
+private fun PillItem(tab: Tab, icon: ImageVector, vertical: Boolean) {
+    val selected = (Nav.tab == tab || (tab == Tab.MORE && Nav.tab == Tab.EXTENSIONS && !vertical)) && (Nav.stack.isEmpty() || !vertical)
+    val shape = RoundedCornerShape(50)
+    val tint = if (selected) Color.White else Palette.muted
+    Row(
+        Modifier.card(shape, focusScale = 1.1f) { Nav.select(tab) }
+            .background(if (selected) chosenColor else Color.Transparent, shape)
+            .then(if (selected && !vertical) Modifier.border(1.dp, Color.White.copy(alpha = 0.12f), shape) else Modifier)
+            .animateContentSize()
+            .then(if (vertical) Modifier.size(48.dp) else Modifier.height(44.dp).padding(horizontal = if (selected) 16.dp else 13.dp)),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center,
     ) {
-        Icon(icon, tab.label, tint = if (selected) Palette.accent else Palette.muted, modifier = Modifier.size(24.dp))
+        Icon(icon, tab.label, tint = if (selected && vertical) Palette.accent else tint, modifier = Modifier.size(if (vertical) 24.dp else 22.dp))
+        if (selected && !vertical) {
+            Spacer(Modifier.width(8.dp))
+            Text(tab.label, style = MaterialTheme.typography.labelLarge, color = tint, maxLines = 1)
+        }
     }
 }
 

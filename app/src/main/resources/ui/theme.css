@@ -559,20 +559,29 @@
 
 /* ================= v6 shell: icon rail, top bar, popovers ================= */
 .rail {
-    -fx-background-color: -cs-rail;
-    -fx-border-color: transparent -cs-line transparent transparent;
+    -fx-background-color: transparent;
     -fx-padding: 16 0 16 0;
-    -fx-min-width: 76; -fx-pref-width: 76; -fx-max-width: 76;
+    -fx-min-width: 84; -fx-pref-width: 84; -fx-max-width: 84;
 }
+/* The tabs' vertical pill: a dark capsule with a faint edge; the chosen tab is a lighter circle inside. */
+.rail-pill {
+    -fx-background-color: rgba(22,22,27,0.94);
+    -fx-background-radius: 30;
+    -fx-border-color: rgba(255,255,255,0.10); -fx-border-radius: 30; -fx-border-width: 1;
+    -fx-padding: 6;
+    -fx-max-width: 60;
+    -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.45), 16, 0.1, 0, 4);
+}
+.rail-divider { -fx-min-height: 1; -fx-max-height: 1; -fx-min-width: 22; -fx-max-width: 22; -fx-background-color: rgba(255,255,255,0.18); }
 .rail-item {
     -fx-min-width: 46; -fx-min-height: 46; -fx-max-width: 46; -fx-max-height: 46;
-    -fx-background-radius: 14;
+    -fx-background-radius: 23;
     -fx-cursor: hand;
 }
 .rail-item .icon { -fx-background-color: -cs-faint; }
-.rail-item:hover { -fx-background-color: -cs-chip; }
+.rail-item:hover { -fx-background-color: rgba(255,255,255,0.08); }
 .rail-item:hover .icon { -fx-background-color: -cs-text; }
-.rail-item.active { -fx-background-color: -cs-accent-soft; }
+.rail-item.active { -fx-background-color: rgba(255,255,255,0.14); }
 .rail-item.active .icon { -fx-background-color: -cs-accent; }
 .rail-logo { -fx-cursor: hand; -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.4), 10, 0.1, 0, 3); }
 .rail-avatar { -fx-cursor: hand; -fx-padding: 10 0 0 0; }
@@ -705,7 +714,8 @@
 .addon-logo { -fx-background-color: -cs-surface-3; -fx-background-radius: 12; }
 
 /* glass versions */
-.glass .rail { -fx-background-color: rgba(255,255,255,0.06); -fx-border-color: transparent rgba(255,255,255,0.12) transparent transparent; }
+.glass .rail { -fx-background-color: transparent; }
+.glass .rail-pill { -fx-background-color: rgba(255,255,255,0.08); }
 .glass .topbar.solid { -fx-background-color: rgba(18,12,40,0.78); -fx-border-color: transparent transparent rgba(255,255,255,0.14) transparent; }
 .glass .popover { -fx-background-color: linear-gradient(to bottom, rgba(44,36,88,0.95), rgba(22,16,48,0.96)); -fx-border-color: rgba(255,255,255,0.22); }
 .glass .hero-full { -fx-background-color: transparent; }

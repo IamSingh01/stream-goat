@@ -177,8 +177,12 @@ class AppWindow(val stage: Stage) : StackPane() {
         rail.children.setAll(StackPane(logo).apply { pad(2.0, 0.0, 18.0, 0.0); onClick { show(Tab.HOME) } })
         navItems.clear()
         val kids = Profiles.isKids
+        // The tabs sit in a vertical pill, centred beside the page; Settings after a thin line.
+        val pill = VBox(6.0).apply { styleClass += "rail-pill"; alignment = Pos.CENTER }
+        rail.children += spacer()
+        rail.children += pill
         Tab.entries.filter { (!kids || it.forKids) && (it != Tab.LIVE || LiveTv.availableToProfile) }.forEach { tab ->
-            if (tab == Tab.SETTINGS) rail.children += spacer()
+            if (tab == Tab.SETTINGS) pill.children += Region().apply { styleClass += "rail-divider" }
             val item = StackPane(icon(tab.icon, 22.0)).apply {
                 styleClass += "rail-item"
                 if (tab == currentTab) styleClass += "active"
@@ -186,9 +190,9 @@ class AppWindow(val stage: Stage) : StackPane() {
                 tooltip(tab.label)
             }
             navItems[tab] = item
-            rail.children += item
+            pill.children += item
         }
-        if (kids) rail.children += spacer()
+        rail.children += spacer()
         rail.children += StackPane(icon(Icons.FULLSCREEN, 20.0)).apply {
             styleClass += "rail-item"
             onClick { stage.isFullScreen = !stage.isFullScreen }

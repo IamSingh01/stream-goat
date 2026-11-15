@@ -41,6 +41,12 @@ object Screenshots {
         }
         delay(1500)
         // CS_SCREENSHOT_ONLY=v6: just the profiles / sections / add-on part (quicker while developing).
+        // CS_SCREENSHOT_ONLY=nav: the home page with the navigation pill, then quit.
+        if (System.getenv("CS_SCREENSHOT_ONLY") == "nav") {
+            kotlinx.coroutines.delay(1500)
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) { capture(window, "$prefix-nav.png") }
+            System.exit(0)
+        }
         if (System.getenv("CS_SCREENSHOT_ONLY") == "glass") {
             modeGlass(window, prefix)
         }
