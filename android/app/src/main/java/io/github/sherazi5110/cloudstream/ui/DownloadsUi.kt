@@ -12,6 +12,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -264,8 +267,12 @@ fun DownloadChooserDialog() {
         else heights = h
     }
     fun pick(choice: Downloads.Choice?) { DownloadsUi.request = null; DownloadsUi.begin(req.api, req.r, req.p, choice) }
-    androidx.compose.ui.window.Dialog(onDismissRequest = { DownloadsUi.request = null }) {
-        Column(Modifier.fillMaxWidth().background(Palette.surface, RoundedCornerShape(16.dp)).padding(18.dp)) {
+    // As in the player's Sources: whole names, a search box and language / quality chips.
+    var query by remember(req) { mutableStateOf("") }
+    var picked by remember(req) { mutableStateOf(emptySet<String>()) }
+    androidx.compose.ui.window.Dialog(onDismissRequest = { DownloadsUi.request = null },
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)) {
+        Column(Modifier.fillMaxWidth(0.92f).then(Modifier.widthIn(max = 980.dp)).fillMaxHeight(0.88f).background(Palette.surface, RoundedCornerShape(16.dp)).padding(18.dp)) {
             Text(if (stream == null) "Download: choose a source" else "Download: choose a quality", style = MaterialTheme.typography.titleLarge)
             Text(if (Engine.playables(req.r).size > 1) "${req.r.name} · ${req.p.label}" else req.r.name, style = MaterialTheme.typography.bodySmall,
                 color = Palette.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -278,14 +285,39 @@ fun DownloadChooserDialog() {
                 sorted.isEmpty() -> "No source here can be saved"
                 else -> "${sorted.size} source(s) · ${io.github.sherazi5110.cloudstream.Settings.downloadConnections} connections at once"
             }, style = MaterialTheme.typography.bodySmall, color = Palette.muted, modifier = Modifier.padding(top = 6.dp, bottom = 8.dp))
-            LazyColumn(Modifier.height(360.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            val tagsOf = remember(sorted.size) { sorted.associate { it.url to SourceFilters.tags(it.name + " " + it.source, it.quality) } }
+            if (stream == null && sorted.isNotEmpty()) {
+                androidx.compose.material3.OutlinedTextField(query, { query = it }, singleLine = true,
+                    placeholder = { Text("Search: hindi, english, 1080p, a server's name…") },
+                    leadingIcon = { Icon(androidx.compose.material.icons.Icons.Filled.Search, null) }, shape = RoundedCornerShape(50),
+                    colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(unfocusedContainerColor = Palette.surfaceHigh, focusedContainerColor = Palette.surfaceHigh,
+                        unfocusedBorderColor = Color.Transparent, focusedBorderColor = Palette.accent),
+                    modifier = Modifier.fillMaxWidth())
+                val chips = remember(tagsOf) { SourceFilters.chips(tagsOf.values.toList()) }
+                if (chips.isNotEmpty()) androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    contentPadding = PaddingValues(vertical = 10.dp)) {
+                    items(chips) { tag ->
+                        val on = tag in picked
+                        Text(tag, style = MaterialTheme.typography.labelLarge, modifier = Modifier
+                            .card(RoundedCornerShape(50)) { picked = if (on) picked - tag else picked + tag }
+                            .background(if (on) Palette.accent else Palette.surfaceHigh, RoundedCornerShape(50))
+                            .padding(horizontal = 14.dp, vertical = 8.dp))
+                    }
+                }
+            }
+            val shown = sorted.filter { l -> picked.all { it in tagsOf[l.url].orEmpty() } && SourceFilters.matches("${l.name} ${l.source}", query) }
+            LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 val s = stream
                 if (s == null) {
-                    item { ChooserRow("AUTO", "Best (automatic)", "The best source at your preferred quality", true) { pick(null) } }
-                    uniqueItems(sorted, key = { it.url }) { l ->
+                    if (query.isBlank() && picked.isEmpty()) item { ChooserRow("AUTO", "Best (automatic)", "The best source at your preferred quality", true) { pick(null) } }
+                    if (shown.isEmpty() && sorted.isNotEmpty()) item {
+                        Text("No source matches. Clear the search or a chip.", style = MaterialTheme.typography.bodyMedium, color = Palette.muted, modifier = Modifier.padding(12.dp))
+                    }
+                    uniqueItems(shown, key = { it.url }) { l ->
                         val isStream = l.type == com.lagradost.cloudstream3.utils.ExtractorLinkType.M3U8 || l.url.substringBefore('?').endsWith(".m3u8")
+                        val tags = tagsOf[l.url].orEmpty().filterNot { it.endsWith("p") || it == "4K" }
                         ChooserRow(com.lagradost.cloudstream3.utils.Qualities.getStringByInt(l.quality).ifEmpty { "AUTO" }, l.name,
-                            if (isStream) "Stream · choose its quality next" else "File", false) {
+                            (tags + listOf(l.source, if (isStream) "Stream · choose its quality next" else "File")).distinct().joinToString(" · "), false) {
                             if (isStream) stream = l else pick(Downloads.Choice(l.name, l.source))
                         }
                     }
@@ -306,8 +338,9 @@ private fun ChooserRow(pill: String, title: String, sub: String?, best: Boolean,
         Text(pill, style = MaterialTheme.typography.labelMedium, color = Color.White,
             modifier = Modifier.background(Palette.accent, RoundedCornerShape(6.dp)).padding(horizontal = 8.dp, vertical = 3.dp))
         Column(Modifier.padding(start = 12.dp).weight(1f)) {
-            Text(title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            sub?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = Palette.muted, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+            // The whole name, on as many lines as it takes: it says the language, the server and the size.
+            Text(title, style = MaterialTheme.typography.titleSmall)
+            sub?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = Palette.muted, modifier = Modifier.padding(top = 2.dp)) }
         }
         Icon(Icons.Filled.Download, null, tint = Palette.accent)
     }
