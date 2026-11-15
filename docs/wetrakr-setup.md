@@ -7,15 +7,18 @@ secret. Until the secret is set, the apps say "Not available in this build yet".
 
 ## 1. Register Stream Goat on WeTrakr (once)
 
-1. Sign in (or sign up) at [wetrakr.com](https://wetrakr.com).
-2. Open **Settings → API** and create a new app:
-   - **Name:** Stream Goat
-   - **Description:** Free movie, TV and anime player for Android, Android TV, Windows, macOS and Linux.
-   - **Website:** `https://sherazi5110.github.io/stream-goat/`
-   - **Redirect URI:** `urn:ietf:wg:oauth:2.0:oob` (the apps use the device code sign-in, not a redirect)
-3. Copy the **Client ID**. You don't need the client secret: never put it in the app or in this repository.
+While WeTrakr's API is in its testing phase, apps are registered on request (Settings → API on wetrakr.com says
+"You haven't created an app yet" until then). Ask on [WeTrakr's Discord](https://discord.gg/XedDZYpFdh) with:
 
-WeTrakr's API is free for personal and non-commercial apps (terms: [api.wetrakr.com](https://api.wetrakr.com), Terms of use).
+- **Name:** Stream Goat
+- **Description:** Free media player for Android phones, Android TV, Windows, macOS and Linux. Marks the movies and
+  episodes you watch as watched on WeTrakr and shows what you're playing now.
+- **Redirect URI:** `urn:ietf:wg:oauth:2.0:oob` (the apps sign in with the device code flow, no browser callback)
+- **Website:** `https://sherazi5110.github.io/stream-goat/`
+- Your WeTrakr username (each account can register one app)
+
+Once registered, the app appears at wetrakr.com → **Settings → API** with a **Client ID** and a client secret.
+Copy only the Client ID: never put the client secret in the app or in this repository.
 
 ## 2. Add it to GitHub (once)
 

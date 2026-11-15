@@ -35,6 +35,8 @@ object WeTrakr {
         set(v) { prefs.edit().putString("now_playing", v.toString()).apply() }
 
     private val json = "application/json".toMediaType()
+    /** WeTrakr's edge refuses HTTP libraries' default User-Agent (Cloudflare 1010): the app names itself. */
+    private val userAgent by lazy { "StreamGoat/" + runCatching { App.context.packageManager.getPackageInfo(App.context.packageName, 0).versionName }.getOrNull().orEmpty() + " (+https://github.com/sherazi5110/stream-goat)" }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val tokenLock = Mutex()
 
@@ -48,6 +50,7 @@ object WeTrakr {
             .header("Content-Type", "application/json")
             .header("wetrakr-api-version", "1")
             .header("wetrakr-api-key", clientId)
+            .header("User-Agent", userAgent)
             .apply { if (token != null) header("Authorization", "Bearer $token") }
             .post(body.toString().toRequestBody(json)).build()
         app.baseClient.newCall(request).execute().use { r ->

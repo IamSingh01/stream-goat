@@ -73,6 +73,7 @@ class WeTrakrTest {
         next().let { (path, headers, body) ->
             assertEquals("/oauth/device/code", path)
             assertEquals("1", headers["wetrakr-api-version"])
+            assertTrue(headers["user-agent"].orEmpty().matches(Regex("StreamGoat/[0-9.]+ .*")), "names the app (WeTrakr blocks library defaults)")
             assertEquals("test-client", body.getString("client_id"))
         }
         assertFalse(WeTrakr.poll(code), "pending")
