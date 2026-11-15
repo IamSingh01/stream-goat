@@ -11,6 +11,12 @@ Stream Goat runs **CloudStream extensions and Stremio add-ons**, from the same r
 Android app uses, with no changes to the extensions. *(Formerly "CloudStream for Linux"; your extensions, profiles,
 library and downloads carry over.)*
 
+> [!NOTE]
+> **This is a personal project, and it isn't perfect.** I add features and fix things over time, so some parts may
+> not work as expected yet. If something breaks or you have an idea, please
+> **[report it / create an issue](https://github.com/sherazi5110/stream-goat/issues/new)**. In the app you can also use
+> *Settings → About → Report a problem*, which fills in your version and device for you.
+
 **[Website](https://sherazi5110.github.io/stream-goat/)** · **[Download](https://github.com/sherazi5110/stream-goat/releases/latest)** · **[Open the web version](https://sherazi5110.github.io/stream-goat/app/)** (any phone or browser, Stremio add-ons) · **[Full install guide](INSTALL.md)**
 
 ## Download for your device
