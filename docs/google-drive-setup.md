@@ -35,6 +35,19 @@ Don't upload a logo: a logo makes Google ask for a brand review first.
 For an app that is installed on people's devices, Google doesn't treat this client secret as a secret: it is built
 into the app. Still, keep it in GitHub secrets rather than in the code.
 
+## 3b. The web version's client
+
+The web version (https://sherazi5110.github.io/stream-goat/app/) signs in inside the browser, which needs a second
+client in the same project (the backups are shared: the web version can bring the apps' Stremio add-ons over).
+
+1. **Clients → Create client**. Application type: **Web application**. Name: `Stream Goat web`.
+2. **Authorized JavaScript origins → Add URI**: `https://sherazi5110.github.io` (to try a preview from a
+   branch, also `https://raw.githack.com`). No redirect URIs. **Create**.
+3. Copy its **Client ID** (a web client needs no secret) into the GitHub secret `GOOGLE_WEB_CLIENT_ID`.
+
+In a browser, Google's access lasts an hour; after that the web version asks to *Connect again* (one tap). Its
+own backups in the browser (IndexedDB, every 5 minutes) don't need an account.
+
 ## 4. GitHub secrets
 
 Repository → **Settings → Secrets and variables → Actions → New repository secret**, twice:
@@ -43,6 +56,7 @@ Repository → **Settings → Secrets and variables → Actions → New reposito
 | --- | --- |
 | `GOOGLE_CLIENT_ID` | the Client ID (ends in `.apps.googleusercontent.com`) |
 | `GOOGLE_CLIENT_SECRET` | the Client secret |
+| `GOOGLE_WEB_CLIENT_ID` | the web client's Client ID (step 3b), for the web version |
 
 The next build (test build or release) has Google Drive backup. Builds without the secrets show *"Google sign-in
 isn't set up in this build"*.

@@ -28,10 +28,17 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/configure-pages@v5
       - name: Put the website together
+        env:
+          # Google sign-in for the web version (a "Web application" client; docs/google-drive-setup.md). A web
+          # page's client id is public anyway; without it the web version says sign-in isn't set up.
+          GOOGLE_WEB_CLIENT_ID: ${{ secrets.GOOGLE_WEB_CLIENT_ID }}
         run: |
           mkdir -p _site/screenshots
           cp -r site/. _site/
           cp -r webapp _site/app
+          if [ -n "$GOOGLE_WEB_CLIENT_ID" ]; then
+            printf 'window.STREAMGOAT_CONFIG = { googleClientId: "%s" };\n' "$GOOGLE_WEB_CLIENT_ID" > _site/app/config.js
+          fi
           cp packaging/linux/cloudstream-linux.svg _site/logo.svg
           for f in home intro search-suggest player-translate player-picture livetv-guide profiles player-skip theme-glass about; do
             cp "docs/screenshots/$f.png" _site/screenshots/

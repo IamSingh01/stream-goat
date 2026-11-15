@@ -68,7 +68,9 @@ object App {
             runCatching { com.lagradost.cloudstream3.MainActivity.afterPluginsLoadedEvent.invoke(true) }
             // Carry on with downloads that were running when the app closed.
             runCatching { Downloads.init() }
-            // Google Drive backup: when something changed (every 15 minutes, and when the app is put away).
+            // Stremio add-ons everyone starts with (Streaming Catalogs, Cinemeta), once each.
+            runCatching { StremioAddons.preinstall() }
+            // Google Drive backup: when something changed (every 5 minutes, and when the app is put away).
             CloudBackup.startAuto()
             // Updates and the update check wait until the first screens have settled.
             kotlinx.coroutines.delay(20_000)

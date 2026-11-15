@@ -45,6 +45,12 @@ object StremioAddons {
     /** Cinemeta, Stremio's own catalog of films and series (metadata only, no streams). */
     const val CINEMETA = "https://v3-cinemeta.strem.io/manifest.json"
 
+    /** Streaming Catalogs: what's trending on Netflix, HBO Max, Disney+, Prime Video and Apple TV+ (catalogs only). */
+    const val STREAMING_CATALOGS = "https://7a82163c306e-stremio-netflix-catalog-addon.baby-beamup.club/manifest.json"
+
+    /** Installed for everyone, in this order (Home starts on the first). Each only once: a removed one stays removed. */
+    @Volatile var preinstalled = listOf(STREAMING_CATALOGS, CINEMETA)
+
     data class Addon(val url: String, val manifest: Manifest, val enabled: Boolean) {
         val base get() = url.removeSuffix("/manifest.json")
     }
@@ -160,6 +166,33 @@ object StremioAddons {
     }
 
     fun remove(url: String) = save(stored().filterNot { it.first.url == url })
+
+    private fun offered(): MutableSet<String> =
+        runCatching { JSONArray(prefs.getString("preinstalled", "[]")).let { a -> (0 until a.length()).map { a.getString(it) } } }
+            .getOrDefault(emptyList()).toMutableSet()
+
+    /**
+     * Adds the preinstalled add-ons not offered yet (at start; offline, they're tried again next time), first in the
+     * list. Returns the names added.
+     */
+    suspend fun preinstall(): List<String> {
+        val offered = offered()
+        val added = mutableListOf<String>()
+        for (url in preinstalled) {
+            if (url in offered) continue
+            if (all().none { it.url == url }) {
+                val addon = runCatching { install(url) }.getOrNull() ?: continue
+                added += addon.manifest.name
+            }
+            offered += url
+            prefs.edit().putString("preinstalled", JSONArray(offered.toList()).toString()).apply()
+        }
+        if (added.isNotEmpty()) {
+            val list = stored()
+            save(list.sortedBy { (a, _) -> preinstalled.indexOf(a.url).let { if (it < 0) Int.MAX_VALUE else it } })
+        }
+        return added
+    }
 
     fun setEnabled(url: String, enabled: Boolean) = save(stored().map { (a, j) -> if (a.url == url) a.copy(enabled = enabled) to j else a to j })
 
