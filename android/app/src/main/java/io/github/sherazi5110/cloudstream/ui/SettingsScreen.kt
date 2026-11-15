@@ -2,6 +2,7 @@ package io.github.sherazi5110.cloudstream.ui
 
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -80,7 +81,8 @@ enum class Section(val title: String, val text: String, val icon: ImageVector) {
     APPEARANCE("Appearance", "Theme, accent colour, layout", Icons.Filled.Palette),
     PLAYER("Player", "Sources, quality, subtitles, audio", Icons.Filled.PlayCircle),
     LIVETV("Live TV", "M3U playlists, Xtream Codes, guides", Icons.Filled.LiveTv),
-    METADATA("Metadata & integrations", "TMDB, IMDb ratings, AniList, WeTrakr sync", Icons.Filled.Star),
+    WETRAKR("WeTrakr sync", "Mark what you watch on WeTrakr", Icons.Filled.Sync),
+    METADATA("Metadata & integrations", "TMDB, IMDb ratings, AniList", Icons.Filled.Star),
     NETWORK("Network", "DNS over HTTPS, cookies", Icons.Filled.Public),
     ABOUT("About", "Version, source code", Icons.Filled.Info),
 }
@@ -143,6 +145,7 @@ private fun SectionContent(s: Section) {
         Section.APPEARANCE -> AppearanceSection()
         Section.PLAYER -> PlayerSection()
         Section.LIVETV -> LiveTvSection()
+        Section.WETRAKR -> WeTrakrSection()
         Section.METADATA -> MetadataSection()
         Section.NETWORK -> NetworkSection()
         Section.ABOUT -> AboutSection()
@@ -456,7 +459,6 @@ private fun LiveTvSection() {
 
 @Composable
 private fun MetadataSection() {
-    WeTrakrSection()
     val scope = rememberCoroutineScope()
     var key by remember { mutableStateOf(Metadata.tmdbKey) }
     var status by remember { mutableStateOf<String?>(null) }
@@ -601,7 +603,6 @@ private fun WeTrakrSection() {
     var status by remember { mutableStateOf<String?>(null) }
     var job by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
     DisposableEffect(Unit) { onDispose { job?.cancel() } }
-    Heading("WeTrakr sync")
     Hint("WeTrakr (wetrakr.com) is a free tracker for movies, shows and anime. Connected, what you watch here shows as now watching " +
         "there and is marked watched once you've seen 80% of it. Each profile connects its own account; only a sign-in token is kept on this device.")
     when {

@@ -49,6 +49,7 @@ class SettingsPage : StackPane(), Refreshable {
         Category("appearance", "Appearance", Icons.PALETTE, ::appearance),
         Category("playback", "Playback", Icons.PLAY_CIRCLE, ::playback),
         Category("livetv", "Live TV sources", Icons.TV, ::liveTv),
+        Category("wetrakr", "WeTrakr sync", Icons.HISTORY, ::wetrakr),
         Category("metadata", "Metadata & integrations", Icons.SPARK, ::metadata),
         Category("network", "Network & DNS", Icons.NETWORK, ::network),
         Category("extensions", "Extensions", Icons.EXTENSION, ::extensions),
@@ -792,6 +793,29 @@ class SettingsPage : StackPane(), Refreshable {
         return hbox(16.0, tile, info, side).apply { styleClass += "hub-card"; alignment = javafx.geometry.Pos.TOP_LEFT }
     }
 
+    /** WeTrakr sync: connect with a code, then what's watched here is marked watched there. */
+    private fun wetrakr(): List<Node> = listOf(
+        label("Each profile connects its own WeTrakr account. Only a sign-in token is kept on this computer, never a password.", "muted").apply { isWrapText = true; maxWidth = 860.0 },
+            hubCard(label("WT"), "linear-gradient(to bottom right, #f43f5e, #7c3aed)", "WeTrakr sync",
+                "WeTrakr (wetrakr.com) is a free tracker for movies, shows and anime. Connected, what you watch here shows as now " +
+                    "watching there and is marked watched once you've seen 80% of it. Each profile connects its own account.",
+                listOf(when {
+                    !com.lagradost.cloudstream3.linux.WeTrakr.available -> label("Not available in this build yet", "status-warn")
+                    com.lagradost.cloudstream3.linux.WeTrakr.connected -> label("✓ Connected", "status-ok")
+                    else -> label("Not connected", "status-warn")
+                }),
+                when {
+                    !com.lagradost.cloudstream3.linux.WeTrakr.available -> emptyList()
+                    com.lagradost.cloudstream3.linux.WeTrakr.connected -> listOf(
+                        Switch(com.lagradost.cloudstream3.linux.WeTrakr.shareNowPlaying) { com.lagradost.cloudstream3.linux.WeTrakr.shareNowPlaying = it }
+                            .tooltip("Show what I'm watching on WeTrakr (off: only mark titles watched when they finish)"),
+                        button("Disconnect", null, "btn-ghost", "btn-small") { com.lagradost.cloudstream3.linux.WeTrakr.disconnect(); open("wetrakr") })
+                    else -> listOf(button("Connect WeTrakr", Icons.CHEVRON_RIGHT, "btn-accent", "btn-small") {
+                        WeTrakrWindow.connect(Nav.window.stage) { open("wetrakr") }
+                    })
+                }),
+    )
+
     private fun metadata(): List<Node> {
         val tmdbStatus = when {
             Metadata.tmdbKey.isBlank() -> label("Add your free API key", "status-warn")
@@ -813,24 +837,6 @@ class SettingsPage : StackPane(), Refreshable {
                 "Stremio's free catalog: IMDb ratings and IDs, also when TMDB has no match or no key is set. No key needed.",
                 listOf(label("✓ Ready", "status-ok")),
                 listOf(Switch(Metadata.cinemeta) { Metadata.cinemeta = it })),
-            hubCard(label("WT"), "linear-gradient(to bottom right, #f43f5e, #7c3aed)", "WeTrakr sync",
-                "WeTrakr (wetrakr.com) is a free tracker for movies, shows and anime. Connected, what you watch here shows as now " +
-                    "watching there and is marked watched once you've seen 80% of it. Each profile connects its own account.",
-                listOf(when {
-                    !com.lagradost.cloudstream3.linux.WeTrakr.available -> label("Not available in this build yet", "status-warn")
-                    com.lagradost.cloudstream3.linux.WeTrakr.connected -> label("✓ Connected", "status-ok")
-                    else -> label("Not connected", "status-warn")
-                }),
-                when {
-                    !com.lagradost.cloudstream3.linux.WeTrakr.available -> emptyList()
-                    com.lagradost.cloudstream3.linux.WeTrakr.connected -> listOf(
-                        Switch(com.lagradost.cloudstream3.linux.WeTrakr.shareNowPlaying) { com.lagradost.cloudstream3.linux.WeTrakr.shareNowPlaying = it }
-                            .tooltip("Show what I'm watching on WeTrakr (off: only mark titles watched when they finish)"),
-                        button("Disconnect", null, "btn-ghost", "btn-small") { com.lagradost.cloudstream3.linux.WeTrakr.disconnect(); open("metadata") })
-                    else -> listOf(button("Connect WeTrakr", Icons.CHEVRON_RIGHT, "btn-accent", "btn-small") {
-                        WeTrakrWindow.connect(Nav.window.stage) { open("metadata") }
-                    })
-                }),
             hubCard(icon(Icons.SUBTITLES, 26.0).apply { style += "-fx-background-color: white;" }, "linear-gradient(to bottom right, #16a34a, #065f46)", "OpenSubtitles",
                 "Online subtitles in the player (Subtitles → Search online). No account needed.",
                 listOf(label("✓ Ready", "status-ok")), emptyList()),
