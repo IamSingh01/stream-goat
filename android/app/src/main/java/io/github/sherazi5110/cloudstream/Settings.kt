@@ -148,6 +148,16 @@ object Settings {
         get() = string("player_zoom", "FIT")
         set(v) = put("player_zoom", v)
 
+    /** The player's rotation on phones and tablets: LANDSCAPE (either way round), PORTRAIT or AUTO (as the device is held). */
+    var playerOrientation: String
+        get() = string("player_orientation", "LANDSCAPE")
+        set(v) = put("player_orientation", v)
+
+    /** Even out loud and quiet sounds (libVLC's compressor): quieter explosions and music, clearer voices. */
+    var levelAudio: Boolean
+        get() = string("level_audio", "false").toBoolean()
+        set(v) = put("level_audio", v.toString())
+
     /**
      * Show adult (NSFW) extensions and titles, like the Android app's setting. Off by default,
      * per profile, never in kids profiles.

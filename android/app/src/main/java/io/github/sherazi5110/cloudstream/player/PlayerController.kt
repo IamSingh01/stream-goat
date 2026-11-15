@@ -295,6 +295,7 @@ class PlayerController(
             return
         }
         grace?.cancel()
+        lastVariantUrl = variantUrl
         playCalledAt = android.os.SystemClock.elapsedRealtime()
         val keep = if (started) time.takeIf { it > 0 } ?: startAt else startAt
         if (variantUrl == null && (current?.url != link.url || variant != null)) loadVariants(link.also { current = it })
@@ -318,6 +319,12 @@ class PlayerController(
                 headers.entries.firstOrNull { it.key.equals("Referer", true) }?.let { addOption(":http-referrer=${it.value}") }
             }
             if (keep > 0) addOption(":start-time=${keep / 1000.0}")
+            // Even out loud and quiet sounds: a gentle compressor with make-up gain (voices up, peaks down).
+            if (io.github.sherazi5110.cloudstream.Settings.levelAudio) {
+                addOption(":audio-filter=compressor")
+                listOf("rms-peak=0.2", "attack=25", "release=150", "threshold=-24", "ratio=4", "knee=4", "makeup-gain=9")
+                    .forEach { addOption(":compressor-$it") }
+            }
         }
         io.github.sherazi5110.cloudstream.CrashReport.playing("${api.name}: ${response.name} (${playable.label}); source ${link.name} [${link.type}] from " +
             "${runCatching { Uri.parse(link.url).host }.getOrNull() ?: "?"}")
@@ -531,6 +538,17 @@ class PlayerController(
         speed = rate
         VlcThread.run { player.rate = rate }
     }
+
+    /** The resize button: Fit → Fill → Stretch → Fit (the others stay in Settings → Player). */
+    fun cycleZoom(): Zoom {
+        val next = when (zoom) { Zoom.FIT -> Zoom.FILL; Zoom.FILL -> Zoom.STRETCH; else -> Zoom.FIT }
+        setZoomMode(next)
+        return next
+    }
+
+    /** Reopens the current source where it is (after changing something that applies when a source opens). */
+    fun reopen() { current?.let { play(it, lastVariantUrl) } }
+    private var lastVariantUrl: String? = null
 
     fun setZoomMode(z: Zoom) {
         zoom = z

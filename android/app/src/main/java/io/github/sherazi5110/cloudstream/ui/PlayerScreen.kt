@@ -43,6 +43,8 @@ import androidx.compose.material.icons.filled.Brightness6
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ClosedCaption
 import androidx.compose.material.icons.filled.Forward10
+import androidx.compose.material.icons.filled.PictureInPictureAlt
+import androidx.compose.material.icons.filled.ScreenRotation
 import androidx.compose.material.icons.filled.HighQuality
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
@@ -155,7 +157,7 @@ fun PlayerScreen(screen: Screen.Player) {
         insets?.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         insets?.hide(WindowInsetsCompat.Type.systemBars())
         val orientation = activity?.requestedOrientation
-        if (!isTv) activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        if (!isTv) activity?.requestedOrientation = orientationOf(Settings.playerOrientation)
         view.keepScreenOn = true
         onDispose {
             insets?.show(WindowInsetsCompat.Type.systemBars())
@@ -248,7 +250,7 @@ fun PlayerScreen(screen: Screen.Player) {
                 AnimatedVisibility(controls, Modifier.align(Alignment.TopEnd), enter = fadeIn(), exit = fadeOut()) {
                     RoundIcon(Icons.Filled.Lock, "Unlock", Modifier.padding(24.dp)) { locked = false; poke++ }
                 }
-            } else AnimatedVisibility(controls, enter = fadeIn(), exit = fadeOut()) {
+            } else AnimatedVisibility(controls && !inPip(), enter = fadeIn(), exit = fadeOut()) {
                 Controls(c, onSheet = { sheet = it }, onLock = { locked = true; poke++ }, poke = { poke++ })
             }
             val seg = c.activeSegment
@@ -383,7 +385,29 @@ private fun Controls(c: PlayerController, onSheet: (Sheet) -> Unit, onLock: () -
                 val sub = if (c.playables.size > 1) c.playable.label else c.current?.name
                 sub?.let { Text(it, style = MaterialTheme.typography.bodySmall, maxLines = 1) }
             }
-            if (!isTv) RoundIcon(Icons.Filled.LockOpen, "Lock") { onLock() }
+            if (!isTv) {
+                val ctx = androidx.compose.ui.platform.LocalContext.current
+                // Rotation: landscape (either way), portrait (vertical videos, shorts) or as the device is held; remembered.
+                RoundIcon(Icons.Filled.ScreenRotation, "Rotate") {
+                    val next = when (Settings.playerOrientation) { "LANDSCAPE" -> "PORTRAIT"; "PORTRAIT" -> "AUTO"; else -> "LANDSCAPE" }
+                    Settings.playerOrientation = next
+                    ctx.findActivity()?.requestedOrientation = orientationOf(next)
+                    io.github.sherazi5110.cloudstream.App.toast(when (next) { "PORTRAIT" -> "Portrait"; "AUTO" -> "Rotates with the device"; else -> "Landscape" })
+                    poke()
+                }
+                // Picture in picture: the video keeps playing in a small window over other apps.
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O &&
+                    ctx.packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_PICTURE_IN_PICTURE)) {
+                    RoundIcon(Icons.Filled.PictureInPictureAlt, "Picture in picture", Modifier.padding(start = 8.dp)) {
+                        runCatching {
+                            ctx.findActivity()?.enterPictureInPictureMode(android.app.PictureInPictureParams.Builder()
+                                .setAspectRatio(android.util.Rational(16, 9)).build())
+                        }.onFailure { io.github.sherazi5110.cloudstream.App.toast("Picture in picture isn't available here") }
+                    }
+                }
+                Spacer(Modifier.width(8.dp))
+                RoundIcon(Icons.Filled.LockOpen, "Lock") { onLock() }
+            }
             val ends = if (c.length > 0) " · ends ${timeFormat.format(Date(now + ((c.length - c.time) / c.speed).toLong()))}" else ""
             Text(timeFormat.format(Date(now)) + ends, style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(start = 12.dp))
         }
@@ -425,7 +449,8 @@ private fun Controls(c: PlayerController, onSheet: (Sheet) -> Unit, onLock: () -
                 // Several qualities inside this source (an HLS master): pin one, or Auto.
                 if (c.variants.isNotEmpty()) BarButton(Icons.Filled.HighQuality, c.variant?.label ?: "Auto") { onSheet(Sheet.QUALITY) }
                 BarButton(Icons.Filled.Speed, "${c.speed}×") { onSheet(Sheet.SPEED) }
-                BarButton(Icons.Filled.AspectRatio, c.zoom.label) { onSheet(Sheet.ZOOM) }
+                // One tap: Fit → Fill → Stretch (Original, 16:9 and 4:3 are in Settings → Player).
+                BarButton(Icons.Filled.AspectRatio, c.zoom.label) { c.cycleZoom(); poke() }
                 c.next?.let { next -> BarButton(Icons.Filled.SkipNext, "Next episode") { Nav.replace(Screen.Player(c.api, c.response, next)) } }
             }
         }
@@ -528,7 +553,13 @@ private fun SheetPanel(sheet: Sheet, c: PlayerController, modifier: Modifier, on
                     onClose()
                 }
             }
-            Sheet.AUDIO -> c.audioTracks().filter { it.id != -1 }.map { t -> Option(t.name, null, t.id == c.audioTrack()) { c.setAudio(t.id); onClose() } }
+            Sheet.AUDIO -> c.audioTracks().filter { it.id != -1 }.map { t -> Option(t.name, null, t.id == c.audioTrack()) { c.setAudio(t.id); onClose() } } +
+                Option(if (Settings.levelAudio) "Even out loud and quiet sounds: On" else "Even out loud and quiet sounds: Off",
+                    "Quieter music and explosions, clearer voices (good on TVs)", Settings.levelAudio) {
+                    Settings.levelAudio = !Settings.levelAudio
+                    c.reopen()
+                    onClose()
+                }
             Sheet.SPEED -> listOf(0.25f, 0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f).map { r -> Option("$r×", if (r == 1f) "Normal" else null, r == c.speed) { c.setRate(r); onClose() } }
             Sheet.ZOOM -> Zoom.entries.map { z -> Option(z.label, null, z == c.zoom) { c.setZoomMode(z); onClose() } }
             Sheet.QUALITY -> listOf(Option("Auto", "Changes with your connection", c.variant == null) { c.setQuality(null); onClose() }) +
@@ -556,4 +587,19 @@ private fun SheetPanel(sheet: Sheet, c: PlayerController, modifier: Modifier, on
             }
         }
     }
+}
+
+/** Settings.playerOrientation → the activity's requested orientation. */
+internal fun orientationOf(setting: String) = when (setting) {
+    "PORTRAIT" -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+    "AUTO" -> ActivityInfo.SCREEN_ORIENTATION_FULL_USER
+    else -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+}
+
+/** In picture in picture: only the video, no controls. */
+@Composable
+private fun inPip(): Boolean {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    androidx.compose.ui.platform.LocalConfiguration.current  // read so this recomposes when the window changes
+    return android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N && ctx.findActivity()?.isInPictureInPictureMode == true
 }

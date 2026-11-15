@@ -273,14 +273,38 @@ private fun PlayerSection() {
     Heading("Wait for sources")
     var timeout by remember { mutableStateOf(Settings.sourcesTimeoutSeconds) }
     ChoiceChips(listOf(30, 60, 90, 120), { "$it s" }, { it == timeout }) { timeout = it; Settings.sourcesTimeoutSeconds = it }
-    Heading("Languages")
-    var subs by remember { mutableStateOf(Settings.subtitleLanguage) }
-    OutlinedTextField(subs, { subs = it; Settings.subtitleLanguage = it.trim() }, singleLine = true, modifier = Modifier.fillMaxWidth(),
-        label = { Text("Subtitles to turn on, e.g. en or ar,en") })
+    Heading("Audio language")
     var audio by remember { mutableStateOf(Settings.audioLanguage) }
+    LanguageChips(audio) { audio = it; Settings.audioLanguage = it }
     OutlinedTextField(audio, { audio = it; Settings.audioLanguage = it }, singleLine = true, modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-        label = { Text("Audio to pick, e.g. ja or hi,en") })
-    Hint("Leave empty for the stream's default. Online subtitles (OpenSubtitles, no account) are in the player's Subtitles menu.")
+        label = { Text("Or type codes, in order, e.g. hi,en") })
+    Hint("Sources whose names say this language (\"Hindi\", \"Dual audio [Hindi + English]\") come first, and in a source with several " +
+        "audio tracks this one is picked. Leave empty for the stream's default.")
+    Heading("Subtitles")
+    var subs by remember { mutableStateOf(Settings.subtitleLanguage) }
+    LanguageChips(subs) { subs = it; Settings.subtitleLanguage = it }
+    OutlinedTextField(subs, { subs = it; Settings.subtitleLanguage = it.trim() }, singleLine = true, modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+        label = { Text("Or type codes, in order, e.g. en or ar,en") })
+    Hint("Turned on by themselves when the source has them. Online subtitles (OpenSubtitles, no account) are in the player's Subtitles menu.")
+    Heading("Sound")
+    var level by remember { mutableStateOf(Settings.levelAudio) }
+    SwitchRow("Even out loud and quiet sounds", "Quieter music and explosions, clearer voices: good on TVs and at night. Also in the player's Audio menu.", level) {
+        level = it; Settings.levelAudio = it
+    }
+    Heading("Picture")
+    var rotation by remember { mutableStateOf(Settings.playerOrientation) }
+    if (!isTv) {
+        Text("Rotation", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(bottom = 4.dp))
+        ChoiceChips(listOf("LANDSCAPE", "PORTRAIT", "AUTO"), { mapOf("LANDSCAPE" to "Landscape", "PORTRAIT" to "Portrait", "AUTO" to "As the device is held")[it]!! }, { it == rotation }) {
+            rotation = it; Settings.playerOrientation = it
+        }
+    }
+    var zoomMode by remember { mutableStateOf(Settings.playerZoom) }
+    Text("Picture size", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 8.dp, bottom = 4.dp))
+    ChoiceChips(io.github.sherazi5110.cloudstream.player.Zoom.entries.map { it.name }, { n -> io.github.sherazi5110.cloudstream.player.Zoom.valueOf(n).label }, { it == zoomMode }) {
+        zoomMode = it; Settings.playerZoom = it
+    }
+    Hint("The player's resize button switches between Fit, Fill and Stretch with one tap.")
     TorrentSettings()
 }
 
@@ -476,5 +500,22 @@ private fun TorrentSettings() {
             "copyright holders watch torrents for that. Many people use a VPN.")
         Hint("Only stream what you're allowed to. Uploading is limited (Upload limit, below), and the downloaded file is " +
             "deleted when you stop watching. A debrid service avoids all this (see below the switch).")
+    }
+}
+
+/** Common languages as chips that add or remove their code in a "hi,en" setting (order kept). */
+@Composable
+private fun LanguageChips(value: String, onChange: (String) -> Unit) {
+    val codes = listOf("en", "hi", "ur", "ta", "te", "ml", "bn", "pa", "ja", "ko", "zh", "es", "fr", "de", "ar", "tr", "pt", "ru", "id")
+    val chosen = value.split(',').map { it.trim().lowercase() }.filter { it.isNotBlank() }
+    androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 6.dp)) {
+        items(codes.size) { i ->
+            val code = codes[i]
+            val on = code in chosen || io.github.sherazi5110.cloudstream.Engine.languageName(code).lowercase() in chosen
+            Text(io.github.sherazi5110.cloudstream.Engine.languageName(code), style = MaterialTheme.typography.labelLarge, modifier = Modifier
+                .card(RoundedCornerShape(50)) { onChange((if (on) chosen.filterNot { it == code } else chosen + code).joinToString(",")) }
+                .background(if (on) Palette.accent else Palette.surfaceHigh, RoundedCornerShape(50))
+                .padding(horizontal = 14.dp, vertical = 8.dp))
+        }
     }
 }

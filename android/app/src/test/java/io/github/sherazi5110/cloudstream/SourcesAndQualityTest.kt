@@ -24,6 +24,13 @@ class SourcesAndQualityTest {
         assertEquals(listOf("Hindi", "English", "1080p", "720p"), SourceFilters.chips(listOf(listOf("Hindi", "720p"), listOf("Hindi", "English", "1080p"))))
     }
 
+    @Test
+    fun `language codes become the names sources use`() {
+        assertEquals("Hindi", Engine.languageName("hi"))
+        assertEquals("Japanese", Engine.languageName("ja"))
+        assertEquals("Hindi", Engine.languageName("hindi"))
+    }
+
     private val master = """
         #EXTM3U
         #EXT-X-VERSION:4
