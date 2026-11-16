@@ -106,6 +106,8 @@ class PlayerController(
     var current by mutableStateOf<ExtractorLink?>(null)
     var started by mutableStateOf(false)
     var playing by mutableStateOf(false)
+    /** Set after the hardware decoder stalled on this title: decode in software from then on. */
+    private var softwareDecode = false
     var buffering by mutableStateOf(true)
     var time by mutableLongStateOf(0L)
     var length by mutableLongStateOf(0L)
@@ -150,6 +152,21 @@ class PlayerController(
         scope.launch { findSources() }
         saver = scope.launch {
             while (true) { delay(10_000); if (playing) { save(); trakr?.tick(percent()) } }
+        }
+        // Some phones' hardware video decoders stall ("buffer deadlock"): the picture freezes while the player still
+        // says it's playing. If the clock stops for 8 s, reload the same source at the same place, decoded in software.
+        scope.launch {
+            var last = -1L; var still = 0
+            while (true) {
+                delay(2_000)
+                if (playing && !softwareDecode && !buffering && time > 0 && time == last) still++ else still = 0
+                last = time
+                if (still >= 4) {
+                    still = 0; softwareDecode = true
+                    App.toast("The video stalled: switching to software decoding")
+                    current?.let { play(it, lastVariantUrl) }
+                }
+            }
         }
     }
 
@@ -393,7 +410,7 @@ class PlayerController(
         val expiredOk = link.name == io.github.sherazi5110.cloudstream.LiveApi.EXPIRED
         val url = if (source.startsWith("file:")) source else if (needsProxy || expiredOk) StreamProxy.wrap(source, headers, expiredOk) else source
         val media = Media(Vlc.lib, Uri.parse(url)).apply {
-            setHWDecoderEnabled(true, false)
+            setHWDecoderEnabled(!softwareDecode, false)
             if (!needsProxy) {
                 addOption(":http-user-agent=" + (headers.entries.firstOrNull { it.key.equals("User-Agent", true) }?.value ?: USER_AGENT))
                 headers.entries.firstOrNull { it.key.equals("Referer", true) }?.let { addOption(":http-referrer=${it.value}") }
