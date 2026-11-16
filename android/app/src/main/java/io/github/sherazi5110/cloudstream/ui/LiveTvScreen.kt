@@ -290,7 +290,7 @@ private fun LiveContent(all: List<LiveTv.Channel>, now: Long, guideVersion: Int,
                 }
             }
     }
-    val chipRow: @Composable () -> Unit = {
+    val chipRow: @Composable () -> Unit = { Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             checking?.let { (done, working) ->
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text("Checking channels… $done of $checkTotal · $working work", style = MaterialTheme.typography.labelLarge, color = Palette.accent)
@@ -337,7 +337,7 @@ private fun LiveContent(all: List<LiveTv.Channel>, now: Long, guideVersion: Int,
                         .padding(horizontal = 14.dp, vertical = 8.dp))
                 }
             }
-    }
+    } }
 
     if (guide) {
         Column(Modifier.fillMaxSize().statusBarsPadding().padding(start = edge, end = edge, top = 12.dp, bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {

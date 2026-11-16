@@ -152,6 +152,9 @@ fun PlayerScreen(screen: Screen.Player) {
 
     DisposableEffect(c) { onDispose { c.release() } }
 
+    // Choosing a source keeps the phone as it's held; it turns to landscape once a video plays.
+    val turn = !isTv && (c.started || sheet != Sheet.SOURCES)
+    LaunchedEffect(turn) { if (turn) activity?.requestedOrientation = orientationOf(Settings.playerOrientation) }
     // Full screen, landscape on phones, screen kept on.
     DisposableEffect(Unit) {
         val window = activity?.window
@@ -159,7 +162,6 @@ fun PlayerScreen(screen: Screen.Player) {
         insets?.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         insets?.hide(WindowInsetsCompat.Type.systemBars())
         val orientation = activity?.requestedOrientation
-        if (!isTv) activity?.requestedOrientation = orientationOf(Settings.playerOrientation)
         view.keepScreenOn = true
         onDispose {
             insets?.show(WindowInsetsCompat.Type.systemBars())

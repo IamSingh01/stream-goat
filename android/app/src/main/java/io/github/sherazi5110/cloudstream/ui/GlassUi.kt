@@ -104,15 +104,15 @@ private fun Modifier.glassRim(shape: Shape): Modifier = this
  * A glass panel (sheet, menu, dialog, bar). In the glass theme: blur of the page behind (when [blur] and the page
  * is a haze source), dark tint, rim, highlight and shadow. In other themes: the theme's solid surface.
  */
-fun Modifier.glassPanel(shape: Shape, blur: Boolean = true, elevation: Int = 18, cornerDp: Float = 22f): Modifier = composed {
+fun Modifier.glassPanel(shape: Shape, blur: Boolean = true, elevation: Int = 18, cornerDp: Float = 22f, lens: Boolean = false): Modifier = composed {
     if (!Palette.isGlass) return@composed this.background(Palette.panel, shape)
     val haze = Glass.LocalHaze.current
     val base = this.shadow(elevation.dp, shape, clip = false, ambientColor = Color.Black, spotColor = Color.Black).clip(shape)
     val filled = if (blur && haze != null && Glass.canBlur)
-        base.hazeEffect(haze, HazeStyle(backgroundColor = Palette.background, tint = HazeTint(Glass.tint), blurRadius = 28.dp, noiseFactor = 0.06f))
+        base.hazeEffect(haze, HazeStyle(backgroundColor = Palette.background, tint = HazeTint(Glass.tint), blurRadius = 20.dp, noiseFactor = 0.06f))
     else base.background(if (blur) Glass.tint.copy(alpha = 0.92f) else Glass.solid)
-    // The lens bends what's behind (blurred glass only: flat tint has nothing to bend, the rim still shows).
-    filled.glassRim(shape).then(if (blur && haze != null && Glass.canBlur) Modifier.lens(cornerDp) else Modifier)
+    // The lens (opt-in: it redraws on every frame, too heavy for bars over scrolling pages) bends what's behind (blurred glass only: flat tint has nothing to bend, the rim still shows).
+    filled.glassRim(shape).then(if (lens && blur && haze != null && Glass.canBlur) Modifier.lens(cornerDp) else Modifier)
 }
 
 /**
