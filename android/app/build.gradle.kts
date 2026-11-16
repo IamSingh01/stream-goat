@@ -126,6 +126,8 @@ dependencies {
     implementation("app.cash.zipline:zipline-android:1.27.0")
 
     // Posters and backdrops (OkHttp, so the app's DNS/cookie settings apply; WebP is native on Android).
+    // Liquid glass: real blur of the page behind bars and panels (Android 12+; a tinted fallback below).
+    implementation("dev.chrisbanes.haze:haze:1.6.10")
     implementation("io.coil-kt.coil3:coil-compose:3.3.0")
     implementation("io.coil-kt.coil3:coil-network-okhttp:3.3.0")
 

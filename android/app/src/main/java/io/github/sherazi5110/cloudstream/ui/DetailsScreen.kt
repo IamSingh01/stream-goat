@@ -408,7 +408,7 @@ private fun EpisodeCard(api: MainAPI, r: LoadResponse, ep: Playable, libraryVers
     var menu by remember { mutableStateOf(false) }
     Box(modifier) {
         Column(Modifier.fillMaxWidth().card(RoundedCornerShape(10.dp), focusScale = 1.04f, onLongClick = { menu = true }, selectFirst = true) { Playback.play(api, r, ep) }
-            .background(Palette.surface.copy(alpha = 0.92f), RoundedCornerShape(10.dp))) {
+            .background(Palette.card, RoundedCornerShape(10.dp))) {
             Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f)) {
                 val hide = io.github.sherazi5110.cloudstream.Settings.antiSpoiler && !watched
                 if (hide) Box(Modifier.fillMaxSize().background(Palette.surfaceHigh)) else
@@ -418,10 +418,25 @@ private fun EpisodeCard(api: MainAPI, r: LoadResponse, ep: Playable, libraryVers
                 DownloadsUi.Badge(remember(dv, ep) { io.github.sherazi5110.cloudstream.Downloads.get(api.name, ep.data) }, Modifier.align(Alignment.TopStart).padding(8.dp))
                 if (progress != null && progress.duration > 0 && !watched) ProgressLine((progress.position / progress.duration).toFloat(), Modifier.align(Alignment.BottomStart))
             }
-            Column(Modifier.padding(12.dp).height(72.dp)) {
-                Text(ep.code(), style = MaterialTheme.typography.labelSmall, color = Palette.accent)
-                Text(ep.name ?: "Episode ${ep.episode ?: ""}", style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 3.dp))
-                ep.description?.takeIf { it.isNotBlank() && !(io.github.sherazi5110.cloudstream.Settings.antiSpoiler && !watched) }?.let { Text(it, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 3.dp)) }
+            Row(Modifier.padding(start = 12.dp, top = 12.dp, bottom = 12.dp, end = 4.dp).height(72.dp)) {
+                Column(Modifier.weight(1f)) {
+                    Text(ep.code(), style = MaterialTheme.typography.labelSmall, color = Palette.accent)
+                    Text(ep.name ?: "Episode ${ep.episode ?: ""}", style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 3.dp))
+                    ep.description?.takeIf { it.isNotBlank() && !(io.github.sherazi5110.cloudstream.Settings.antiSpoiler && !watched) }?.let { Text(it, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 3.dp)) }
+                }
+                // Download this episode (every extension; it used to be only in the long-press menu on tablets and TVs).
+                if (api !is io.github.sherazi5110.cloudstream.OfflineApi) {
+                    val context = androidx.compose.ui.platform.LocalContext.current
+                    val dv = DownloadsUi.version()
+                    val item = remember(dv, ep) { io.github.sherazi5110.cloudstream.Downloads.get(api.name, ep.data) }
+                    var dlMenu by remember { mutableStateOf(false) }
+                    Icon(DownloadsUi.icon(item), if (item == null) "Download" else DownloadsUi.label(item),
+                        tint = if (item?.state == io.github.sherazi5110.cloudstream.Downloads.State.DONE) Palette.watched else Palette.muted,
+                        modifier = Modifier.size(40.dp).card(androidx.compose.foundation.shape.CircleShape) {
+                            if (item == null) DownloadsUi.start(context, api, r, ep) else dlMenu = true
+                        }.padding(9.dp))
+                    DownloadsUi.Menu(dlMenu, item) { dlMenu = false }
+                }
             }
         }
         EpisodeMenu(menu, api, r, ep, watched) { menu = false }

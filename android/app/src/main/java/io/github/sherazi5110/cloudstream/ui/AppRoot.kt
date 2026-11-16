@@ -1,5 +1,6 @@
 package io.github.sherazi5110.cloudstream.ui
 
+import dev.chrisbanes.haze.hazeSource
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.height
@@ -80,6 +81,17 @@ fun AppRoot() {
             if (wide) Row(Modifier.fillMaxSize()) {
                 Rail()
                 Box(Modifier.weight(1f).fillMaxHeight()) { Content(top) }
+            } else if (Palette.isGlass && top == null) {
+                // Liquid glass on phones: the page runs under the floating tab bar, which blurs it.
+                val haze = dev.chrisbanes.haze.rememberHazeState()
+                Box(Modifier.fillMaxSize()) {
+                    CompositionLocalProvider(LocalBottomInset provides 88.dp) {
+                        Box(Modifier.fillMaxSize().hazeSource(haze)) { Content(top) }
+                    }
+                    CompositionLocalProvider(Glass.LocalHaze provides haze) {
+                        Box(Modifier.align(Alignment.BottomCenter)) { BottomBar() }
+                    }
+                }
             } else Column(Modifier.fillMaxSize()) {
                 Box(Modifier.weight(1f)) { Content(top) }
                 if (top == null) BottomBar()
@@ -144,6 +156,9 @@ fun TopBar(modifier: Modifier = Modifier, start: @Composable () -> Unit = {}) {
     }
 }
 
+/** Space a page leaves at its end for a tab bar floating over it (liquid glass on phones). */
+val LocalBottomInset = androidx.compose.runtime.staticCompositionLocalOf { 0.dp }
+
 /** The pill bars' look: a dark rounded capsule with a faint edge, the chosen tab a lighter pill inside it. */
 private val pillColor: Color get() = Color(0xFF16161B).copy(alpha = 0.94f)
 private val pillEdge: Color get() = Color.White.copy(alpha = 0.10f)
@@ -154,8 +169,8 @@ private val chosenColor: Color get() = Color.White.copy(alpha = 0.14f)
 private fun BottomBar() {
     Box(Modifier.fillMaxWidth().navigationBarsPadding().padding(start = 12.dp, end = 12.dp, top = 6.dp, bottom = 10.dp), contentAlignment = Alignment.Center) {
         Row(
-            Modifier.shadow(12.dp, RoundedCornerShape(50)).background(pillColor, RoundedCornerShape(50))
-                .border(1.dp, pillEdge, RoundedCornerShape(50)).padding(5.dp),
+            (if (Palette.isGlass) Modifier.glassPanel(RoundedCornerShape(50)) else Modifier.shadow(12.dp, RoundedCornerShape(50))
+                .background(pillColor, RoundedCornerShape(50)).border(1.dp, pillEdge, RoundedCornerShape(50))).padding(5.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(2.dp),
         ) {
@@ -176,8 +191,8 @@ private fun Rail() {
         Logo(42.dp)
         Spacer(Modifier.weight(1f))
         Column(
-            Modifier.shadow(12.dp, RoundedCornerShape(50)).background(pillColor, RoundedCornerShape(50))
-                .border(1.dp, pillEdge, RoundedCornerShape(50)).padding(6.dp),
+            (if (Palette.isGlass) Modifier.glassPanel(RoundedCornerShape(50), blur = false) else Modifier.shadow(12.dp, RoundedCornerShape(50))
+                .background(pillColor, RoundedCornerShape(50)).border(1.dp, pillEdge, RoundedCornerShape(50))).padding(6.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {

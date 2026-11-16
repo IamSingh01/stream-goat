@@ -58,7 +58,7 @@ import io.github.sherazi5110.cloudstream.player.SubtitleStyle
 private fun SidePanel(title: String, modifier: Modifier, onClose: () -> Unit, content: @Composable () -> Unit) {
     Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.35f)).pointerInput(Unit) { detectTapGestures { onClose() } })
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.CenterEnd) {
-        Column(modifier.fillMaxHeight().width(380.dp).background(Palette.surface.copy(alpha = 0.97f))
+        Column(modifier.fillMaxHeight().width(380.dp).glassPanel(RoundedCornerShape(topStart = 24.dp, bottomStart = 24.dp), blur = false)
             .pointerInput(Unit) { detectTapGestures { } }.padding(vertical = 16.dp)) {
             Text(title, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
             content()

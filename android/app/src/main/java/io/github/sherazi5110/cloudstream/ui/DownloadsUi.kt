@@ -272,7 +272,8 @@ fun DownloadChooserDialog() {
     var picked by remember(req) { mutableStateOf(emptySet<String>()) }
     androidx.compose.ui.window.Dialog(onDismissRequest = { DownloadsUi.request = null },
         properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)) {
-        Column(Modifier.fillMaxWidth(0.92f).then(Modifier.widthIn(max = 980.dp)).fillMaxHeight(0.88f).background(Palette.surface, RoundedCornerShape(16.dp)).padding(18.dp)) {
+        DialogGlass()
+        Column(Modifier.fillMaxWidth(0.92f).then(Modifier.widthIn(max = 980.dp)).fillMaxHeight(0.88f).glassPanel(RoundedCornerShape(22.dp), blur = false).padding(18.dp)) {
             Text(if (stream == null) "Download: choose a source" else "Download: choose a quality", style = MaterialTheme.typography.titleLarge)
             Text(if (Engine.playables(req.r).size > 1) "${req.r.name} · ${req.p.label}" else req.r.name, style = MaterialTheme.typography.bodySmall,
                 color = Palette.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)

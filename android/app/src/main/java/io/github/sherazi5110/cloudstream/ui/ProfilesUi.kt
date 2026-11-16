@@ -263,7 +263,8 @@ fun SimpleDialog(
     content: @Composable () -> Unit,
 ) {
     Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Column(Modifier.padding(24.dp).widthIn(max = 560.dp).fillMaxWidth().background(Palette.surface.copy(alpha = 1f).compositeOverBackground(), RoundedCornerShape(16.dp)).padding(20.dp)) {
+        DialogGlass()
+        Column(Modifier.padding(24.dp).widthIn(max = 560.dp).fillMaxWidth().glassPanel(RoundedCornerShape(22.dp), blur = false).padding(20.dp)) {
             Text(title, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(bottom = 10.dp))
             Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())) { content() }
             Row(Modifier.fillMaxWidth().padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.End), verticalAlignment = Alignment.CenterVertically) {

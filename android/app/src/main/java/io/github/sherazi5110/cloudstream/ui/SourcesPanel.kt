@@ -118,7 +118,7 @@ fun SourcesPanel(all: List<ExtractorLink>, currentUrl: String?, searching: Boole
 
     Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.45f)).pointerInput(Unit) { detectTapGestures { onClose() } })
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
-        Column(Modifier.fillMaxWidth().fillMaxHeight(0.8f).background(Palette.surface.copy(alpha = 0.98f), RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp))
+        Column(Modifier.fillMaxWidth().fillMaxHeight(0.8f).glassPanel(RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp), blur = false)
             .pointerInput(Unit) { detectTapGestures { } }.padding(start = 20.dp, end = 20.dp, top = 14.dp)) {
             Box(Modifier.align(Alignment.CenterHorizontally).width(44.dp).padding(bottom = 10.dp).background(Palette.muted.copy(alpha = 0.5f), RoundedCornerShape(3.dp)).padding(vertical = 2.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -151,7 +151,7 @@ fun SourcesPanel(all: List<ExtractorLink>, currentUrl: String?, searching: Boole
                     val playing = r.link.url == currentUrl
                     Row(Modifier.fillMaxWidth().then(if (i == 0) Modifier.focusRequester(first) else Modifier)
                         .card(RoundedCornerShape(12.dp), focusScale = 1.01f) { onPick(r.link); onClose() }
-                        .background(if (playing) Palette.accent.copy(alpha = 0.18f) else Palette.surfaceHigh.copy(alpha = 0.6f), RoundedCornerShape(12.dp))
+                        .background(if (playing) Palette.accent.copy(alpha = 0.18f) else Palette.surfaceHigh, RoundedCornerShape(12.dp))
                         .padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             // The whole name, on as many lines as it takes.

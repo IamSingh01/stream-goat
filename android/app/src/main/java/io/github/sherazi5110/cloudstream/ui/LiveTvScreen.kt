@@ -358,7 +358,7 @@ private fun LiveContent(all: List<LiveTv.Channel>, now: Long, guideVersion: Int,
     LazyVerticalGrid(
         if (wide) GridCells.Adaptive(220.dp) else GridCells.Adaptive(160.dp),
         Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = edge, end = edge, bottom = 32.dp),
+        contentPadding = PaddingValues(start = edge, end = edge, bottom = 32.dp + LocalBottomInset.current),
         horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         item(span = { GridItemSpan(maxLineSpan) }) {

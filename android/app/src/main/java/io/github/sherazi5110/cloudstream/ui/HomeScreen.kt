@@ -112,7 +112,7 @@ private fun NoExtensions() {
 
 @Composable
 private fun PhoneHome(state: HomeState) {
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp + LocalBottomInset.current)) {
         item(key = "hero") { PhoneHero(state) }
         if (state.continueWatching.isNotEmpty()) item(key = "continue") {
             ContinueRow(state.continueWatching, cardWidth = 200.dp)
@@ -304,7 +304,7 @@ internal fun WideHome(state: HomeState) {
         // remote on the banner's Play button that pushed the banner's top (logo, title) up under the top bar. Here
         // the list only scrolls as far as needed, and the banner always shows whole when it has the focus.
         androidx.compose.runtime.CompositionLocalProvider(androidx.compose.foundation.gestures.LocalBringIntoViewSpec provides MinimalScroll) {
-        LazyColumn(Modifier.fillMaxSize(), state = list, contentPadding = PaddingValues(bottom = 32.dp)) {
+        LazyColumn(Modifier.fillMaxSize(), state = list, contentPadding = PaddingValues(bottom = 32.dp + LocalBottomInset.current)) {
             item(key = "banner") {
                 Box(Modifier.onFocusChanged { f ->
                     if (f.hasFocus && (list.firstVisibleItemIndex != 0 || list.firstVisibleItemScrollOffset != 0)) scope.launch { list.animateScrollToItem(0) }
@@ -453,9 +453,10 @@ private fun HomeEditor(state: HomeState, onClose: () -> Unit) {
         api?.let { addAll(io.github.sherazi5110.cloudstream.Catalogs.all(it)) }
     } }
     androidx.compose.ui.window.Dialog(onDismissRequest = onClose, properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)) {
+        DialogGlass()
         Column(
             Modifier.padding(24.dp).widthIn(max = 640.dp).fillMaxWidth().fillMaxHeight(0.9f)
-                .background(Palette.surface, RoundedCornerShape(16.dp)).padding(20.dp),
+                .glassPanel(RoundedCornerShape(22.dp), blur = false).padding(20.dp),
         ) {
             Text("Home screen", style = MaterialTheme.typography.headlineSmall)
             Text("Pick an extension, then choose and order its catalogs.", style = MaterialTheme.typography.bodyMedium,

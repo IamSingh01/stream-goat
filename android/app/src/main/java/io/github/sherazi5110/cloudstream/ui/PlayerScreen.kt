@@ -545,7 +545,7 @@ private fun SheetPanel(sheet: Sheet, c: PlayerController, modifier: Modifier, on
     Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.35f)).pointerInput(Unit) { detectTapGestures { onClose() } })
     val first = remember { FocusRequester() }
     LaunchedEffect(sheet) { runCatching { first.requestFocus() } }
-    Column(modifier.fillMaxHeight().width(340.dp).background(Palette.surface.copy(alpha = 0.97f)).padding(vertical = 16.dp)) {
+    Column(modifier.fillMaxHeight().width(340.dp).glassPanel(androidx.compose.foundation.shape.RoundedCornerShape(topStart = 24.dp, bottomStart = 24.dp), blur = false).padding(vertical = 16.dp)) {
         Text(sheet.title, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
         data class Option(val label: String, val detail: String?, val selected: Boolean, val action: () -> Unit)
         val options: List<Option> = when (sheet) {

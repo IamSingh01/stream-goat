@@ -104,6 +104,18 @@ object Palette {
         ThemeMode.MIDNIGHT -> Color(0xFF1C2742)
         ThemeMode.GLASS -> Color.White.copy(alpha = 0.13f)
     }
+    val isGlass: Boolean get() = mode == ThemeMode.GLASS
+    /**
+     * Sheets, dialogs and menus: the theme's solid surface, or in the glass theme a dark glass tint (never "white at
+     * 8%" made more opaque, which turned panels white with white text on them).
+     */
+    val panel: Color get() = if (mode == ThemeMode.GLASS) Glass.solid else when (mode) {
+        ThemeMode.DARK -> Color(0xFF17171C)
+        ThemeMode.AMOLED -> Color(0xFF0B0B0D)
+        else -> Color(0xFF121A2E)
+    }
+    /** Solid content cards that need readable text whatever is behind (episode titles…): dark ink in glass. */
+    val card: Color get() = if (mode == ThemeMode.GLASS) Color(0xFF1A1532).copy(alpha = 0.92f) else surface.copy(alpha = 0.92f)
     val outline: Color get() = if (mode == ThemeMode.GLASS) Color.White.copy(alpha = 0.18f) else Color(0xFF34343C)
     val accent: Color get() = colorOf(ThemeState.accentHex)
     val text = Color(0xFFFFFFFF)
@@ -164,9 +176,11 @@ fun CloudStreamTheme(content: @Composable () -> Unit) {
             onSurface = Palette.text,
             surfaceVariant = Palette.surfaceHigh,
             onSurfaceVariant = Palette.muted,
-            surfaceContainer = Palette.surface,
-            surfaceContainerHigh = Palette.surfaceHigh,
-            surfaceContainerHighest = Palette.surfaceHigh,
+            // Menus, dialogs and sheets from Material draw on these: solid enough to read in every theme.
+            surfaceContainer = if (Palette.isGlass) Palette.panel else Palette.surface,
+            surfaceContainerLow = if (Palette.isGlass) Palette.panel else Palette.surface,
+            surfaceContainerHigh = if (Palette.isGlass) Palette.panel else Palette.surfaceHigh,
+            surfaceContainerHighest = if (Palette.isGlass) Palette.panel else Palette.surfaceHigh,
             outline = Palette.outline,
             secondaryContainer = Palette.accent.copy(alpha = 0.25f),
             onSecondaryContainer = Palette.text,
