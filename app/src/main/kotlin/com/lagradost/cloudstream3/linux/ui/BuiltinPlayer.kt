@@ -336,6 +336,7 @@ class BuiltinPlayer(
 
     private inner class Events : MediaPlayerEventAdapter() {
         override fun playing(mediaPlayer: MediaPlayer) = fx {
+            com.lagradost.cloudstream3.linux.KeepAwake.on()
             // Next time (Continue Watching, Resume) this title starts with the same source.
             if (api !is com.lagradost.cloudstream3.linux.LiveApi) com.lagradost.cloudstream3.linux.LastSource.remember(api.name, response.url, current)
             channelKey?.let { com.lagradost.cloudstream3.linux.LiveTv.markWorking(it) }
@@ -350,6 +351,7 @@ class BuiltinPlayer(
         }
 
         override fun paused(mediaPlayer: MediaPlayer) = fx {
+            com.lagradost.cloudstream3.linux.KeepAwake.off()
             playing = false
             trakr?.paused(percent())
             playButton.graphic = icon(Icons.PLAY, 22.0)
@@ -387,6 +389,7 @@ class BuiltinPlayer(
         }
 
         override fun finished(mediaPlayer: MediaPlayer) = fx {
+            com.lagradost.cloudstream3.linux.KeepAwake.off()
             // VLC also says "finished" when a source fails to open or drops mid-way: only a real end
             // (close to the length) ends the episode; anything else is a failed source.
             // A late event from the source that was just replaced: the player is already opening the new one.
@@ -399,7 +402,7 @@ class BuiltinPlayer(
             } else onError()
         }
 
-        override fun error(mediaPlayer: MediaPlayer) = fx { onError() }
+        override fun error(mediaPlayer: MediaPlayer) = fx { com.lagradost.cloudstream3.linux.KeepAwake.off(); onError() }
     }
 
     private fun fx(block: () -> Unit) = Platform.runLater { if (!finished) block() }
@@ -1115,6 +1118,7 @@ class PlayerMenu : VBox(4.0) {
     }
 
     fun close() {
+        com.lagradost.cloudstream3.linux.KeepAwake.off()
         if (!isVisible) return
         isVisible = false
         kind = null
