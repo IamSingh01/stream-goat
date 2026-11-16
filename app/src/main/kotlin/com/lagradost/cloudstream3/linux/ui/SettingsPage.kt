@@ -253,7 +253,7 @@ class SettingsPage : StackPane(), Refreshable {
         // Draw the preview in that style without changing the setting.
         val preview = javafx.scene.image.ImageView(run {
             if (was != rainbow) Theme.setLogoRainbowQuietly(rainbow)
-            try { GoatArt.logo(112) } finally { if (was != rainbow) Theme.setLogoRainbowQuietly(was) }
+            try { Brand.tile(112) } finally { if (was != rainbow) Theme.setLogoRainbowQuietly(was) }
         }).apply { fitWidth = 56.0; fitHeight = 56.0; isSmooth = true }
         vbox(6.0, preview, label(name, "bold")).apply {
             alignment = Pos.CENTER

@@ -837,3 +837,4 @@
 .glitch-shot { -fx-background-color: -cs-bg; -fx-background-radius: 8; -fx-padding: 6; }
 .glitch-details { -fx-font-family: "monospace"; -fx-font-size: 11px; }
 .glitch-details .content, .glitch-text .content { -fx-background-color: -cs-surface-2; }
+.splash-credit { -fx-text-fill: rgba(255,255,255,0.75); -fx-font-size: 14px; -fx-font-weight: bold; }

@@ -217,17 +217,17 @@ private fun AppearanceSection() {
         }
     }
     Heading("Logo")
-    // The circle behind the goat (and its inner ears): the artwork's rainbow, or the accent colour.
+    // The goat: a rainbow, or the accent colour.
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         listOf(true to "Rainbow", false to "Theme colour").forEach { (rainbow, name) ->
             val on = ThemeState.logoRainbow == rainbow
-            val accent = Palette.accent.toArgb()
-            val preview = remember(rainbow, accent) { runCatching { GoatArt.logo(160, rainbow, accent).asImageBitmap() }.getOrNull() }
             Column(Modifier.card(RoundedCornerShape(14.dp)) { ThemeState.changeLogo(rainbow) }
                 .background(if (on) Palette.accent.copy(alpha = 0.22f) else Palette.surfaceHigh, RoundedCornerShape(14.dp))
                 .then(if (on) Modifier.border(2.dp, Palette.accent, RoundedCornerShape(14.dp)) else Modifier)
                 .padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                preview?.let { androidx.compose.foundation.Image(it, null, Modifier.size(64.dp)) }
+                Box(Modifier.size(64.dp).background(Color.Black, RoundedCornerShape(15.dp)), contentAlignment = Alignment.Center) {
+                    GoatMark(Modifier.size(46.dp), rainbow = rainbow)
+                }
                 Text(name, style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 6.dp))
             }
         }
