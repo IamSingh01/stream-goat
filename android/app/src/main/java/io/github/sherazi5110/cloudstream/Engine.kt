@@ -258,9 +258,18 @@ object Engine {
     }
 
     /** Best first: closest to the preferred quality without exceeding it, then higher. */
+    /** "hi" → "Hindi", "ja" → "Japanese"; a name stays a name. */
+    fun languageName(code: String): String =
+        if (code.length in 2..3) java.util.Locale(code).getDisplayLanguage(java.util.Locale.ENGLISH).ifBlank { code } else code.replaceFirstChar { it.uppercase() }
+
     fun rank(links: List<ExtractorLink>): List<ExtractorLink> {
         val preferred = Settings.preferredQuality.takeIf { it > 0 } ?: Int.MAX_VALUE
+        // Settings → Player → Audio language: sources whose names say it ("Hindi", "Hin", "Dual audio [Hindi + English]") first.
+        val wanted = Settings.audioLanguage.split(',').map { it.trim() }.filter { it.isNotBlank() }.map { languageName(it) }
+        fun speaks(l: ExtractorLink) = wanted.isEmpty() ||
+            io.github.sherazi5110.cloudstream.ui.SourceFilters.tags(l.name + " " + l.source, 0).any { it in wanted }
         return links.sortedWith(compareBy<ExtractorLink> { if (it.source == OfflineApi.SOURCE) 0 else 1 }
+            .thenBy { if (speaks(it)) 0 else 1 }
             .thenBy { if (it.quality <= preferred) 0 else 1 }
             .thenByDescending { if (it.quality <= preferred) it.quality else -it.quality })
     }

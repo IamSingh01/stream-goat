@@ -40,9 +40,13 @@ import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.AspectRatio
 import androidx.compose.material.icons.filled.Brightness6
+import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ClosedCaption
 import androidx.compose.material.icons.filled.Forward10
+import androidx.compose.material.icons.filled.PictureInPictureAlt
+import androidx.compose.material.icons.filled.ScreenRotation
+import androidx.compose.material.icons.filled.HighQuality
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Pause
@@ -105,7 +109,8 @@ import java.text.DateFormat
 import java.util.Date
 import kotlin.math.abs
 
-private enum class Sheet(val title: String) { SOURCES("Sources"), SUBTITLES("Subtitles"), ONLINE("Online subtitles"), TRANSLATE("Translate subtitles"), AUDIO("Audio"), SPEED("Speed"), ZOOM("Zoom") }
+private enum class Sheet(val title: String) { SOURCES("Sources"), SUBTITLES("Subtitles"), ONLINE("Online subtitles"), TRANSLATE("Translate subtitles"), AUDIO("Audio"), SPEED("Speed"), ZOOM("Zoom"), QUALITY("Quality"),
+    SUB_SYNC("Sync subtitles"), AUDIO_SYNC("Sync audio"), SUB_STYLE("Subtitle style") }
 
 fun Context.findActivity(): Activity? = when (this) {
     is Activity -> this
@@ -127,7 +132,8 @@ fun PlayerScreen(screen: Screen.Player) {
     val view = LocalView.current
     var controls by remember { mutableStateOf(true) }
     var locked by remember { mutableStateOf(false) }
-    var sheet by remember(screen) { mutableStateOf(if (screen.chooseSource) Sheet.SOURCES else null) }
+    // "Let me choose the source" (Settings → Player): the list opens at once and fills in as sources are found.
+    var sheet by remember(screen) { mutableStateOf(if (screen.chooseSource || (!Settings.autoPlay && screen.channel == null)) Sheet.SOURCES else null) }
     var poke by remember { mutableIntStateOf(0) } // any interaction restarts the hide timer
     var pinch by remember { mutableFloatStateOf(1f) }
     val rootFocus = remember { FocusRequester() }
@@ -146,6 +152,9 @@ fun PlayerScreen(screen: Screen.Player) {
 
     DisposableEffect(c) { onDispose { c.release() } }
 
+    // Choosing a source keeps the phone as it's held; it turns to landscape once a video plays.
+    val turn = !isTv && (c.started || sheet != Sheet.SOURCES)
+    LaunchedEffect(turn) { if (turn) activity?.requestedOrientation = orientationOf(Settings.playerOrientation) }
     // Full screen, landscape on phones, screen kept on.
     DisposableEffect(Unit) {
         val window = activity?.window
@@ -153,7 +162,6 @@ fun PlayerScreen(screen: Screen.Player) {
         insets?.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         insets?.hide(WindowInsetsCompat.Type.systemBars())
         val orientation = activity?.requestedOrientation
-        if (!isTv) activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         view.keepScreenOn = true
         onDispose {
             insets?.show(WindowInsetsCompat.Type.systemBars())
@@ -237,16 +245,27 @@ fun PlayerScreen(screen: Screen.Player) {
             LoadingOverlay(c, onChoose = { c.stopAutoPlay(); sheet = Sheet.SOURCES })
         } else {
             if (!isTv) Gestures(locked, onTap = { controls = !controls; poke++ }, onSeek = { c.seekBy(it); poke++ }, onPinch = { pinch = (pinch * it).coerceIn(1f, 4f) })
+            // TV with a mouse: a click on the picture shows the controls (and settings buttons), another hides them.
+            else Box(Modifier.fillMaxSize().pointerInput(Unit) { detectTapGestures { controls = !controls; poke++ } })
             if (c.buffering && c.error == null) Spinner(Modifier.fillMaxSize())
             c.error?.let {
-                Text(it, style = MaterialTheme.typography.titleMedium, modifier = Modifier.align(Alignment.Center)
-                    .background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(10.dp)).padding(16.dp))
+                Column(Modifier.align(Alignment.Center).widthIn(max = 560.dp).background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(10.dp)).padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(it, style = MaterialTheme.typography.titleMedium)
+                    // Not the link's fault: one tap writes it up for the developer (GitHub issue, filled in).
+                    c.appIssue?.let { details ->
+                        PillButton("Report to the developer", Icons.Filled.BugReport, modifier = Modifier.padding(top = 12.dp)) {
+                            io.github.sherazi5110.cloudstream.GlitchReport.draft = io.github.sherazi5110.cloudstream.GlitchReport.Draft(
+                                io.github.sherazi5110.cloudstream.GlitchReport.describe(Nav.top), io.github.sherazi5110.cloudstream.GlitchReport.steps(), null, crash = details)
+                        }
+                    }
+                }
             }
             if (locked) {
                 AnimatedVisibility(controls, Modifier.align(Alignment.TopEnd), enter = fadeIn(), exit = fadeOut()) {
                     RoundIcon(Icons.Filled.Lock, "Unlock", Modifier.padding(24.dp)) { locked = false; poke++ }
                 }
-            } else AnimatedVisibility(controls, enter = fadeIn(), exit = fadeOut()) {
+            } else AnimatedVisibility(controls && !inPip(), enter = fadeIn(), exit = fadeOut()) {
                 Controls(c, onSheet = { sheet = it }, onLock = { locked = true; poke++ }, poke = { poke++ })
             }
             val seg = c.activeSegment
@@ -259,7 +278,12 @@ fun PlayerScreen(screen: Screen.Player) {
             }
         }
 
-        sheet?.let { s -> SheetPanel(s, c, Modifier.align(Alignment.CenterEnd), onOpen = { sheet = it }) { sheet = null } }
+        sheet?.let { s ->
+            if (s == Sheet.SOURCES) SourcesPanel(c) { sheet = null }
+            else if (s == Sheet.SUB_STYLE) SubtitleStylePanel(c) { sheet = null }
+            else if (s == Sheet.SUB_SYNC || s == Sheet.AUDIO_SYNC) SyncPanel(c, audio = s == Sheet.AUDIO_SYNC) { sheet = null }
+            else SheetPanel(s, c, Modifier.align(Alignment.CenterEnd), onOpen = { sheet = it }) { sheet = null }
+        }
     }
 }
 
@@ -378,7 +402,34 @@ private fun Controls(c: PlayerController, onSheet: (Sheet) -> Unit, onLock: () -
                 val sub = if (c.playables.size > 1) c.playable.label else c.current?.name
                 sub?.let { Text(it, style = MaterialTheme.typography.bodySmall, maxLines = 1) }
             }
-            if (!isTv) RoundIcon(Icons.Filled.LockOpen, "Lock") { onLock() }
+            // Report a glitch: a picture of the player as it is now, the source playing and the last steps.
+            val reportCtx = androidx.compose.ui.platform.LocalContext.current
+            RoundIcon(Icons.Filled.BugReport, "Report a glitch", Modifier.padding(end = 8.dp)) {
+                io.github.sherazi5110.cloudstream.GlitchReport.start(reportCtx.findActivity())
+            }
+            if (!isTv) {
+                val ctx = androidx.compose.ui.platform.LocalContext.current
+                // Rotation: landscape (either way), portrait (vertical videos, shorts) or as the device is held; remembered.
+                RoundIcon(Icons.Filled.ScreenRotation, "Rotate") {
+                    val next = when (Settings.playerOrientation) { "LANDSCAPE" -> "PORTRAIT"; "PORTRAIT" -> "AUTO"; else -> "LANDSCAPE" }
+                    Settings.playerOrientation = next
+                    ctx.findActivity()?.requestedOrientation = orientationOf(next)
+                    io.github.sherazi5110.cloudstream.App.toast(when (next) { "PORTRAIT" -> "Portrait"; "AUTO" -> "Rotates with the device"; else -> "Landscape" })
+                    poke()
+                }
+                // Picture in picture: the video keeps playing in a small window over other apps.
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O &&
+                    ctx.packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_PICTURE_IN_PICTURE)) {
+                    RoundIcon(Icons.Filled.PictureInPictureAlt, "Picture in picture", Modifier.padding(start = 8.dp)) {
+                        runCatching {
+                            ctx.findActivity()?.enterPictureInPictureMode(android.app.PictureInPictureParams.Builder()
+                                .setAspectRatio(android.util.Rational(16, 9)).build())
+                        }.onFailure { io.github.sherazi5110.cloudstream.App.toast("Picture in picture isn't available here") }
+                    }
+                }
+                Spacer(Modifier.width(8.dp))
+                RoundIcon(Icons.Filled.LockOpen, "Lock") { onLock() }
+            }
             val ends = if (c.length > 0) " · ends ${timeFormat.format(Date(now + ((c.length - c.time) / c.speed).toLong()))}" else ""
             Text(timeFormat.format(Date(now)) + ends, style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(start = 12.dp))
         }
@@ -417,8 +468,11 @@ private fun Controls(c: PlayerController, onSheet: (Sheet) -> Unit, onLock: () -
                 BarButton(Icons.AutoMirrored.Filled.List, "Sources") { onSheet(Sheet.SOURCES) }
                 BarButton(Icons.Filled.ClosedCaption, "Subtitles") { onSheet(Sheet.SUBTITLES) }
                 BarButton(Icons.Filled.Translate, "Audio") { onSheet(Sheet.AUDIO) }
+                // Several qualities inside this source (an HLS master): pin one, or Auto.
+                if (c.variants.isNotEmpty()) BarButton(Icons.Filled.HighQuality, c.variant?.label ?: "Auto") { onSheet(Sheet.QUALITY) }
                 BarButton(Icons.Filled.Speed, "${c.speed}×") { onSheet(Sheet.SPEED) }
-                BarButton(Icons.Filled.AspectRatio, c.zoom.label) { onSheet(Sheet.ZOOM) }
+                // One tap: Fit → Fill → Stretch (Original, 16:9 and 4:3 are in Settings → Player).
+                BarButton(Icons.Filled.AspectRatio, c.zoom.label) { c.cycleZoom(); poke() }
                 c.next?.let { next -> BarButton(Icons.Filled.SkipNext, "Next episode") { Nav.replace(Screen.Player(c.api, c.response, next)) } }
             }
         }
@@ -444,7 +498,10 @@ private fun LoadingOverlay(c: PlayerController, onChoose: () -> Unit) {
             Text(c.response.name, style = MaterialTheme.typography.displayMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Text(if (c.playables.size > 1) c.playable.label else c.api.name, style = MaterialTheme.typography.titleMedium, color = Palette.muted, modifier = Modifier.padding(top = 6.dp))
             Spacer(Modifier.height(24.dp))
+            val torrent = c.torrentStatus
             val status = when {
+                torrent != null && !c.started -> "Torrent · " + (if (torrent.peers == 0 && torrent.ready == 0f) torrent.phase
+                    else "${torrent.peers} peer${if (torrent.peers == 1) "" else "s"} · ${"%.1f".format(torrent.bytesPerSecond / 1_048_576.0)} MB/s · buffering ${(torrent.ready * 100).toInt()}%")
                 c.current != null -> "Starting ${c.current!!.name}…"
                 c.searching -> "Looking for sources…"
                 c.links.isEmpty() -> c.searchError ?: "No sources found"
@@ -490,7 +547,7 @@ private fun SheetPanel(sheet: Sheet, c: PlayerController, modifier: Modifier, on
     Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.35f)).pointerInput(Unit) { detectTapGestures { onClose() } })
     val first = remember { FocusRequester() }
     LaunchedEffect(sheet) { runCatching { first.requestFocus() } }
-    Column(modifier.fillMaxHeight().width(340.dp).background(Palette.surface.copy(alpha = 0.97f)).padding(vertical = 16.dp)) {
+    Column(modifier.fillMaxHeight().width(340.dp).glassPanel(androidx.compose.foundation.shape.RoundedCornerShape(topStart = 24.dp, bottomStart = 24.dp), blur = false).padding(vertical = 16.dp)) {
         Text(sheet.title, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
         data class Option(val label: String, val detail: String?, val selected: Boolean, val action: () -> Unit)
         val options: List<Option> = when (sheet) {
@@ -505,6 +562,8 @@ private fun SheetPanel(sheet: Sheet, c: PlayerController, modifier: Modifier, on
                 spu.filter { it.id != -1 }.forEach { t -> add(Option(t.name, "In the video", t.id == currentSpu && c.selectedSubtitle == null) { c.setSpu(t.id); onClose() }) }
                 c.subtitles.forEach { s -> add(Option(s.lang, "From ${c.api.name}", s.url == c.selectedSubtitle) { c.addSubtitle(s); onClose() }) }
                 c.addedFiles.forEach { (f, name) -> add(Option(name, if ("→" in name) "Translated" else "Online", f.absolutePath == c.selectedSubtitle) { c.selectFile(f); onClose() }) }
+                add(Option("Sync subtitles", if (c.subtitleDelay == 0L) "Earlier or later, to match the voices" else delayText(c.subtitleDelay), false) { onOpen(Sheet.SUB_SYNC) })
+                add(Option("Subtitle style", "Size, colour, font, outline, background, position…", false) { onOpen(Sheet.SUB_STYLE) })
                 if (!c.isLive) add(Option("Search online…", "OpenSubtitles, no account", false) { onOpen(Sheet.ONLINE) })
                 if (c.translateSourceName() != null) add(Option("Translate subtitles to…", c.translating?.let { "Translating to $it…" } ?: "Hindi, Urdu, Chinese, French and more", false) { onOpen(Sheet.TRANSLATE) })
             }
@@ -513,17 +572,24 @@ private fun SheetPanel(sheet: Sheet, c: PlayerController, modifier: Modifier, on
             }
             Sheet.ONLINE -> online.orEmpty().map { r ->
                 Option(r.languageName, r.id, false) {
-                    scope.launch {
-                        runCatching { io.github.sherazi5110.cloudstream.OnlineSubtitles.download(r) }
-                            .onSuccess { c.addSubtitleFile(it) }
-                            .onFailure { io.github.sherazi5110.cloudstream.App.toast("Couldn't download: ${it.message}") }
-                    }
+                    // In the player's own scope: this panel closes at once, and its scope would cancel the download.
+                    c.addOnlineSubtitle(r)
                     onClose()
                 }
             }
-            Sheet.AUDIO -> c.audioTracks().filter { it.id != -1 }.map { t -> Option(t.name, null, t.id == c.audioTrack()) { c.setAudio(t.id); onClose() } }
+            Sheet.AUDIO -> c.audioTracks().filter { it.id != -1 }.map { t -> Option(t.name, null, t.id == c.audioTrack()) { c.setAudio(t.id); onClose() } } +
+                Option("Sync audio", if (c.audioDelay == 0L) "Earlier or later, to match the lips" else delayText(c.audioDelay), false) { onOpen(Sheet.AUDIO_SYNC) } +
+                Option(if (Settings.levelAudio) "Even out loud and quiet sounds: On" else "Even out loud and quiet sounds: Off",
+                    "Quieter music and explosions, clearer voices (good on TVs)", Settings.levelAudio) {
+                    Settings.levelAudio = !Settings.levelAudio
+                    c.reopen()
+                    onClose()
+                }
             Sheet.SPEED -> listOf(0.25f, 0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f).map { r -> Option("$r×", if (r == 1f) "Normal" else null, r == c.speed) { c.setRate(r); onClose() } }
             Sheet.ZOOM -> Zoom.entries.map { z -> Option(z.label, null, z == c.zoom) { c.setZoomMode(z); onClose() } }
+            Sheet.SUB_SYNC, Sheet.AUDIO_SYNC, Sheet.SUB_STYLE -> emptyList()
+            Sheet.QUALITY -> listOf(Option("Auto", "Changes with your connection", c.variant == null) { c.setQuality(null); onClose() }) +
+                c.variants.map { v -> Option(v.label, v.bandwidth?.let { "${it / 1000} kbps" }, v == c.variant) { c.setQuality(v); onClose() } }
         }
         if (options.isEmpty()) Text(
             when (sheet) {
@@ -547,4 +613,19 @@ private fun SheetPanel(sheet: Sheet, c: PlayerController, modifier: Modifier, on
             }
         }
     }
+}
+
+/** Settings.playerOrientation → the activity's requested orientation. */
+internal fun orientationOf(setting: String) = when (setting) {
+    "PORTRAIT" -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+    "AUTO" -> ActivityInfo.SCREEN_ORIENTATION_FULL_USER
+    else -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+}
+
+/** In picture in picture: only the video, no controls. */
+@Composable
+private fun inPip(): Boolean {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    androidx.compose.ui.platform.LocalConfiguration.current  // read so this recomposes when the window changes
+    return android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N && ctx.findActivity()?.isInPictureInPictureMode == true
 }

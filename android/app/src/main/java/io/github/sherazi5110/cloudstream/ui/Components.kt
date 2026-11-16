@@ -1,5 +1,7 @@
 package io.github.sherazi5110.cloudstream.ui
 
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
@@ -68,24 +70,70 @@ fun Modifier.card(
     focusScale: Float = 1.06f,
     onFocus: (() -> Unit)? = null,
     onLongClick: (() -> Unit)? = null,
+    /** TV with a mouse: the first click only selects (highlights) it, a second click opens it. The remote's OK opens. */
+    selectFirst: Boolean = false,
     onClick: () -> Unit,
-): Modifier = this.then(Modifier.cardImpl(shape, focusScale, onFocus, onLongClick, onClick))
+): Modifier = this.then(Modifier.cardImpl(shape, focusScale, onFocus, onLongClick, selectFirst, onClick))
+
+/** Whether the mouse button went down on a card that wasn't selected yet (then that click only selects it). */
+private class PressState { var focused = false; var pressedUnselected = false; var pressedAt = 0L }
 
 @OptIn(ExperimentalFoundationApi::class)
 private fun Modifier.cardImpl(
-    shape: Shape, focusScale: Float, onFocus: (() -> Unit)?, onLongClick: (() -> Unit)?, onClick: () -> Unit,
+    shape: Shape, focusScale: Float, onFocus: (() -> Unit)?, onLongClick: (() -> Unit)?, selectFirst: Boolean, onClick: () -> Unit,
 ): Modifier = composed {
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(if (focused) focusScale else 1f, label = "focus")
+    val firstClickSelects = selectFirst && isTv
+    val requester = remember { androidx.compose.ui.focus.FocusRequester() }
+    val press = remember { PressState() }
     this
         .scale(scale)
+        .then(if (firstClickSelects) Modifier.focusRequester(requester).pointerInput(Unit) {
+            // Seen before the click handler: was it already selected when the button went down?
+            awaitPointerEventScope {
+                while (true) {
+                    val e = awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+                    if (e.type == androidx.compose.ui.input.pointer.PointerEventType.Press) {
+                        press.pressedUnselected = !press.focused
+                        press.pressedAt = android.os.SystemClock.uptimeMillis()
+                    }
+                }
+            }
+        } else Modifier)
         .onFocusChanged {
             focused = it.isFocused
+            press.focused = it.isFocused
             if (it.isFocused) onFocus?.invoke()
         }
         .then(if (focused) Modifier.border(3.dp, Color.White, shape) else Modifier)
         .clip(shape)
-        .combinedClickable(onLongClick = onLongClick, onClick = onClick)
+        .combinedClickable(onLongClick = onLongClick, onClick = {
+            val mouseFirstClick = firstClickSelects && press.pressedUnselected && android.os.SystemClock.uptimeMillis() - press.pressedAt < 2000
+            press.pressedUnselected = false
+            if (mouseFirstClick) runCatching { requester.requestFocus() } else onClick()
+        })
+}
+
+/**
+ * Rows of posters on TV: the selected one stays about a card away from the row's edges, so selecting the last one
+ * you can see (with the remote or a click) scrolls the row to show the next ones.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+internal val RevealScroll = object : androidx.compose.foundation.gestures.BringIntoViewSpec {
+    override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float {
+        val margin = minOf(size * 1.1f, containerSize * 0.3f)
+        val before = offset - margin
+        val after = offset + size + margin - containerSize
+        return when { before < 0f && after > 0f -> 0f; before < 0f -> before; after > 0f -> after; else -> 0f }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun TvRowScroll(content: @Composable () -> Unit) {
+    if (isTv) androidx.compose.runtime.CompositionLocalProvider(androidx.compose.foundation.gestures.LocalBringIntoViewSpec provides RevealScroll, content = content)
+    else content()
 }
 
 /** A network image with the extension's headers (some sites refuse posters without a Referer). */
@@ -142,7 +190,7 @@ fun PosterCard(
     Column(modifier.width(width)) {
         Box(
             Modifier.fillMaxWidth().aspectRatio(2f / 3f)
-                .card(onFocus = onFocus, onLongClick = onLongClick, onClick = onClick)
+                .card(onFocus = onFocus, onLongClick = onLongClick, selectFirst = true, onClick = onClick)
         ) {
             NetImage(item.posterUrl, Modifier.fillMaxSize(), item.posterHeaders)
             item.scoreText()?.let { ScoreBadge(it, Modifier.align(Alignment.TopStart).padding(6.dp)) }
@@ -170,7 +218,7 @@ fun WideCard(
 ) {
     Box(
         modifier.width(width).aspectRatio(16f / 9f)
-            .card(onFocus = onFocus, onLongClick = onLongClick, onClick = onClick)
+            .card(onFocus = onFocus, onLongClick = onLongClick, selectFirst = true, onClick = onClick)
     ) {
         NetImage(imageUrl, Modifier.fillMaxSize())
         Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.35f to Color.Transparent, 1f to Color.Black.copy(alpha = 0.9f))))

@@ -10,7 +10,7 @@ object Os {
     val isWindows: Boolean = System.getProperty("os.name").orEmpty().startsWith("Windows", ignoreCase = true)
     val isMac: Boolean = System.getProperty("os.name").orEmpty().startsWith("Mac", ignoreCase = true)
 
-    /** "Linux" or "Windows", for texts such as "for Windows". */
+    /** "Linux", "Windows" or "macOS", for texts such as "for Windows". */
     val name: String = when { isWindows -> "Windows"; isMac -> "macOS"; else -> "Linux" }
 
     private val home: String get() = System.getProperty("user.home")
@@ -18,8 +18,10 @@ object Os {
     /**
      * Linux: ~/.local/share/cloudstream-linux (XDG; the original name, kept so updates keep everyone's data).
      * Windows: %APPDATA%\Stream Goat; data from 7.1.0 (%APPDATA%\CloudStream) is moved there once.
+     * macOS: ~/Library/Application Support/Stream Goat.
      */
     fun defaultDataDir(): File = when {
+        isMac -> File(home, "Library/Application Support/Stream Goat")
         isWindows -> {
             val appData = System.getenv("APPDATA") ?: "$home\\AppData\\Roaming"
             val dir = File(appData, "Stream Goat")
@@ -44,7 +46,7 @@ object Os {
 
     /** The user's Downloads folder (Linux: the XDG download folder, which the Flatpak may write to). */
     fun downloadsDir(): File {
-        if (!isWindows) {
+        if (!isWindows && !isMac) {
             runCatching {
                 File(home, ".config/user-dirs.dirs").readLines()
                     .firstOrNull { it.startsWith("XDG_DOWNLOAD_DIR=") }?.substringAfter('=')?.trim('"')
@@ -100,19 +102,25 @@ object Os {
     /** What to do when VLC's libraries are missing. */
     val vlcHint: String get() = when {
         isWindows -> "VLC is included with Stream Goat; reinstall Stream Goat, or install VLC (64-bit) from videolan.org"
+        isMac -> "VLC is included with Stream Goat; reinstall Stream Goat, or install VLC from videolan.org into Applications"
         else -> "sudo apt install libvlc5 vlc-plugin-base"
     }
 
     /**
-     * VLC shipped inside the app (Windows: <app>\vlc with libvlc.dll and plugins\), next to the app's jars;
+     * VLC shipped inside the app, next to the app's jars: Windows <app>\vlc with libvlc.dll and plugins\;
+     * macOS Stream Goat.app/Contents/app/vlc/lib with libvlc.dylib, and vlc/plugins (VLC.app's own layout).
      * -Dcs.vlc.dir overrides it. Null when there's none (Linux uses the system's VLC).
      */
     fun bundledVlcDir(): File? {
         System.getProperty("cs.vlc.dir")?.let { File(it) }?.takeIf { it.isDirectory }?.let { return it }
         val jarDir = runCatching { File(Os::class.java.protectionDomain.codeSource.location.toURI()).parentFile }.getOrNull()
-        return listOfNotNull(jarDir?.resolve("vlc"), jarDir?.parentFile?.resolve("vlc"))
-            .firstOrNull { File(it, if (isWindows) "libvlc.dll" else "libvlc.so.5").isFile }
+        val dirs = listOfNotNull(jarDir?.resolve("vlc"), jarDir?.parentFile?.resolve("vlc"))
+        if (isMac) return dirs.map { it.resolve("lib") }.firstOrNull { File(it, "libvlc.dylib").isFile }
+        return dirs.firstOrNull { File(it, if (isWindows) "libvlc.dll" else "libvlc.so.5").isFile }
     }
+
+    /** The modifier key shown in shortcut texts: ⌘ on a Mac, Ctrl elsewhere. */
+    val shortcutKey: String get() = if (isMac) "⌘" else "Ctrl+"
 
     /**
      * Windows: makes cloudstreamrepo:// links (repository links on websites) open this app, for the current user

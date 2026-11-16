@@ -43,8 +43,56 @@ const icons = {
 };
 const clock = (s) => { s = Math.floor(s || 0); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60); return h ? `${h}h ${m}m` : `${m}m`; };
 
+// ---------- Report a glitch: last steps and errors, into GitHub's new-issue page (nothing is sent by the page) ----------
+
+const glitch = { steps: [], errors: [] };
+function step(text) {
+  const t = new Date().toTimeString().slice(0, 8);
+  glitch.steps.push(`${t} ${String(text).replace(/\s+/g, " ").slice(0, 160)}`);
+  if (glitch.steps.length > 20) glitch.steps.shift();
+}
+function noteError(text) {
+  glitch.errors.push(String(text).slice(0, 400));
+  if (glitch.errors.length > 10) glitch.errors.shift();
+  step(`Error: ${String(text).split("\n")[0].slice(0, 120)}`);
+}
+window.addEventListener("error", (e) => noteError(`${e.message} (${(e.filename || "").split("/").pop()}:${e.lineno})`));
+window.addEventListener("unhandledrejection", (e) => noteError(`Unhandled: ${(e.reason && (e.reason.stack || e.reason.message)) || e.reason}`));
+const redact = (t) => String(t)
+  .replace(/(access_token|refresh_token|id_token|token|api[_-]?key|password)(["'=:\s]+)[^\s"'&,]+/gi, "$1$2…")
+  .replace(/[\w.+-]+@[\w-]+\.[\w.]+/g, "…@…");
+function glitchReport() {
+  const lines = [
+    `Stream Goat web on ${navigator.userAgent}`,
+    `Screen ${window.innerWidth}x${window.innerHeight} @${window.devicePixelRatio}x · ${navigator.onLine ? "online" : "offline"} · ${(() => { try { return addons().length; } catch { return "?"; } })()} add-ons`,
+    `Page: ${location.hash || "#/home"}`,
+  ];
+  if (glitch.steps.length) lines.push("", "Last steps:", ...glitch.steps.slice(-12).map((s) => "  " + s));
+  if (glitch.errors.length) lines.push("", "Errors:", ...glitch.errors.slice(-6));
+  return redact(lines.join("\n"));
+}
+function reportGlitch() {
+  sheet("Report a glitch", `
+    <p class="muted small">Say what looks wrong. GitHub opens with the details below filled in; add a screenshot there if you can and press Submit. Nothing is sent by this page.</p>
+    <textarea class="field" id="g-what" rows="3" placeholder="What went wrong? e.g. &quot;The play button does nothing&quot;"></textarea>
+    <details style="margin-top:10px"><summary class="muted small">What the page adds</summary><pre class="glitch-pre">${esc(glitchReport())}</pre></details>
+    <div class="actions-line"><button class="btn primary" id="g-send">Send on GitHub</button><button class="btn small" id="g-copy">Copy details</button></div>`, (box) => {
+    const what = () => box.querySelector("#g-what").value.trim();
+    box.querySelector("#g-send").addEventListener("click", () => {
+      const first = what().split("\n")[0].slice(0, 70);
+      const title = first ? `Glitch (web): ${first}` : `Glitch (web): ${location.hash || "#/home"}`;
+      const body = `**What went wrong**\n${what() || "(describe what you saw and what you expected)"}\n\n**Details from the page**\n\`\`\`\n${glitchReport().slice(0, 5500)}\n\`\`\`\n`;
+      window.open(`https://github.com/sherazi5110/stream-goat/issues/new?title=${encodeURIComponent(title)}&body=${encodeURIComponent(body)}`, "_blank", "noopener");
+    });
+    box.querySelector("#g-copy").addEventListener("click", async () => {
+      try { await navigator.clipboard.writeText((what() ? what() + "\n\n" : "") + glitchReport()); toast("Copied"); } catch { toast("Couldn't copy here"); }
+    });
+  });
+}
+
 let toastTimer;
 function toast(text) {
+  step(`Message: ${text}`);
   const t = document.getElementById("toast");
   const host = document.fullscreenElement || document.webkitFullscreenElement || document.body;
   if (t.parentNode !== host) host.appendChild(t);
@@ -403,6 +451,7 @@ async function router() {
   const [path, query] = location.hash.replace(/^#\/?/, "").split("?");
   const name = routes[path] ? path : "home";
   const params = Object.fromEntries(new URLSearchParams(query || ""));
+  step(`Opened ${name}${params.id ? " " + params.id : ""}${params.type ? " (" + params.type + ")" : ""}`);
   $tabs.hidden = name === "watch";
   document.body.classList.toggle("no-tabs", name === "watch");
   document.body.classList.toggle("home-page", name === "home" || name === "title");
@@ -414,7 +463,11 @@ async function router() {
   document.getElementById("nav-live").style.display = liveShown;
   onScroll();
   window.scrollTo(0, 0);
-  try { await routes[name](params); } catch (e) { $view.innerHTML = `<div class="page"><div class="empty"><b>Something went wrong</b>${esc(e.message)}</div></div>`; }
+  try { await routes[name](params); } catch (e) {
+    noteError(e.stack || e.message);
+    $view.innerHTML = `<div class="page"><div class="empty"><b>Something went wrong</b>${esc(e.message)}<br><button class="btn small" id="err-report" style="margin-top:12px">Report it</button></div></div>`;
+    $view.querySelector("#err-report").addEventListener("click", reportGlitch);
+  }
 }
 window.addEventListener("hashchange", router);
 function onScroll() { document.getElementById("topnav").classList.toggle("solid", window.scrollY > 40 || !document.body.classList.contains("home-page")); }
@@ -459,7 +512,7 @@ async function home(params = {}) {
       ${continueRow()}
       ${rows.map((r) => r.items ? shelf(r.title, r.items) : "").join("")}
       ${rows.some((r) => !r.items) ? '<div class="spinner"></div>' : ""}
-      ${rows.every((r) => r.items && !r.items.length) ? `<div class="empty"><b>Couldn't load the catalogs</b>${navigator.onLine === false
+      ${rows.every((r) => r.items && !r.items.length) ? `<div class="empty"><img src="icon-192.png" alt="" class="empty-logo"><b>Couldn't load the catalogs</b>${navigator.onLine === false
         ? "You're offline." : "Your add-ons didn't answer. Check your connection, or try again in a moment."}<br><br>
         <button class="btn" onclick="cache.home=null;router()">Try again</button></div>` : ""}
     </div>`;
@@ -1054,7 +1107,10 @@ async function more() {
     <h2>About</h2>
     <p class="muted small"><b style="color:var(--accent)">Created by Syed Ali Hamza.</b> Stream Goat web, the free browser version of <a href="https://github.com/sherazi5110/stream-goat" style="color:var(--accent)">Stream Goat for Linux, Windows and Android</a>.
       It plays streams from Stremio add-ons; CloudStream extensions need the Linux, Windows or Android app. This page hosts no content.</p>
+    <div class="actions-line"><button class="btn small" id="glitch">Report a glitch or problem</button>
+      <a class="btn small" href="https://discord.gg/PUmEQzJSa" target="_blank" rel="noopener">Discord</a></div>
   </div>`;
+  $view.querySelector("#glitch").addEventListener("click", reportGlitch);
   const form = $view.querySelector("#add");
   form.addEventListener("submit", async (e) => {
     e.preventDefault();

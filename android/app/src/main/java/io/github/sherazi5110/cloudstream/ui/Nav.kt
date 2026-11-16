@@ -61,18 +61,20 @@ object Nav {
 
     fun open(screen: Screen) {
         // Opening the same title twice in a row (double tap) shouldn't stack it.
-        if (stack.lastOrNull() != screen) stack.add(screen)
+        if (stack.lastOrNull() != screen) { stack.add(screen); io.github.sherazi5110.cloudstream.GlitchReport.step("Opened " + io.github.sherazi5110.cloudstream.GlitchReport.describe(screen)) }
     }
 
     fun replace(screen: Screen) {
         if (stack.isNotEmpty()) stack.removeAt(stack.lastIndex)
         stack.add(screen)
+        io.github.sherazi5110.cloudstream.GlitchReport.step("Opened " + io.github.sherazi5110.cloudstream.GlitchReport.describe(screen))
     }
 
     /** Returns false when there is nothing to go back to (the system then leaves the app). */
     fun back(): Boolean {
         if (stack.isNotEmpty()) {
             stack.removeAt(stack.lastIndex)
+            io.github.sherazi5110.cloudstream.GlitchReport.step("Back to " + io.github.sherazi5110.cloudstream.GlitchReport.describe(top))
             return true
         }
         if (tab != Tab.HOME) {
@@ -86,6 +88,7 @@ object Nav {
         // The Search tab itself searches every extension (Home's Search button narrows it afterwards).
         if (tab == Tab.SEARCH) searchScope = null
         // Kids profiles have no Settings or Extensions pages unless a parent unlocks them.
+        io.github.sherazi5110.cloudstream.GlitchReport.step("Tab ${tab.label}")
         if (tab == Tab.EXTENSIONS || tab == Tab.MORE) ProfileUi.guarded { stack.clear(); this.tab = tab }
         else { stack.clear(); this.tab = tab }
     }

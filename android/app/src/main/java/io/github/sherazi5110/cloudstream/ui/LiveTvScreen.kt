@@ -3,6 +3,7 @@ package io.github.sherazi5110.cloudstream.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -30,6 +31,8 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.filled.NetworkCheck
+import androidx.compose.ui.draw.alpha
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material3.Icon
@@ -149,8 +152,12 @@ fun LiveTvScreen() {
     var channels by remember { mutableStateOf<List<LiveTv.Channel>?>(null) }
     var guideVersion by remember { mutableIntStateOf(0) }
     var force by remember { mutableStateOf(false) }
-    LaunchedEffect(version, force) {
-        channels = LiveTv.channels(force = force)
+    // One source or all of them, as on Windows/Linux ("All sources ▾").
+    var sourceId by remember { mutableStateOf<String?>(null) }
+    var pickingSource by remember { mutableStateOf(false) }
+    LaunchedEffect(version, force, sourceId) {
+        if (sourceId != null && LiveTv.sources().none { it.id == sourceId && it.enabled }) sourceId = null
+        channels = LiveTv.channels(sourceId, force = force)
         force = false
         runCatching { LiveTv.loadGuides() }
         guideVersion++
@@ -170,25 +177,79 @@ fun LiveTvScreen() {
         all.isEmpty() && !App.online() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             OfflineState { force = true; version++ }
         }
-        else -> LiveContent(all, now, guideVersion, scope) { force = true; version++ }
+        else -> LiveContent(all, now, guideVersion, scope, LiveTv.sources().firstOrNull { it.id == sourceId }?.name ?: "All sources",
+            onSources = { pickingSource = true }) { force = true; version++ }
+    }
+    if (pickingSource) SimpleDialog("Live TV sources", { pickingSource = false }) {
+        @Composable
+        fun row(title: String, sub: String?, on: Boolean, onClick: () -> Unit) {
+            Row(Modifier.fillMaxWidth().padding(vertical = 3.dp).card(RoundedCornerShape(12.dp)) { onClick(); pickingSource = false }
+                .background(if (on) Palette.accent.copy(alpha = 0.25f) else Palette.surfaceHigh, RoundedCornerShape(12.dp))
+                .padding(horizontal = 14.dp, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                sub?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = Palette.muted) }
+            }
+        }
+        row("All sources", null, sourceId == null) { sourceId = null }
+        LiveTv.sources().filter { it.enabled }.forEach { s -> row(s.name, s.kind.label, s.id == sourceId) { sourceId = s.id } }
+        row("Refresh channels and guide", null, false) { force = true; version++ }
+        row("Live TV sources…", null, false) { ProfileUi.guarded { if (isWideNow) Nav.select(Tab.MORE) else Nav.open(Screen.SettingsPage(Section.LIVETV.name)) } }
     }
 }
 
 private var isWideNow = false
 
 @Composable
-private fun LiveContent(all: List<LiveTv.Channel>, now: Long, guideVersion: Int, scope: CoroutineScope, onRefresh: () -> Unit) {
+private fun LiveContent(all: List<LiveTv.Channel>, now: Long, guideVersion: Int, scope: CoroutineScope, sourceName: String, onSources: () -> Unit, onRefresh: () -> Unit) {
     val wide = isWide
     isWideNow = wide
     var favVersion by remember { mutableIntStateOf(0) }
     val favourites = remember(favVersion) { LiveTv.favourites() }
     val recentKeys = remember(favVersion) { LiveTv.recent() }
-    val groups = remember(all) { all.groupingBy { it.group ?: "Other" }.eachCount().entries.sortedByDescending { it.value }.map { it.key } }
+    // A channel in several groups ("Animation;Kids") is under each of them.
+    val groups = remember(all) { all.flatMap { c -> c.groups.ifEmpty { listOf("Other") } }.groupingBy { it }.eachCount().entries.sortedByDescending { it.value }.map { it.key } }
     var filter by remember { mutableStateOf("All") }
     var query by remember { mutableStateOf("") }
-    val shown = remember(all, filter, query, favVersion) {
+    // "Check channels": which answer (public lists always have dead links), and hiding the ones that don't.
+    var healthVersion by remember { mutableIntStateOf(0) }
+    var checking by remember { mutableStateOf<Pair<Int, Int>?>(null) }
+    var checkJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    var checkTotal by remember { mutableIntStateOf(0) }
+    var hideDead by remember { mutableStateOf(LiveTv.hideNotWorking) }
+    val notWorking = remember(all, healthVersion) { all.count { LiveTv.health(it)?.ok == false } }
+    // Region-locked channels (iptv-org's "[Geo-blocked]", Free-TV's Ⓖ) play only in their own country: hidden unless
+    // they're from the viewer's.
+    var hideLocked by remember { mutableStateOf(LiveTv.hideRegionLocked) }
+    val home = remember { LiveTv.homeCountry }
+    val lockedCount = remember(all) { all.count { LiveTv.lockedOut(it) } }
+    // Lists from many countries (iptv-org's whole list): pick one; the viewer's own first.
+    val countries = remember(all) {
+        all.mapNotNull { it.country?.uppercase() }.groupingBy { it }.eachCount().entries
+            .sortedWith(compareByDescending<Map.Entry<String, Int>> { it.key == home }.thenByDescending { it.value }).map { it.key to it.value }
+    }
+    var country by remember(all) { mutableStateOf(if (countries.size >= 5 && countries.any { it.first == home }) home else null) }
+    var countryMenu by remember { mutableStateOf(false) }
+    // The automatic check: the channels in view that weren't checked in the last day, quietly in the background;
+    // the ones with broken links then drop out ("Hide not working" is on by default).
+    LaunchedEffect(all, country, hideLocked) {
+        if (!LiveTv.autoCheck || checkJob?.isActive == true) return@LaunchedEffect
+        kotlinx.coroutines.delay(1500)
+        val todo = all.filter { c -> (!hideLocked || !LiveTv.lockedOut(c)) && (country == null || c.country.equals(country, true)) && LiveTv.stale(c) }
+        if (todo.isEmpty()) return@LaunchedEffect
+        checkTotal = todo.size
+        checkJob = scope.launch {
+            checking = 0 to 0
+            runCatching { LiveTv.check(todo) { done, working -> checking = done to working } }
+            checking = null
+            healthVersion++
+        }
+    }
+    val shown = remember(all, filter, query, favVersion, hideDead, healthVersion, hideLocked, country) {
         all.filter { c ->
-            when (filter) { "All" -> true; "★ Favourites" -> c.key in favourites; else -> (c.group ?: "Other") == filter } &&
+            (!hideDead || LiveTv.health(c)?.ok != false) &&
+            (!hideLocked || !LiveTv.lockedOut(c)) &&
+            (country == null || c.country.equals(country, ignoreCase = true)) &&
+            when (filter) { "All" -> true; "★ Favourites" -> c.key in favourites; else -> filter in c.groups.ifEmpty { listOf("Other") } } &&
                 (query.isBlank() || c.name.contains(query.trim(), ignoreCase = true))
         }
     }
@@ -200,6 +261,9 @@ private fun LiveContent(all: List<LiveTv.Channel>, now: Long, guideVersion: Int,
 
     val toolbar: @Composable () -> Unit = {
             Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("$sourceName ▾", style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier
+                    .padding(end = 10.dp).widthIn(max = 220.dp).card(RoundedCornerShape(50)) { onSources() }
+                    .background(Palette.surfaceHigh, RoundedCornerShape(50)).padding(horizontal = 16.dp, vertical = 11.dp))
                 OutlinedTextField(query, { query = it }, singleLine = true, placeholder = { Text("Search channels") },
                     leadingIcon = { Icon(Icons.Filled.Search, null) }, shape = RoundedCornerShape(50),
                     colors = OutlinedTextFieldDefaults.colors(unfocusedContainerColor = Palette.surface, focusedContainerColor = Palette.surface,
@@ -207,15 +271,63 @@ private fun LiveContent(all: List<LiveTv.Channel>, now: Long, guideVersion: Int,
                     modifier = Modifier.weight(1f).widthIn(max = 420.dp))
                 Spacer(Modifier.weight(0.01f))
                 IconAction(if (guide) Icons.Filled.GridView else Icons.Filled.Schedule, if (guide) "Channels" else "TV guide") { guide = !guide }
+                IconAction(Icons.Filled.NetworkCheck, "Check channels") {
+                    if (checkJob?.isActive == true) return@IconAction
+                    // The channels showing (one country of a big list checks in minutes).
+                    val list = shown
+                    checkTotal = list.size
+                    checkJob = scope.launch {
+                        checking = 0 to 0
+                        val ok = runCatching { LiveTv.check(list) { done, working -> checking = done to working } }.getOrNull()
+                        checking = null
+                        healthVersion++
+                        if (ok != null) App.toast("$ok of ${list.size} channels work" + if (ok < list.size) ". \"Hide not working\" leaves the others out." else "")
+                    }
+                }
                 IconAction(Icons.Filled.Refresh, "Refresh") { onRefresh() }
                 IconAction(Icons.Filled.Settings, "Live TV sources") {
                     ProfileUi.guarded { if (wide) Nav.select(Tab.MORE) else Nav.open(Screen.SettingsPage(Section.LIVETV.name)) }
                 }
             }
     }
-    val chipRow: @Composable () -> Unit = {
+    val chipRow: @Composable () -> Unit = { Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            checking?.let { (done, working) ->
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("Checking channels… $done of $checkTotal · $working work", style = MaterialTheme.typography.labelLarge, color = Palette.accent)
+                    Text("Stop", style = MaterialTheme.typography.labelMedium, modifier = Modifier.card(RoundedCornerShape(50)) { checkJob?.cancel(); checking = null; healthVersion++ }
+                        .background(Palette.surfaceHigh, RoundedCornerShape(50)).padding(horizontal = 14.dp, vertical = 6.dp))
+                }
+            }
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(vertical = 4.dp)) {
-                val chips = listOf("All", "★ Favourites") + groups.take(40)
+                if (countries.size >= 2) item {
+                    Box {
+                        Text("🌍 " + (country?.let { LiveTv.countryName(it) } ?: "All countries") + " ▾", style = MaterialTheme.typography.labelMedium, modifier = Modifier
+                            .card(RoundedCornerShape(50)) { countryMenu = true }
+                            .background(if (country != null) Palette.accent else Palette.surfaceHigh, RoundedCornerShape(50))
+                            .padding(horizontal = 14.dp, vertical = 8.dp))
+                        androidx.compose.material3.DropdownMenu(countryMenu, { countryMenu = false }, Modifier.heightIn(max = 420.dp)) {
+                            androidx.compose.material3.DropdownMenuItem(text = { Text("All countries (${all.size})") }, onClick = { country = null; countryMenu = false })
+                            countries.forEach { (code, n) ->
+                                androidx.compose.material3.DropdownMenuItem(
+                                    text = { Text(LiveTv.countryName(code) + " ($n)" + if (code == home) " · your country" else "") },
+                                    onClick = { country = code; countryMenu = false })
+                            }
+                        }
+                    }
+                }
+                if (lockedCount > 0) item {
+                    Text(if (hideLocked) "✓ Hiding $lockedCount region-locked" else "Show $lockedCount region-locked", style = MaterialTheme.typography.labelMedium, modifier = Modifier
+                        .card(RoundedCornerShape(50)) { hideLocked = !hideLocked; LiveTv.hideRegionLocked = hideLocked }
+                        .background(if (hideLocked) Palette.accent else Palette.surfaceHigh, RoundedCornerShape(50))
+                        .padding(horizontal = 14.dp, vertical = 8.dp))
+                }
+                if (notWorking > 0 || hideDead) item {
+                    Text(if (hideDead) "✓ Hiding $notWorking not working" else "Hide $notWorking not working", style = MaterialTheme.typography.labelMedium, modifier = Modifier
+                        .card(RoundedCornerShape(50)) { hideDead = !hideDead; LiveTv.hideNotWorking = hideDead }
+                        .background(if (hideDead) Palette.accent else Palette.surfaceHigh, RoundedCornerShape(50))
+                        .padding(horizontal = 14.dp, vertical = 8.dp))
+                }
+                val chips = listOf("All", "★ Favourites") + groups
                 items(chips) { g ->
                     val on = g == filter
                     val count = when (g) { "All" -> all.size; "★ Favourites" -> favourites.size; else -> null }
@@ -225,7 +337,7 @@ private fun LiveContent(all: List<LiveTv.Channel>, now: Long, guideVersion: Int,
                         .padding(horizontal = 14.dp, vertical = 8.dp))
                 }
             }
-    }
+    } }
 
     if (guide) {
         Column(Modifier.fillMaxSize().statusBarsPadding().padding(start = edge, end = edge, top = 12.dp, bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -237,7 +349,7 @@ private fun LiveContent(all: List<LiveTv.Channel>, now: Long, guideVersion: Int,
                     "None of your sources has a guide (XMLTV) loaded. Xtream logins include one; for an M3U playlist add its guide address in Settings → Live TV.",
                     Modifier.fillMaxWidth(), button = "Refresh guide") { onRefresh() }
                 sorted.isEmpty() -> EmptyState("No channels", if (query.isNotBlank()) "Nothing matches \"$query\"." else "This list is empty.", Modifier.fillMaxWidth())
-                else -> GuideGrid(sorted.take(400), now, guideVersion, wide, onPlay = { LivePlayback.play(scope, it, sorted) }, modifier = Modifier.weight(1f))
+                else -> GuideGrid(sorted, now, guideVersion, wide, onPlay = { LivePlayback.play(scope, it, sorted) }, modifier = Modifier.weight(1f))
             }
         }
         return
@@ -246,7 +358,7 @@ private fun LiveContent(all: List<LiveTv.Channel>, now: Long, guideVersion: Int,
     LazyVerticalGrid(
         if (wide) GridCells.Adaptive(220.dp) else GridCells.Adaptive(160.dp),
         Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = edge, end = edge, bottom = 32.dp),
+        contentPadding = PaddingValues(start = edge, end = edge, bottom = 32.dp + LocalBottomInset.current),
         horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         item(span = { GridItemSpan(maxLineSpan) }) {
@@ -259,12 +371,12 @@ private fun LiveContent(all: List<LiveTv.Channel>, now: Long, guideVersion: Int,
         if (recent.isNotEmpty() && filter == "All" && query.isBlank()) {
             item(span = { GridItemSpan(maxLineSpan) }) { SectionTitle("Recently watched", Modifier.padding(top = 8.dp)) }
             uniqueItems(recent.take(if (wide) 5 else 4), key = { "recent|" + it.key }) { c ->
-                ChannelCard(c, now, guideVersion, onFocus = { selected = c }) { LivePlayback.play(scope, c, all) }
+                ChannelCard(c, now, guideVersion + healthVersion, onFocus = { selected = c }) { LivePlayback.play(scope, c, all) }
             }
             item(span = { GridItemSpan(maxLineSpan) }) { SectionTitle(if (filter == "All") "All channels" else filter, Modifier.padding(top = 8.dp)) }
         }
         uniqueItems(shown, key = { it.key }) { c ->
-            ChannelCard(c, now, guideVersion, onFocus = { selected = c }) { LivePlayback.play(scope, c, shown) }
+            ChannelCard(c, now, guideVersion + healthVersion, onFocus = { selected = c }) { LivePlayback.play(scope, c, shown) }
         }
         if (shown.isEmpty()) item(span = { GridItemSpan(maxLineSpan) }) {
             EmptyState("No channels", if (query.isNotBlank()) "Nothing matches \"$query\"." else "This list is empty.", Modifier.fillMaxWidth())
@@ -280,7 +392,7 @@ private fun LiveBanner(c: LiveTv.Channel, number: Int, now: Long, guideVersion: 
         .background(Brush.horizontalGradient(listOf(Palette.accent.copy(alpha = 0.10f), Color.Transparent)), RoundedCornerShape(16.dp)).padding(if (wide) 8.dp else 4.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             LiveBadge(label = LiveTv.webPage(c)?.let { "LIVE · ${it.uppercase()}" } ?: "LIVE")
-            Text(listOfNotNull("Channel $number", c.group, "Region-locked".takeIf { c.regionLocked }).joinToString(" · "), style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(start = 10.dp))
+            Text(listOfNotNull("Channel $number", c.groupLabel, "Region-locked".takeIf { c.regionLocked }).joinToString(" · "), style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(start = 10.dp))
         }
         Row(Modifier.padding(vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
             ChannelLogo(c, if (wide) 92.dp else 64.dp)
@@ -303,7 +415,9 @@ private fun LiveBanner(c: LiveTv.Channel, number: Int, now: Long, guideVersion: 
 @Composable
 private fun ChannelCard(c: LiveTv.Channel, now: Long, guideVersion: Int, onFocus: () -> Unit, onClick: () -> Unit) {
     val cur = remember(c, now, guideVersion) { LiveTv.nowNext(c, now).first }
-    Column(Modifier.fillMaxWidth().card(RoundedCornerShape(12.dp), onFocus = onFocus, onClick = onClick)
+    val health = remember(c, guideVersion) { LiveTv.health(c) }
+    val dead = health?.ok == false
+    Column(Modifier.fillMaxWidth().alpha(if (dead) 0.5f else 1f).card(RoundedCornerShape(12.dp), onFocus = onFocus, selectFirst = true, onClick = onClick)
         .background(Palette.surface, RoundedCornerShape(12.dp))) {
         Box(Modifier.fillMaxWidth().aspectRatio(16f / 8f).background(Brush.linearGradient(listOf(Palette.surfaceHigh, Palette.accent.copy(alpha = 0.18f)))),
             contentAlignment = Alignment.Center) {
@@ -313,7 +427,8 @@ private fun ChannelCard(c: LiveTv.Channel, now: Long, guideVersion: Int, onFocus
         }
         Column(Modifier.padding(10.dp)) {
             Text(c.name, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(cur?.let { "Now: ${it.title}" } ?: (c.group ?: " "), style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(if (dead) "Not working: ${health?.why ?: "no answer"}" else cur?.let { "Now: ${it.title}" } ?: (c.groupLabel ?: " "),
+                style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis, color = if (dead) Palette.muted else Color.Unspecified)
             if (cur != null) ProgressLine(progressOf(cur, now), Modifier.padding(top = 6.dp))
         }
     }

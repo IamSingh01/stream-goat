@@ -39,7 +39,7 @@ import java.net.URLEncoder
  * Each installed add-on with catalogs becomes a [MainAPI] ([StremioApi]), so Home, Search,
  * the catalog editor, details and the player work with it unchanged. As in Stremio, streams
  * come from every enabled add-on that serves streams for the title, not only the one it
- * was found in. Torrent-only streams (infoHash) aren't playable here and are skipped.
+ * was found in. Torrent streams (infoHash) become magnet links, played when torrent streaming is on (see [Torrents]).
  */
 object StremioAddons {
     /** Cinemeta, Stremio's own catalog of films and series (metadata only, no streams). */
@@ -334,8 +334,23 @@ class StremioApi(private val addon: StremioAddons.Addon) : MainAPI() {
                     ?.optJSONArray("streams") ?: return@async
                 for (i in 0 until streams.length()) {
                     val s = streams.optJSONObject(i) ?: continue
-                    val link = s.optString("url").takeIf { it.startsWith("http") } ?: continue // infoHash/ytId/externalUrl: not playable here
                     val hints = s.optJSONObject("behaviorHints")
+                    // A torrent (Torrentio and similar, without a debrid service): a magnet link, played by Torrents when
+                    // torrent streaming is on (the player says how to get it otherwise).
+                    val hash = s.optString("infoHash").takeIf { it.matches(Regex("[0-9a-fA-F]{40}")) }
+                    if (hash != null && s.optString("url").isBlank()) {
+                        val trackers = s.optJSONArray("sources")?.let { a -> (0 until a.length()).map { a.optString(it) } }.orEmpty()
+                            .filter { it.startsWith("tracker:") }.map { it.removePrefix("tracker:") }
+                        val title = listOf(s.optString("name"), s.optString("title").ifBlank { s.optString("description") })
+                            .filter { it.isNotBlank() }.joinToString(" · ").replace('\n', ' ')
+                        val magnet = Torrents.magnet(hash, hints?.optString("filename")?.ifBlank { null }, trackers, s.optInt("fileIdx", -1).takeIf { s.has("fileIdx") })
+                        callback(newExtractorLink(a.manifest.name, "🧲 " + title.ifBlank { a.manifest.name }, magnet, ExtractorLinkType.MAGNET) {
+                            quality = getQualityFromName(Regex("(2160|1440|1080|720|480|360)p|4k", RegexOption.IGNORE_CASE).find(title)?.value?.let { if (it.equals("4k", true)) "2160p" else it })
+                        })
+                        found = true
+                        continue
+                    }
+                    val link = s.optString("url").takeIf { it.startsWith("http") } ?: continue // ytId/externalUrl: not playable here
                     val headers = hints?.optJSONObject("proxyHeaders")?.optJSONObject("request")
                         ?.let { h -> h.keys().asSequence().toList().associateWith { h.optString(it) } }.orEmpty()
                     val title = listOf(s.optString("name"), s.optString("title").ifBlank { s.optString("description") })

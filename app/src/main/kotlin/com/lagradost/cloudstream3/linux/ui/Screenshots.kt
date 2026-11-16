@@ -41,6 +41,32 @@ object Screenshots {
         }
         delay(1500)
         // CS_SCREENSHOT_ONLY=v6: just the profiles / sections / add-on part (quicker while developing).
+        // CS_SCREENSHOT_ONLY=nav: the home page with the navigation pill, then quit.
+        if (System.getenv("CS_SCREENSHOT_ONLY") == "nav") {
+            kotlinx.coroutines.delay(1500)
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) { capture(window, "$prefix-nav.png") }
+            System.exit(0)
+        }
+        // CS_SCREENSHOT_ONLY=glitch: the Report a glitch window over the home page, then quit.
+        if (System.getenv("CS_SCREENSHOT_ONLY") == "glitch") {
+            kotlinx.coroutines.delay(1500)
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                com.lagradost.cloudstream3.linux.Glitch.step("Opened Details: Dune: Part Two (HDHub4U)")
+                GlitchWindow.report(window.stage)
+            }
+            kotlinx.coroutines.delay(1200)
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                val stage = javafx.stage.Window.getWindows().firstOrNull { (it as? javafx.stage.Stage)?.title == "Report a glitch" }
+                stage?.scene?.let { sc ->
+                    val img = sc.snapshot(null)
+                    val w = img.width.toInt(); val h = img.height.toInt()
+                    val px = IntArray(w * h)
+                    img.pixelReader.getPixels(0, 0, w, h, javafx.scene.image.PixelFormat.getIntArgbInstance(), px, 0, w)
+                    ImageIO.write(BufferedImage(w, h, BufferedImage.TYPE_INT_RGB).apply { setRGB(0, 0, w, h, px, 0, w) }, "png", File("$prefix-glitch.png"))
+                }
+            }
+            System.exit(0)
+        }
         if (System.getenv("CS_SCREENSHOT_ONLY") == "glass") {
             modeGlass(window, prefix)
         }
@@ -79,6 +105,9 @@ object Screenshots {
         }
         if (System.getenv("CS_SCREENSHOT_ONLY") == "guide") {
             modeGuide(window, prefix)
+        }
+        if (System.getenv("CS_SCREENSHOT_ONLY") == "livecheck") {
+            modeLiveCheck(window, prefix)
         }
         if (System.getenv("CS_SCREENSHOT_ONLY") == "kids") {
             modeKids(window, prefix)
@@ -435,6 +464,31 @@ object Screenshots {
             com.lagradost.cloudstream3.linux.LiveTv.saved().forEach { com.lagradost.cloudstream3.linux.LiveTv.remove(it.id) }
             System.exit(0)
         }
+
+    /** CS_SCREENSHOT_ONLY=livecheck: "Check channels" on Live TV, then "Hide them". */
+    private suspend fun modeLiveCheck(window: AppWindow, prefix: String) {
+        // The mock channels work; two more with dead links (a server that's gone, and one that refuses).
+        val m3u = java.io.File.createTempFile("livecheck", ".m3u").apply { deleteOnExit() }
+        m3u.writeText(java.net.URI("http://localhost:8766/iptv/playlist.m3u").toURL().readText() +
+            "#EXTINF:-1 tvg-id=\"Old.pk@SD\" group-title=\"News;Public\",Old News (576p)\nhttp://127.0.0.1:1/old/index.m3u8\n" +
+            "#EXTINF:-1 tvg-id=\"Gone.pk@SD\" group-title=\"Kids;Animation\",Gone Cartoons\nhttp://localhost:8766/no-such-stream.m3u8\n")
+        runCatching { com.lagradost.cloudstream3.linux.LiveTv.add(com.lagradost.cloudstream3.linux.LiveTv.Kind.M3U, m3u.toURI().toString(), "Public list", "http://localhost:8766/iptv/guide.xml") }
+        window.show(Tab.LIVE)
+        delay(4000)
+        fun button(text: String) = (window.lookupAll(".topbar-source") + window.lookupAll(".btn-ghost")).mapNotNull { it as? javafx.scene.control.Button }.firstOrNull { it.text == text }
+        button("Check channels")?.fire()
+        delay(600)
+        capture(window, "$prefix-livetv-checking.png")
+        repeat(60) { if (button("Check channels") == null) delay(500) }
+        delay(1500)
+        capture(window, "$prefix-livetv-checked.png")
+        button("Hide them")?.fire()
+        delay(1200)
+        capture(window, "$prefix-livetv-hidden.png")
+        com.lagradost.cloudstream3.linux.LiveTv.hideNotWorking = false
+        com.lagradost.cloudstream3.linux.LiveTv.saved().forEach { com.lagradost.cloudstream3.linux.LiveTv.remove(it.id) }
+        System.exit(0)
+    }
 
     /** CS_SCREENSHOT_ONLY=kids */
     private suspend fun modeKids(window: AppWindow, prefix: String) {

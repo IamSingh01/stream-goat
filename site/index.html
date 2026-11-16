@@ -161,9 +161,15 @@
       <div class="platform" data-os="windows">
         <h3>Windows <span class="tag">Your device</span></h3>
         <p>Windows 10 and 11. Java and VLC are included, so there's nothing else to install.</p>
-        <a class="dl" href="https://github.com/sherazi5110/stream-goat/releases/latest">Installer (.msi)<small>streamgoat-windows-…msi · installs for your user, no admin needed</small></a>
-        <a class="dl" href="https://github.com/sherazi5110/stream-goat/releases/latest">Portable (.zip)<small>Unzip anywhere and run Stream Goat.exe</small></a>
+        <a class="dl" href="https://github.com/sherazi5110/stream-goat/releases/latest/download/streamgoat-windows-9.0.1.msi">Installer (.msi)<small>streamgoat-windows-…msi · installs for your user, no admin needed</small></a>
+        <a class="dl" href="https://github.com/sherazi5110/stream-goat/releases/latest/download/streamgoat-windows-9.0.1-portable.zip">Portable (.zip)<small>Unzip anywhere and run Stream Goat.exe</small></a>
         <p style="margin:10px 0 0;font-size:13px">If Windows says "Windows protected your PC", click <b>More info → Run anyway</b> (the installer isn't signed yet).</p>
+      </div>
+      <div class="platform" data-os="mac">
+        <h3>Mac <span class="tag">Your device</span></h3>
+        <p>Apple Silicon Macs (M1 and newer). Java and VLC are included.</p>
+        <a class="dl" href="https://github.com/sherazi5110/stream-goat/releases/latest/download/streamgoat-macos-arm64-9.0.1.dmg">Mac app (.dmg)<small>streamgoat-macos-arm64-9.0.1.dmg · drag Stream Goat to Applications</small></a>
+        <p style="margin:10px 0 0;font-size:13px">The first time, macOS blocks it (not signed with an Apple certificate yet): open <b>System Settings → Privacy &amp; Security</b> and click <b>Open Anyway</b>.</p>
       </div>
       <div class="platform" data-os="android">
         <h3>Android &amp; Android TV <span class="tag">Your device</span></h3>
@@ -305,13 +311,13 @@
 <script>
   // Highlight the visitor's own device and point the main button at it.
   const ua = navigator.userAgent.toLowerCase();
-  const os = /android/.test(ua) ? "android" : /windows/.test(ua) ? "windows" : /linux|cros/.test(ua) ? "linux" : null;
+  const os = /android/.test(ua) ? "android" : /windows/.test(ua) ? "windows" : /macintosh|mac os x/.test(ua) ? "mac" : /linux|cros/.test(ua) ? "linux" : null;
   if (os) {
     const card = document.querySelector(`.platform[data-os="${os}"]`);
     card.classList.add("mine");
     card.parentNode.prepend(card);
     document.getElementById("hero-download").textContent =
-      "Download for " + { android: "Android", windows: "Windows", linux: "Linux" }[os];
+      "Download for " + { android: "Android", windows: "Windows", mac: "Mac", linux: "Linux" }[os];
   }
   // Screenshots open bigger.
   const zoom = document.getElementById("zoom");

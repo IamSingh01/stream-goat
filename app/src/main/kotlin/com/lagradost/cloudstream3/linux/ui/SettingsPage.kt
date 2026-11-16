@@ -1,5 +1,6 @@
 package com.lagradost.cloudstream3.linux.ui
 
+import com.lagradost.cloudstream3.linux.Os
 import com.lagradost.cloudstream3.linux.AppDirs
 import com.lagradost.cloudstream3.linux.CompatChecker
 import com.lagradost.cloudstream3.linux.DnsProvider
@@ -48,6 +49,7 @@ class SettingsPage : StackPane(), Refreshable {
         Category("appearance", "Appearance", Icons.PALETTE, ::appearance),
         Category("playback", "Playback", Icons.PLAY_CIRCLE, ::playback),
         Category("livetv", "Live TV sources", Icons.TV, ::liveTv),
+        Category("wetrakr", "WeTrakr sync", Icons.HISTORY, ::wetrakr),
         Category("metadata", "Metadata & integrations", Icons.SPARK, ::metadata),
         Category("network", "Network & DNS", Icons.NETWORK, ::network),
         Category("extensions", "Extensions", Icons.EXTENSION, ::extensions),
@@ -251,7 +253,7 @@ class SettingsPage : StackPane(), Refreshable {
         // Draw the preview in that style without changing the setting.
         val preview = javafx.scene.image.ImageView(run {
             if (was != rainbow) Theme.setLogoRainbowQuietly(rainbow)
-            try { GoatArt.logo(112) } finally { if (was != rainbow) Theme.setLogoRainbowQuietly(was) }
+            try { Brand.tile(112) } finally { if (was != rainbow) Theme.setLogoRainbowQuietly(was) }
         }).apply { fitWidth = 56.0; fitHeight = 56.0; isSmooth = true }
         vbox(6.0, preview, label(name, "bold")).apply {
             alignment = Pos.CENTER
@@ -381,8 +383,9 @@ class SettingsPage : StackPane(), Refreshable {
                     Switch(Settings.batterySaver) { Settings.batterySaver = it; Vlc.optionsChanged(Playback.active != null) }),
                 row("Find sources before you press Play", "When a title's page opens, its sources are looked up in the background, so Play starts sooner. Found sources are kept for 20 minutes.",
                     Switch(Settings.prepareSources) { Settings.prepareSources = it }),
+                *(if (com.lagradost.cloudstream3.linux.Os.isMac) emptyArray<javafx.scene.Node>() else arrayOf<javafx.scene.Node>(
                 row("Anime enhance", "Crisper line art for animation in low quality: small video is upscaled to your screen with Lanczos instead of a soft stretch. Auto: anime and cartoons up to 1440p. In the player: the Picture menu (Z) shows whether it's sharpening the video; E turns it on or off.",
-                    combo(com.lagradost.cloudstream3.linux.Picture.modes.map { it.first }, Settings.animeEnhance, { com.lagradost.cloudstream3.linux.Picture.modeName(it) }) { Settings.animeEnhance = it; Vlc.optionsChanged(Playback.active != null) }),
+                    combo(com.lagradost.cloudstream3.linux.Picture.modes.map { it.first }, Settings.animeEnhance, { com.lagradost.cloudstream3.linux.Picture.modeName(it) }) { Settings.animeEnhance = it; Vlc.optionsChanged(Playback.active != null) }))),
                 row("HDR colour fix", "HDR10, Dolby Vision and HLG video is shown in normal (SDR) colour here, which on its own looks grey and washed out; this corrects contrast and colour. Auto: sources marked HDR or Dolby Vision.",
                     combo(com.lagradost.cloudstream3.linux.Picture.modes.map { it.first }, Settings.hdrFix, { com.lagradost.cloudstream3.linux.Picture.modeName(it) }) { Settings.hdrFix = it }),
             ),
@@ -790,6 +793,29 @@ class SettingsPage : StackPane(), Refreshable {
         return hbox(16.0, tile, info, side).apply { styleClass += "hub-card"; alignment = javafx.geometry.Pos.TOP_LEFT }
     }
 
+    /** WeTrakr sync: connect with a code, then what's watched here is marked watched there. */
+    private fun wetrakr(): List<Node> = listOf(
+        label("Each profile connects its own WeTrakr account. Only a sign-in token is kept on this computer, never a password.", "muted").apply { isWrapText = true; maxWidth = 860.0 },
+            hubCard(label("WT"), "linear-gradient(to bottom right, #f43f5e, #7c3aed)", "WeTrakr sync",
+                "WeTrakr (wetrakr.com) is a free tracker for movies, shows and anime. Connected, what you watch here shows as now " +
+                    "watching there and is marked watched once you've seen 80% of it. Each profile connects its own account.",
+                listOf(when {
+                    !com.lagradost.cloudstream3.linux.WeTrakr.available -> label("Not available in this build yet", "status-warn")
+                    com.lagradost.cloudstream3.linux.WeTrakr.connected -> label("✓ Connected", "status-ok")
+                    else -> label("Not connected", "status-warn")
+                }),
+                when {
+                    !com.lagradost.cloudstream3.linux.WeTrakr.available -> emptyList()
+                    com.lagradost.cloudstream3.linux.WeTrakr.connected -> listOf(
+                        Switch(com.lagradost.cloudstream3.linux.WeTrakr.shareNowPlaying) { com.lagradost.cloudstream3.linux.WeTrakr.shareNowPlaying = it }
+                            .tooltip("Show what I'm watching on WeTrakr (off: only mark titles watched when they finish)"),
+                        button("Disconnect", null, "btn-ghost", "btn-small") { com.lagradost.cloudstream3.linux.WeTrakr.disconnect(); open("wetrakr") })
+                    else -> listOf(button("Connect WeTrakr", Icons.CHEVRON_RIGHT, "btn-accent", "btn-small") {
+                        WeTrakrWindow.connect(Nav.window.stage) { open("wetrakr") }
+                    })
+                }),
+    )
+
     private fun metadata(): List<Node> {
         val tmdbStatus = when {
             Metadata.tmdbKey.isBlank() -> label("Add your free API key", "status-warn")
@@ -921,7 +947,33 @@ class SettingsPage : StackPane(), Refreshable {
         }
         val tabs = ChipGroup { i -> kind = kinds[i].first; layoutFields() }.apply { setItems(kinds.map { it.second }, 1) }
         layoutFields()
-        val form = VBox(12.0, tabs, row, extra, status).apply { styleClass += "card"; pad(16.0, 18.0) }
+        // iptv-org's whole list (10,000+ channels) is mostly region-locked elsewhere: say so, and offer one country.
+        val indexHint = label("That's iptv-org's whole list: 10,000+ channels from every country, and many play only in their own country " +
+            "or have stopped. Live TV opens on your country's channels from it, or add just one country below (smaller and quicker).", "muted").apply {
+            isWrapText = true; isVisible = false; isManaged = false
+        }
+        url.textProperty().addListener { _, _, t -> indexHint.isVisible = kind == LiveTv.Kind.M3U && LiveTv.isIptvOrgIndex(t.orEmpty()); indexHint.isManaged = indexHint.isVisible }
+        val allCountries = java.util.Locale.getISOCountries().map { it to LiveTv.countryName(it) }.sortedBy { it.second }
+        val home = LiveTv.homeCountry
+        val countryPick = javafx.scene.control.ComboBox<Pair<String, String>>().apply {
+            items.setAll(listOf(home to LiveTv.countryName(home) + " · your country") + allCountries)
+            selectionModel.select(0)
+            converter = object : javafx.util.StringConverter<Pair<String, String>>() {
+                override fun toString(p: Pair<String, String>?) = p?.second.orEmpty()
+                override fun fromString(s: String?) = null
+            }
+        }
+        val addCountry = button("Add its channels", Icons.ADD, "btn-ghost") {
+            val code = countryPick.value?.first ?: home
+            runAdd {
+                val (source, count) = LiveTv.add(LiveTv.Kind.M3U, LiveTv.iptvOrgCountryUrl(code), "${LiveTv.countryName(code)} (iptv-org)")
+                "Added ${source.name}: $count channels. They're in Live TV."
+            }
+        }
+        val byCountry = VBox(10.0, label("From iptv-org, the open list of publicly available channels, one country at a time. Region-locked channels " +
+            "from your own country play; channels with broken links are hidden by the automatic check.", "muted").apply { isWrapText = true },
+            hbox(10.0, countryPick, addCountry)).apply { styleClass += "card"; pad(16.0, 18.0) }
+        val form = VBox(12.0, tabs, row, extra, indexHint, status).apply { styleClass += "card"; pad(16.0, 18.0) }
         val sources = LiveTv.sources()
         val list = VBox().apply {
             styleClass += "card"; pad(4.0, 18.0)
@@ -945,8 +997,29 @@ class SettingsPage : StackPane(), Refreshable {
             label("Sources added here appear only in Live TV, never on Home or in Search. Works with Stremio and Nuvio TV add-ons, " +
                 "M3U playlists with optional XMLTV TV guides (by address or as a file), and Xtream Codes logins from IPTV providers.", "muted").apply { isWrapText = true; maxWidth = 860.0 },
             vbox(10.0, label("ADD A SOURCE", "section-label"), form),
+            vbox(10.0, label("FREE CHANNELS BY COUNTRY", "section-label"), byCountry),
             vbox(10.0, label("YOUR LIVE TV SOURCES", "section-label"), list),
             section("Options",
+                row("Check channels automatically", "When Live TV opens, the channels showing are tested in the background (each once a day) and " +
+                    "ones with broken links are hidden. A channel whose stream works but won't play is reported as a problem in the app instead.",
+                    Switch(LiveTv.autoCheck) { LiveTv.autoCheck = it }),
+                row("Hide channels that don't work", "Broken links found by the check, or that failed to play.",
+                    Switch(LiveTv.hideNotWorking) { LiveTv.hideNotWorking = it }),
+                row("Hide region-locked channels", "Channels marked as playing only in their own country are left out, except ones from your country.",
+                    Switch(LiveTv.hideRegionLocked) { LiveTv.hideRegionLocked = it }),
+                row("Your country", "For region-locked channels and the country Live TV opens on. From your system's region unless you pick one.",
+                    javafx.scene.control.ComboBox<Pair<String, String>>().apply {
+                        items.setAll(allCountries)
+                        selectionModel.select(allCountries.indexOfFirst { it.first == home }.coerceAtLeast(0))
+                        converter = object : javafx.util.StringConverter<Pair<String, String>>() {
+                            override fun toString(p: Pair<String, String>?) = p?.second.orEmpty()
+                            override fun fromString(s: String?) = null
+                        }
+                        valueProperty().addListener { _, _, v -> v?.let { LiveTv.homeCountry = it.first } }
+                    }),
+                row("Play channels with an expired certificate", "Many public channels' servers let their security certificate run out. When one " +
+                    "fails for that reason it's tried again accepting it, if the certificate is otherwise genuine (right address, trusted issuer). Only for Live TV streams.",
+                    Switch(LiveTv.allowExpired) { LiveTv.allowExpired = it }),
                 row("Refresh playlists every day", "Download channel lists again when they're more than a day old. Guides refresh every 12 hours.",
                     Switch(LiveTv.refreshDaily) { LiveTv.refreshDaily = it }),
                 row("Allow Live TV in kids profiles", "Kids then see only channels in children's groups (Kids, Cartoons, Animation, Family…).",
@@ -966,6 +1039,9 @@ class SettingsPage : StackPane(), Refreshable {
                 label("v${AppInfo.VERSION}", "tag", "accent")),
             row("Created by", AppInfo.CREDIT, label("", "muted")),
             row("Built on", "The upstream CloudStream library, libVLC through vlcj (player), JavaFX. Online subtitles: OpenSubtitles via the Stremio addon protocol.", label("", "muted")),
+            row("Report a glitch or problem", "Opens a short form, then GitHub's new-issue page with your version, system, last steps and the app's recent errors filled in (needs a GitHub account). " +
+                "To include a picture of a page, press ${if (com.lagradost.cloudstream3.linux.Os.isMac) "⌘⇧R" else "F12"} there, or choose Report a glitch in the profile menu.",
+                button("Report", Icons.BUG, "btn-ghost", "btn-small") { GlitchWindow.reportWithoutPicture(Nav.window.stage) }),
         ),
         section("Updates",
             row("Check for updates", "Looks for a newer release on GitHub.", updateButton()),
@@ -998,9 +1074,9 @@ class SettingsPage : StackPane(), Refreshable {
     /** Every shortcut in one searchable list. */
     private fun shortcuts(): List<Node> {
         val all = listOf(
-            Triple("Anywhere", "/  or  Ctrl+F", "Search"),
-            Triple("Anywhere", "Esc  or  Alt+←", "Back / close"),
-            Triple("Anywhere", "F11", "Full screen"),
+            Triple("Anywhere", "/  or  ${Os.shortcutKey}F", "Search"),
+            Triple("Anywhere", if (Os.isMac) "Esc  or  ⌘[" else "Esc  or  Alt+←", "Back / close"),
+            Triple("Anywhere", if (Os.isMac) "⌃⌘F  or  F11" else "F11", "Full screen"),
             Triple("Player", "Space  or  K", "Play / pause"),
             Triple("Player", "←  /  →  (J / L)", "Seek 10 seconds"),
             Triple("Player", "Shift + ←  /  →", "Seek 1 minute"),

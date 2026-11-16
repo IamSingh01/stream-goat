@@ -49,6 +49,25 @@ with its own Java and **VLC included**: nothing else to install. 64-bit Windows 
 
 ---
 
+## macOS (Apple Silicon)
+
+For Macs with an M1, M2, M3 or M4 chip (Apple menu → **About This Mac** shows "Chip: Apple M…"), macOS 12 or newer.
+
+1. Download `streamgoat-macos-arm64-<version>.dmg` from the
+   [latest release](https://github.com/sherazi5110/stream-goat/releases/latest).
+2. Open it and drag **Stream Goat** onto **Applications**.
+3. Open Stream Goat from Applications or Launchpad. The first time, macOS says *"Apple could not verify Stream Goat is
+   free of malware"*, because the app isn't registered with Apple (that costs $99 a year). Click **Done**.
+4. Open **System Settings → Privacy & Security**, scroll down to *"Stream Goat was blocked…"* and click
+   **Open Anyway**, then confirm with your password or Touch ID. From then on it opens normally.
+
+Java and VLC are inside the app; nothing else to install. Your data (settings, extensions, library) is in
+`~/Library/Application Support/Stream Goat`, and downloads go to `~/Downloads/Stream Goat`. To update, drag the new
+version into Applications and choose **Replace**; your data stays.
+
+Shortcuts: **⌘F** or **/** search, **Esc** or **⌘[** back, **⌃⌘F** or **F11** full screen, **⌘Q** quit.
+Intel Macs aren't supported yet; the [web version](https://sherazi5110.github.io/stream-goat/app/) works in Safari.
+
 ## Ubuntu, Debian, Linux Mint, Pop!_OS, Zorin, elementary OS, ChromeOS (Linux)
 
 ### Install

@@ -559,20 +559,29 @@
 
 /* ================= v6 shell: icon rail, top bar, popovers ================= */
 .rail {
-    -fx-background-color: -cs-rail;
-    -fx-border-color: transparent -cs-line transparent transparent;
+    -fx-background-color: transparent;
     -fx-padding: 16 0 16 0;
-    -fx-min-width: 76; -fx-pref-width: 76; -fx-max-width: 76;
+    -fx-min-width: 84; -fx-pref-width: 84; -fx-max-width: 84;
 }
+/* The tabs' vertical pill: a dark capsule with a faint edge; the chosen tab is a lighter circle inside. */
+.rail-pill {
+    -fx-background-color: rgba(22,22,27,0.94);
+    -fx-background-radius: 30;
+    -fx-border-color: rgba(255,255,255,0.10); -fx-border-radius: 30; -fx-border-width: 1;
+    -fx-padding: 6;
+    -fx-max-width: 60;
+    -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.45), 16, 0.1, 0, 4);
+}
+.rail-divider { -fx-min-height: 1; -fx-max-height: 1; -fx-min-width: 22; -fx-max-width: 22; -fx-background-color: rgba(255,255,255,0.18); }
 .rail-item {
     -fx-min-width: 46; -fx-min-height: 46; -fx-max-width: 46; -fx-max-height: 46;
-    -fx-background-radius: 14;
+    -fx-background-radius: 23;
     -fx-cursor: hand;
 }
 .rail-item .icon { -fx-background-color: -cs-faint; }
-.rail-item:hover { -fx-background-color: -cs-chip; }
+.rail-item:hover { -fx-background-color: rgba(255,255,255,0.08); }
 .rail-item:hover .icon { -fx-background-color: -cs-text; }
-.rail-item.active { -fx-background-color: -cs-accent-soft; }
+.rail-item.active { -fx-background-color: rgba(255,255,255,0.14); }
 .rail-item.active .icon { -fx-background-color: -cs-accent; }
 .rail-logo { -fx-cursor: hand; -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.4), 10, 0.1, 0, 3); }
 .rail-avatar { -fx-cursor: hand; -fx-padding: 10 0 0 0; }
@@ -705,7 +714,8 @@
 .addon-logo { -fx-background-color: -cs-surface-3; -fx-background-radius: 12; }
 
 /* glass versions */
-.glass .rail { -fx-background-color: rgba(255,255,255,0.06); -fx-border-color: transparent rgba(255,255,255,0.12) transparent transparent; }
+.glass .rail { -fx-background-color: transparent; }
+.glass .rail-pill { -fx-background-color: rgba(255,255,255,0.08); }
 .glass .topbar.solid { -fx-background-color: rgba(18,12,40,0.78); -fx-border-color: transparent transparent rgba(255,255,255,0.14) transparent; }
 .glass .popover { -fx-background-color: linear-gradient(to bottom, rgba(44,36,88,0.95), rgba(22,16,48,0.96)); -fx-border-color: rgba(255,255,255,0.22); }
 .glass .hero-full { -fx-background-color: transparent; }
@@ -817,3 +827,40 @@
 .suggest-row { -fx-padding: 9 12 9 12; -fx-background-radius: 10; -fx-cursor: hand; }
 .suggest-row.on, .suggest-row:hover { -fx-background-color: -cs-surface-3; }
 .suggest-text { -fx-text-fill: -cs-text; -fx-font-size: 14px; }
+
+/* ================= Report a glitch (its own small window) ================= */
+.glitch-window { -fx-background-color: -cs-surface; }
+.glitch-window .check-box { -fx-text-fill: -cs-muted; }
+.glitch-window .check-box .box { -fx-background-color: -cs-surface-3; -fx-background-radius: 4; }
+.glitch-window .check-box:selected .mark { -fx-background-color: white; }
+.glitch-window .check-box:selected .box { -fx-background-color: -cs-accent; }
+.glitch-shot { -fx-background-color: -cs-bg; -fx-background-radius: 8; -fx-padding: 6; }
+.glitch-details { -fx-font-family: "monospace"; -fx-font-size: 11px; }
+.glitch-details .content, .glitch-text .content { -fx-background-color: -cs-surface-2; }
+.splash-credit { -fx-text-fill: rgba(255,255,255,0.75); -fx-font-size: 14px; -fx-font-weight: bold; }
+
+/* ---------- liquid glass, lens cues (after Liquid-Glass-Android / liquidglass.js) ----------
+   Two rims like a curved lens: the outer edge lit from the top-left, a faint inner wall lit
+   from the bottom-right; panels that hold text (menus, popups, dialogs) stay dark enough to read. */
+.glass .card, .glass .sheet, .glass .ext-card, .glass .provider-card, .glass .dock, .glass .popover,
+.glass .glitch-window, .glass .toast {
+    -fx-border-color:
+        linear-gradient(to bottom right, rgba(255,255,255,0.55), rgba(255,255,255,0.08) 35%, rgba(255,255,255,0.04) 65%, rgba(255,255,255,0.22)),
+        linear-gradient(to top left, rgba(255,255,255,0.14), transparent 40%);
+    -fx-border-width: 1, 1;
+    -fx-border-insets: 0, 1;
+}
+.glass .context-menu, .glass .menu-item, .glass .tooltip, .glass .combo-box-popup .list-view, .glass .dialog-pane {
+    -fx-background-color: linear-gradient(to bottom, rgba(36,28,72,0.97), rgba(18,13,40,0.98));
+}
+.glass .context-menu, .glass .tooltip {
+    -fx-border-color: linear-gradient(to bottom right, rgba(255,255,255,0.45), rgba(255,255,255,0.06) 40%, rgba(255,255,255,0.16));
+    -fx-background-radius: 14; -fx-border-radius: 14;
+    -fx-effect: dropshadow(gaussian, rgba(4,2,20,0.55), 24, 0.15, 0, 8);
+}
+.glass .popover, .glass .sheet { -fx-text-fill: white; }
+/* The top bar over scrolled content fades out instead of ending in a hard line. */
+.glass .topbar.solid {
+    -fx-background-color: linear-gradient(to bottom, rgba(14,10,32,0.92), rgba(14,10,32,0.70) 70%, rgba(14,10,32,0.0));
+    -fx-border-color: transparent;
+}

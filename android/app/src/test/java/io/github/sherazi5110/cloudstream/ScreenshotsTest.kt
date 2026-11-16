@@ -380,3 +380,67 @@ class RecentSearchesTest {
         }
     }
 }
+
+/** The sources panel on a tablet: whole names, search and language/quality chips. */
+class SourcesPanelTest {
+    @get:Rule
+    val paparazzi = Paparazzi(deviceConfig = DeviceConfig.NEXUS_10.copy(orientation = com.android.resources.ScreenOrientation.LANDSCAPE), maxPercentDifference = 0.1)
+
+    @Before
+    fun setUp() {
+        App::class.java.getDeclaredField("context").apply { isAccessible = true }.set(App, paparazzi.context)
+        ThemeState.load()
+    }
+
+    @Test
+    fun sources() {
+        val links = kotlinx.coroutines.runBlocking {
+            listOf(
+                "🐧 PenguPlay 🧊 1080p • 2Peckle · 🍿 A Dog's Perfect Christmas (2026) 🎞 1080p WEB-DL [Hindi DD5.1 + English] Dual Audio x264",
+                "🐧 PenguPlay 🧊 1080p • 4KHDHub · R2 · 🍿 A Dog's Perfect Christmas (2026) 🎞 1080p NF WEB-DL English DDP5.1 HEVC",
+                "🐧 PenguPlay 🧊 1080p • Cinejoy · Lisbon · 🍿 A Dog's Perfect Christmas (2026) Hindi 720p HDRip",
+                "🐧 PenguPlay 🧊 1080p • Obejrzyj · 🍿 O psie, który uratował święta 🎞 1080p • Polski lektor",
+                "🐧 PenguPlay 🧊 2160p • VegaMovies · FSL · 🍿 A Dog's Perfect Christmas (2026) 4K HDR Multi Audio [Hindi + Tamil + Telugu + English]",
+            ).mapIndexed { i, name ->
+                com.lagradost.cloudstream3.utils.newExtractorLink("PenguPlay", name, "https://example.com/$i.m3u8",
+                    if (i % 2 == 0) com.lagradost.cloudstream3.utils.ExtractorLinkType.M3U8 else com.lagradost.cloudstream3.utils.ExtractorLinkType.VIDEO) {
+                    quality = if (i == 4) 2160 else 1080
+                }
+            }
+        }
+        paparazzi.snapshot("sources-panel") {
+            CloudStreamTheme {
+                androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.background(androidx.compose.ui.graphics.Color(0xFF101018))) {
+                    io.github.sherazi5110.cloudstream.ui.SourcesPanel(links, links[1].url, searching = true, onPick = {}, onClose = {})
+                }
+            }
+        }
+    }
+}
+
+/** The Extensions page's header: the two kinds as a switch, the buttons apart from it. */
+class ExtensionsPageTest {
+    @get:Rule
+    val paparazzi = Paparazzi(deviceConfig = DeviceConfig.NEXUS_10.copy(orientation = com.android.resources.ScreenOrientation.LANDSCAPE), maxPercentDifference = 0.1)
+
+    @Before
+    fun setUp() {
+        App::class.java.getDeclaredField("context").apply { isAccessible = true }.set(App, paparazzi.context)
+        ThemeState.load()
+    }
+
+    @Test
+    fun extensions() {
+        paparazzi.snapshot("extensions-page") {
+            // The file picker needs an activity's result registry; a do-nothing one is enough for a picture.
+            val registry = object : androidx.activity.result.ActivityResultRegistry() {
+                override fun <I, O> onLaunch(requestCode: Int, contract: androidx.activity.result.contract.ActivityResultContract<I, O>, input: I,
+                                             options: androidx.core.app.ActivityOptionsCompat?) = Unit
+            }
+            val owner = object : androidx.activity.result.ActivityResultRegistryOwner { override val activityResultRegistry = registry }
+            androidx.compose.runtime.CompositionLocalProvider(androidx.activity.compose.LocalActivityResultRegistryOwner provides owner) {
+                CloudStreamTheme { io.github.sherazi5110.cloudstream.ui.ExtensionsScreen() }
+            }
+        }
+    }
+}

@@ -76,6 +76,9 @@ class BuiltinPlayer(
     private var current: ExtractorLink,
 ) : StackPane(), ActivePlayer, PlayerKeys {
     private val all = Engine.playables(response)
+    /** A Live TV channel's key in its list (for "Hide not working"). */
+    private val channelKey: String? = if (api is com.lagradost.cloudstream3.linux.LiveApi)
+        runCatching { org.json.JSONObject(response.url).optString("key").ifBlank { null } }.getOrNull() else null
     private val next = all.getOrNull(all.indexOfFirst { it.data == playable.data } + 1)?.takeIf { it.dub == playable.dub }
     private val title = Playback.title(response, playable, all.size)
     private val video = VideoView()
@@ -233,12 +236,16 @@ class BuiltinPlayer(
             play()
         }
         current = link
+        com.lagradost.cloudstream3.linux.Glitch.screen = "Player: $title (${api.name})"
+        com.lagradost.cloudstream3.linux.Glitch.playing = "$title (${api.name}), source ${link.name} [${link.type}] from " +
+            (runCatching { java.net.URI(link.url).host }.getOrNull() ?: "?")
         spinner.isVisible = true
         val quality = Qualities.getStringByInt(link.quality)
         sourceChip.text = if (quality.isBlank() || link.name.contains(quality, true)) link.name else "${link.name} · $quality"
         val (url, options) = mrl(link)
         val opts = options.toMutableList()
-        enhancing = enhanceOverride ?: Picture.enhance(response, link)
+        // macOS: VLC's Mac build doesn't sharpen when it upscales (measured: slightly softer), so it's left off there.
+        enhancing = !com.lagradost.cloudstream3.linux.Os.isMac && (enhanceOverride ?: Picture.enhance(response, link))
         video.upscale = enhancing
         video.hdrFix = hdrOverride ?: Picture.hdrFix(link)
         // Seeking with :start-time works for files and HLS alike, before the first frame.
@@ -255,7 +262,7 @@ class BuiltinPlayer(
 
     /** libVLC sends only User-Agent and Referer; anything else goes through the local proxy. */
     private fun mrl(link: ExtractorLink): Pair<String, List<String>> {
-        val url = (link as? ExtractorLinkPlayList)?.playlist?.firstOrNull()?.url ?: link.url
+        val url = ((link as? ExtractorLinkPlayList)?.playlist?.firstOrNull()?.url ?: link.url).removeSuffix(com.lagradost.cloudstream3.linux.LiveApi.EXPIRED_MARK)
         val headers = link.getAllHeaders()
         val referer = headers.entries.firstOrNull { it.key.equals("referer", true) }?.value
         val ua = headers.entries.firstOrNull { it.key.equals("user-agent", true) }?.value ?: USER_AGENT
@@ -267,15 +274,19 @@ class BuiltinPlayer(
             link.audioTracks.forEach { add(":input-slave=${it.url}") }
         }
         val isHttp = url.startsWith("http://") || url.startsWith("https://")
-        if (isHttp && other.isNotEmpty()) {
+        // A Live TV server with an expired (but genuine) certificate: through the local proxy, which accepts it.
+        val expiredOk = link.name == com.lagradost.cloudstream3.linux.LiveApi.EXPIRED
+        if (isHttp && (other.isNotEmpty() || expiredOk)) {
             val all = buildMap { putAll(other); put("User-Agent", ua); referer?.let { put("Referer", it) } }
-            return StreamProxy.wrap(url, all) to options
+            return StreamProxy.wrap(url, all, expiredOk) to options
         }
         return url to options
     }
 
     override fun quit(then: (() -> Unit)?) {
         if (finished) return
+        com.lagradost.cloudstream3.linux.Glitch.playing = null
+        com.lagradost.cloudstream3.linux.Glitch.step("Closed the player")
         leaving = then
         finish()
     }
@@ -284,6 +295,7 @@ class BuiltinPlayer(
         if (finished) return
         finished = true
         record()
+        if (duration > 0) trakr?.stopped(percent())
         hideTimer.stop()
         onlineJob?.cancel()
         sources.cancel()
@@ -307,6 +319,11 @@ class BuiltinPlayer(
         }
     }
 
+    /** WeTrakr sync for this playback (movies and episodes; not Live TV). */
+    private val trakr = if (api is com.lagradost.cloudstream3.linux.LiveApi || response.type == com.lagradost.cloudstream3.TvType.Live) null
+        else com.lagradost.cloudstream3.linux.WeTrakr.Session(response, playable.season, playable.episode)
+    private fun percent(): Double = if (duration > 0) position * 100.0 / duration else 0.0
+
     private fun record() {
         // Live channels have no resume point and don't belong in Continue Watching.
         if (duration <= 0 || position < 5000 || response.type == com.lagradost.cloudstream3.TvType.Live) return
@@ -321,6 +338,7 @@ class BuiltinPlayer(
         override fun playing(mediaPlayer: MediaPlayer) = fx {
             // Next time (Continue Watching, Resume) this title starts with the same source.
             if (api !is com.lagradost.cloudstream3.linux.LiveApi) com.lagradost.cloudstream3.linux.LastSource.remember(api.name, response.url, current)
+            channelKey?.let { com.lagradost.cloudstream3.linux.LiveTv.markWorking(it) }
             playing = true
             spinner.isVisible = false
             playButton.graphic = icon(Icons.PAUSE, 22.0)
@@ -328,10 +346,12 @@ class BuiltinPlayer(
             applyEqualizer(Settings.playerEqualizer)
             pickAudioLanguage()
             scheduleHide()
+            trakr?.playing(percent())
         }
 
         override fun paused(mediaPlayer: MediaPlayer) = fx {
             playing = false
+            trakr?.paused(percent())
             playButton.graphic = icon(Icons.PLAY, 22.0)
             showControls()
         }
@@ -345,7 +365,7 @@ class BuiltinPlayer(
             if (!seek.dragging) seek.set(newTime, duration)
             timeLabel.text = format(newTime)
             updateClock()
-            if (duration > 0 && abs(newTime - saved) >= 10_000) { saved = newTime; record() }
+            if (duration > 0 && abs(newTime - saved) >= 10_000) { saved = newTime; record(); trakr?.tick(percent()) }
             if (newTime > 0) spinner.isVisible = false
             updateSkip(newTime)
             updateCountdown(newTime)
@@ -402,7 +422,21 @@ class BuiltinPlayer(
                 val first = sources.ranked().firstOrNull { it.name != com.lagradost.cloudstream3.linux.LiveApi.PLAIN } ?: current
                 val plainTried = failed.any { it.startsWith("http://") } && first.url.startsWith("https://")
                 finish()
-                ui.launch { Toasts.show(com.lagradost.cloudstream3.linux.LiveTv.failureMessage(response.name, first.url, first.getAllHeaders(), plainTried), null, 12.0) }
+                ui.launch {
+                    val why = com.lagradost.cloudstream3.linux.LiveTv.diagnose(first.url, first.getAllHeaders())
+                    if (why == null) {
+                        // The stream answers like a stream, yet the player couldn't play it: likely the app's fault, not the link's.
+                        val details = "Live TV channel that answers but doesn't play\nChannel: ${response.name}\nAddress: ${first.url.take(300)}\n" +
+                            (if (first.getAllHeaders().isNotEmpty()) "Headers sent: ${first.getAllHeaders().keys.joinToString()}\n" else "") +
+                            "Addresses tried: ${failed.size}"
+                        Toasts.show("${response.name}'s stream is online, but the player couldn't play it. This looks like a problem in Stream Goat, not the channel.",
+                            "Report to the developer" to { GlitchWindow.reportProblem(Nav.window.stage, details) }, 15.0)
+                    } else {
+                        Toasts.show(com.lagradost.cloudstream3.linux.LiveTv.failureMessage(response.name, first.url, first.getAllHeaders(), plainTried), null, 12.0)
+                        // A broken link: "Hide not working" then leaves it out of the list too.
+                        channelKey?.let { com.lagradost.cloudstream3.linux.LiveTv.markNotWorking(it, why) }
+                    }
+                }
             }
             // Every remembered source failed (the 20-minute cache): they've probably expired, so look again, once.
             sources.fromCache && !sources.refreshed -> {
@@ -572,11 +606,11 @@ class BuiltinPlayer(
     internal fun showZoom() {
         val items = Zoom.entries.map { z ->
             PlayerMenu.Item(z.label, active = video.zoom == z) { setZoom(z); menu.close() }
-        } + listOf(
+        } + listOfNotNull(
             PlayerMenu.Item("Anime enhance (E)", hint = enhanceStatus(), active = enhancing, keepOpen = true) {
                 toggleEnhance()
                 showZoom()
-            },
+            }.takeIf { !com.lagradost.cloudstream3.linux.Os.isMac },
             PlayerMenu.Item("HDR colour fix", hint = if (video.hdrFix) "on" else if (Picture.looksHdr(current)) "off (source is HDR)" else "off", active = video.hdrFix, keepOpen = true) {
                 hdrOverride = !video.hdrFix
                 video.hdrFix = !video.hdrFix
@@ -908,7 +942,7 @@ class BuiltinPlayer(
             KeyCode.A -> showAudio()
             // Z: the Picture menu (zoom, anime enhance, HDR); Shift+Z cycles the zoom; E: anime enhance on/off.
             KeyCode.Z -> if (e.isShiftDown) cycleZoom() else showZoom()
-            KeyCode.E -> toggleEnhance()
+            KeyCode.E -> if (!com.lagradost.cloudstream3.linux.Os.isMac) toggleEnhance()
             KeyCode.N -> playNext()
             KeyCode.G -> subDelay(-100)
             KeyCode.H -> subDelay(100)
@@ -968,7 +1002,7 @@ class BuiltinPlayer(
 
         /** VLC names tracks "Track 1 - [English]"; show "English" (or "Track 1"). */
         fun cleanTrack(description: String): String {
-            val inBrackets = Regex("\\[([^]]+)]").find(description)?.groupValues?.get(1)
+            val inBrackets = Regex("\\[([^\\]]+)]").find(description)?.groupValues?.get(1)
             val base = description.substringBefore(" - [").trim()
             return when {
                 inBrackets != null && base.startsWith("Track") -> inBrackets

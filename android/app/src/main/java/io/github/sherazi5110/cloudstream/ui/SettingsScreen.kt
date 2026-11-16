@@ -1,11 +1,14 @@
 package io.github.sherazi5110.cloudstream.ui
 
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
@@ -24,6 +27,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Extension
@@ -77,6 +81,7 @@ enum class Section(val title: String, val text: String, val icon: ImageVector) {
     APPEARANCE("Appearance", "Theme, accent colour, layout", Icons.Filled.Palette),
     PLAYER("Player", "Sources, quality, subtitles, audio", Icons.Filled.PlayCircle),
     LIVETV("Live TV", "M3U playlists, Xtream Codes, guides", Icons.Filled.LiveTv),
+    WETRAKR("WeTrakr sync", "Mark what you watch on WeTrakr", Icons.Filled.Sync),
     METADATA("Metadata & integrations", "TMDB, IMDb ratings, AniList", Icons.Filled.Star),
     NETWORK("Network", "DNS over HTTPS, cookies", Icons.Filled.Public),
     ABOUT("About", "Version, source code", Icons.Filled.Info),
@@ -89,7 +94,7 @@ fun SettingsScreen() {
     val wide = isWide
     Row(Modifier.fillMaxSize().statusBarsPadding()) {
         Column(Modifier.then(if (wide) Modifier.width(300.dp) else Modifier.fillMaxWidth()).fillMaxHeight()
-            .verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            .verticalScroll(rememberScrollState()).padding(16.dp).padding(bottom = LocalBottomInset.current), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 12.dp)) {
                 Text("Settings", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
                 if (!wide) ProfileButton(32.dp)
@@ -140,6 +145,7 @@ private fun SectionContent(s: Section) {
         Section.APPEARANCE -> AppearanceSection()
         Section.PLAYER -> PlayerSection()
         Section.LIVETV -> LiveTvSection()
+        Section.WETRAKR -> WeTrakrSection()
         Section.METADATA -> MetadataSection()
         Section.NETWORK -> NetworkSection()
         Section.ABOUT -> AboutSection()
@@ -211,17 +217,17 @@ private fun AppearanceSection() {
         }
     }
     Heading("Logo")
-    // The circle behind the goat (and its inner ears): the artwork's rainbow, or the accent colour.
+    // The goat: a rainbow, or the accent colour.
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         listOf(true to "Rainbow", false to "Theme colour").forEach { (rainbow, name) ->
             val on = ThemeState.logoRainbow == rainbow
-            val accent = Palette.accent.toArgb()
-            val preview = remember(rainbow, accent) { runCatching { GoatArt.logo(160, rainbow, accent).asImageBitmap() }.getOrNull() }
             Column(Modifier.card(RoundedCornerShape(14.dp)) { ThemeState.changeLogo(rainbow) }
                 .background(if (on) Palette.accent.copy(alpha = 0.22f) else Palette.surfaceHigh, RoundedCornerShape(14.dp))
                 .then(if (on) Modifier.border(2.dp, Palette.accent, RoundedCornerShape(14.dp)) else Modifier)
                 .padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                preview?.let { androidx.compose.foundation.Image(it, null, Modifier.size(64.dp)) }
+                Box(Modifier.size(64.dp).background(Color.Black, RoundedCornerShape(15.dp)), contentAlignment = Alignment.Center) {
+                    GoatMark(Modifier.size(46.dp), rainbow = rainbow)
+                }
                 Text(name, style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 6.dp))
             }
         }
@@ -243,8 +249,14 @@ private fun AppearanceSection() {
 
 @Composable
 private fun PlayerSection() {
+    Heading("When you press Play")
     var autoPlay by remember { mutableStateOf(Settings.autoPlay) }
-    SwitchRow("Start the best source automatically", "Otherwise you pick from the list.", autoPlay) { autoPlay = it; Settings.autoPlay = it }
+    ChoiceChips(listOf(true, false), { if (it) "Start the best source automatically" else "Let me choose the source" }, { it == autoPlay }) {
+        autoPlay = it; Settings.autoPlay = it
+    }
+    Hint(if (autoPlay) "The best source (closest to your preferred quality) starts by itself; Sources in the player lists the others."
+        else "The sources list opens, with a search box and language and quality filters: pick the one you want.")
+    Heading("Playback")
     var next by remember { mutableStateOf(Settings.autoPlayNext) }
     SwitchRow("Play the next episode automatically", "Counts down from the credits; Cancel stays on this episode", next) { next = it; Settings.autoPlayNext = it }
     var skipBtns by remember { mutableStateOf(Settings.skipButtons) }
@@ -266,14 +278,39 @@ private fun PlayerSection() {
     Heading("Wait for sources")
     var timeout by remember { mutableStateOf(Settings.sourcesTimeoutSeconds) }
     ChoiceChips(listOf(30, 60, 90, 120), { "$it s" }, { it == timeout }) { timeout = it; Settings.sourcesTimeoutSeconds = it }
-    Heading("Languages")
-    var subs by remember { mutableStateOf(Settings.subtitleLanguage) }
-    OutlinedTextField(subs, { subs = it; Settings.subtitleLanguage = it.trim() }, singleLine = true, modifier = Modifier.fillMaxWidth(),
-        label = { Text("Subtitles to turn on, e.g. en or ar,en") })
+    Heading("Audio language")
     var audio by remember { mutableStateOf(Settings.audioLanguage) }
+    LanguageChips(audio) { audio = it; Settings.audioLanguage = it }
     OutlinedTextField(audio, { audio = it; Settings.audioLanguage = it }, singleLine = true, modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-        label = { Text("Audio to pick, e.g. ja or hi,en") })
-    Hint("Leave empty for the stream's default. Online subtitles (OpenSubtitles, no account) are in the player's Subtitles menu.")
+        label = { Text("Or type codes, in order, e.g. hi,en") })
+    Hint("Sources whose names say this language (\"Hindi\", \"Dual audio [Hindi + English]\") come first, and in a source with several " +
+        "audio tracks this one is picked. Leave empty for the stream's default.")
+    Heading("Subtitles")
+    var subs by remember { mutableStateOf(Settings.subtitleLanguage) }
+    LanguageChips(subs) { subs = it; Settings.subtitleLanguage = it }
+    OutlinedTextField(subs, { subs = it; Settings.subtitleLanguage = it.trim() }, singleLine = true, modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+        label = { Text("Or type codes, in order, e.g. en or ar,en") })
+    Hint("Turned on by themselves when the source has them. Online subtitles (OpenSubtitles, no account) are in the player's Subtitles menu.")
+    Heading("Sound")
+    var level by remember { mutableStateOf(Settings.levelAudio) }
+    SwitchRow("Even out loud and quiet sounds", "Quieter music and explosions, clearer voices: good on TVs and at night. Also in the player's Audio menu.", level) {
+        level = it; Settings.levelAudio = it
+    }
+    Heading("Picture")
+    var rotation by remember { mutableStateOf(Settings.playerOrientation) }
+    if (!isTv) {
+        Text("Rotation", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(bottom = 4.dp))
+        ChoiceChips(listOf("LANDSCAPE", "PORTRAIT", "AUTO"), { mapOf("LANDSCAPE" to "Landscape", "PORTRAIT" to "Portrait", "AUTO" to "As the device is held")[it]!! }, { it == rotation }) {
+            rotation = it; Settings.playerOrientation = it
+        }
+    }
+    var zoomMode by remember { mutableStateOf(Settings.playerZoom) }
+    Text("Picture size", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 8.dp, bottom = 4.dp))
+    ChoiceChips(io.github.sherazi5110.cloudstream.player.Zoom.entries.map { it.name }, { n -> io.github.sherazi5110.cloudstream.player.Zoom.valueOf(n).label }, { it == zoomMode }) {
+        zoomMode = it; Settings.playerZoom = it
+    }
+    Hint("The player's resize button switches between Fit, Fill and Stretch with one tap.")
+    TorrentSettings()
 }
 
 @Composable
@@ -303,6 +340,29 @@ private fun LiveTvSection() {
     var user by remember { mutableStateOf("") }
     var pass by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
+    // A playlist file on the device (downloaded .m3u / .m3u8): copied into the app, so it stays after the original moves.
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val pickFile = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.OpenDocument()) { uri: android.net.Uri? ->
+        uri ?: return@rememberLauncherForActivityResult
+        busy = true
+        scope.launch {
+            val r = withContext(Dispatchers.IO) {
+                runCatching {
+                    val display = context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+                        if (c.moveToFirst()) c.getString(0) else null
+                    } ?: uri.lastPathSegment?.substringAfterLast('/') ?: "playlist.m3u"
+                    val base = display.substringBeforeLast('.').replace(Regex("[^A-Za-z0-9 ._-]"), "_").ifBlank { "playlist" }
+                    val dir = java.io.File(context.filesDir, "livetv-files").apply { mkdirs() }
+                    val file = java.io.File(dir, "$base.m3u")
+                    context.contentResolver.openInputStream(uri)!!.use { input -> file.outputStream().use { input.copyTo(it) } }
+                    LiveTv.add(LiveTv.Kind.M3U, file.toURI().toString(), name.ifBlank { base }, epg)
+                }
+            }
+            busy = false
+            r.onSuccess { (src, n) -> App.toast("${src.name}: $n channels"); name = ""; epg = ""; version++ }
+                .onFailure { App.toast(it.message ?: "Couldn't read that playlist file") }
+        }
+    }
     ChoiceChips(LiveTv.Kind.entries, { it.label }, { it == kind }) { kind = it }
     OutlinedTextField(url, { url = it }, singleLine = true, modifier = Modifier.fillMaxWidth().padding(top = 8.dp), label = {
         Text(when (kind) { LiveTv.Kind.M3U -> "Playlist address (.m3u)"; LiveTv.Kind.XTREAM -> "Server address"; LiveTv.Kind.STREMIO -> "Add-on manifest address" })
@@ -325,13 +385,72 @@ private fun LiveTvSection() {
                     .onFailure { App.toast(it.message ?: "Couldn't add that source") }
             }
         }
+        if (kind == LiveTv.Kind.M3U) PillButton("Choose a file", Icons.Filled.FolderOpen, primary = false, compact = true, modifier = Modifier.padding(start = 10.dp)) {
+            if (!busy) runCatching { pickFile.launch(arrayOf("*/*")) }.onFailure { App.toast("No file picker on this device") }
+        }
         if (busy) Spinner(Modifier.padding(start = 12.dp).size(28.dp))
     }
+    if (kind == LiveTv.Kind.M3U) Hint("Or choose a playlist file (.m3u, .m3u8) saved on this device.")
+    if (kind == LiveTv.Kind.M3U && LiveTv.isIptvOrgIndex(url)) Hint("That's iptv-org's whole list: 10,000+ channels from every country, and many play only in " +
+        "their own country or have stopped. Live TV opens on your country's channels from it, or add just one country below (smaller and quicker).")
+    // iptv-org's free channels, one country at a time (its whole list is too big and mostly region-locked elsewhere).
+    Heading("Free channels by country")
+    var pickCountry by remember { mutableStateOf(LiveTv.homeCountry) }
+    var countryMenu by remember { mutableStateOf(false) }
+    val allCountries = remember {
+        java.util.Locale.getISOCountries().map { it to LiveTv.countryName(it) }.sortedBy { it.second }
+    }
+    Hint("From iptv-org, the open list of publicly available channels. Region-locked channels from your own country play; dead links can be hidden with Check channels on the Live TV page.")
+    Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+        Box {
+            PillButton(LiveTv.countryName(pickCountry) + " ▾", null, primary = false, compact = true) { countryMenu = true }
+            androidx.compose.material3.DropdownMenu(countryMenu, { countryMenu = false }, Modifier.heightIn(max = 420.dp)) {
+                (listOf(LiveTv.homeCountry to LiveTv.countryName(LiveTv.homeCountry) + " · your country") + allCountries).forEach { (code, label) ->
+                    androidx.compose.material3.DropdownMenuItem(text = { Text(label) }, onClick = { pickCountry = code; countryMenu = false })
+                }
+            }
+        }
+        PillButton("Add its channels", Icons.Filled.Add, compact = true, modifier = Modifier.padding(start = 10.dp)) {
+            if (busy) return@PillButton
+            busy = true
+            scope.launch {
+                val r = withContext(Dispatchers.IO) { runCatching { LiveTv.add(LiveTv.Kind.M3U, LiveTv.iptvOrgCountryUrl(pickCountry), "${LiveTv.countryName(pickCountry)} (iptv-org)") } }
+                busy = false
+                r.onSuccess { (src, n) -> App.toast("${src.name}: $n channels"); version++ }
+                    .onFailure { App.toast(it.message ?: "Couldn't load that country's channels") }
+            }
+        }
+    }
     Heading("Options")
+    var home by remember { mutableStateOf(LiveTv.homeCountry) }
+    var homeMenu by remember { mutableStateOf(false) }
+    var hideLocked by remember { mutableStateOf(LiveTv.hideRegionLocked) }
+    var autoCheck by remember { mutableStateOf(LiveTv.autoCheck) }
+    SwitchRow("Check channels automatically", "When Live TV opens, the channels showing are tested in the background (each once a day), " +
+        "and ones with broken links are hidden. A channel whose stream works but won't play is reported as a problem in the app instead.", autoCheck) { autoCheck = it; LiveTv.autoCheck = it }
+    var hideBroken by remember { mutableStateOf(LiveTv.hideNotWorking) }
+    SwitchRow("Hide channels that don't work", "Broken links found by the check, or that failed to play.", hideBroken) { hideBroken = it; LiveTv.hideNotWorking = it }
+    SwitchRow("Hide region-locked channels", "Channels marked as playing only in their own country are left out, except ones from " +
+        "${LiveTv.countryName(home)}.", hideLocked) { hideLocked = it; LiveTv.hideRegionLocked = it }
+    Row(Modifier.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text("Your country", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+        Box {
+            PillButton(LiveTv.countryName(home) + " ▾", null, primary = false, compact = true) { homeMenu = true }
+            androidx.compose.material3.DropdownMenu(homeMenu, { homeMenu = false }, Modifier.heightIn(max = 420.dp)) {
+                allCountries.forEach { (code, label) ->
+                    androidx.compose.material3.DropdownMenuItem(text = { Text(label) }, onClick = { home = code; LiveTv.homeCountry = code; homeMenu = false })
+                }
+            }
+        }
+    }
     var daily by remember { mutableStateOf(LiveTv.refreshDaily) }
     SwitchRow("Refresh channel lists daily", "Otherwise they're kept until you refresh them on the Live TV page.", daily) { daily = it; LiveTv.refreshDaily = it }
     var kids by remember { mutableStateOf(LiveTv.allowKids) }
     SwitchRow("Live TV in kids profiles", "Only channels in children's groups.", kids) { kids = it; LiveTv.allowKids = it }
+    var expired by remember { mutableStateOf(LiveTv.allowExpired) }
+    SwitchRow("Play channels with an expired certificate", "Many public channels' servers let their security certificate run out. " +
+        "When one fails for that reason it's tried again accepting it, if the certificate is otherwise genuine (right address, " +
+        "trusted issuer). Only for Live TV streams.", expired) { expired = it; LiveTv.allowExpired = it }
     var plain by remember { mutableStateOf(LiveTv.retryPlain) }
     SwitchRow("Retry without encryption", "Off by default. When a playlist channel's secure (https) address fails, for example because its " +
         "server's certificate has expired, try the same address over plain http. Never used for Xtream logins. Over plain http someone " +
@@ -408,5 +527,128 @@ private fun AboutSection() {
     PillButton("Source code on GitHub", null, primary = false, compact = true) {
         com.lagradost.cloudstream3.CloudStreamApp.openBrowser("https://github.com/sherazi5110/stream-goat", context.findActivity())
     }
+    // A problem without a crash: GitHub's new-issue page with the device and version filled in (a QR code on TVs).
+    PillButton("Report a glitch or problem", null, primary = false, compact = true, modifier = Modifier.padding(top = 8.dp)) {
+        // From Settings there's no screen to picture: the last steps say where it happened.
+        io.github.sherazi5110.cloudstream.GlitchReport.draft = io.github.sherazi5110.cloudstream.GlitchReport.Draft(
+            "Settings (reported from Settings → About)", io.github.sherazi5110.cloudstream.GlitchReport.steps(), null)
+    }
+    Hint(if (App.isTv) "Tip: to include a picture of a screen, choose Report a glitch in the profile menu (top right) or the player's top bar."
+        else "Tip: to include a picture of a screen, shake the phone there, choose Report a glitch in the profile menu, or tap the bug button in the player.")
+    if (!App.isTv) {
+        var shake by remember { mutableStateOf(io.github.sherazi5110.cloudstream.Settings.shakeToReport) }
+        SwitchRow("Shake to report a glitch", "A firm shake opens Report a glitch with a picture of the screen", shake) {
+            shake = it; io.github.sherazi5110.cloudstream.Settings.shakeToReport = it
+        }
+    }
     Hint("GPL-3.0. Extensions and their content come from third parties; this app hosts nothing.")
+}
+
+/** Settings → Player → Torrents: off until the person has read what it means. */
+@Composable
+private fun TorrentSettings() {
+    Heading("Torrents")
+    var on by remember { mutableStateOf(io.github.sherazi5110.cloudstream.Torrents.enabled) }
+    var asking by remember { mutableStateOf(false) }
+    SwitchRow("Torrent streaming", "Plays torrent sources (Torrentio and other add-ons, magnet links) while they download. Off by default.", on) {
+        if (it) asking = true else { on = false; io.github.sherazi5110.cloudstream.Torrents.enabled = false }
+    }
+    if (on) {
+        var limit by remember { mutableStateOf(io.github.sherazi5110.cloudstream.Torrents.uploadLimitKb) }
+        Text("Upload limit while watching", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 8.dp, bottom = 4.dp))
+        ChoiceChips(listOf(50, 100, 500, 0), { if (it == 0) "No limit" else if (it >= 1000) "${it / 1000} MB/s" else "$it KB/s" }, { it == limit }) {
+            limit = it; io.github.sherazi5110.cloudstream.Torrents.uploadLimitKb = it
+        }
+    }
+    Hint("Faster and private: set Torrentio up with a debrid service (Real-Debrid, AllDebrid, Premiumize, TorBox…) at " +
+        "torrentio.strem.fun/configure and install that link instead. Its streams are then ordinary links, no torrenting on this device.")
+    if (asking) SimpleDialog("Turn on torrent streaming?", { asking = false }, confirm = "I understand, turn it on", onConfirm = {
+        on = true; io.github.sherazi5110.cloudstream.Torrents.enabled = true; asking = false
+    }) {
+        Hint("While a torrent plays, this device downloads it from other people and also uploads parts of it to them; that's " +
+            "how BitTorrent works. Your IP address is visible to everyone sharing the same torrent, and in many countries " +
+            "copyright holders watch torrents for that. Many people use a VPN.")
+        Hint("Only stream what you're allowed to. Uploading is limited (Upload limit, below), and the downloaded file is " +
+            "deleted when you stop watching. A debrid service avoids all this (see below the switch).")
+    }
+}
+
+/** Common languages as chips that add or remove their code in a "hi,en" setting (order kept). */
+@Composable
+private fun LanguageChips(value: String, onChange: (String) -> Unit) {
+    val codes = listOf("en", "hi", "ur", "ta", "te", "ml", "bn", "pa", "ja", "ko", "zh", "es", "fr", "de", "ar", "tr", "pt", "ru", "id")
+    val chosen = value.split(',').map { it.trim().lowercase() }.filter { it.isNotBlank() }
+    androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 6.dp)) {
+        items(codes.size) { i ->
+            val code = codes[i]
+            val on = code in chosen || io.github.sherazi5110.cloudstream.Engine.languageName(code).lowercase() in chosen
+            Text(io.github.sherazi5110.cloudstream.Engine.languageName(code), style = MaterialTheme.typography.labelLarge, modifier = Modifier
+                .card(RoundedCornerShape(50)) { onChange((if (on) chosen.filterNot { it == code } else chosen + code).joinToString(",")) }
+                .background(if (on) Palette.accent else Palette.surfaceHigh, RoundedCornerShape(50))
+                .padding(horizontal = 14.dp, vertical = 8.dp))
+        }
+    }
+}
+
+
+/**
+ * Sync with WeTrakr: a code to enter on wetrakr.com/activate (a QR code on TVs), then what's watched here is
+ * marked watched there. Each profile connects its own account.
+ */
+@Composable
+private fun WeTrakrSection() {
+    val scope = rememberCoroutineScope()
+    var connected by remember { mutableStateOf(io.github.sherazi5110.cloudstream.WeTrakr.connected) }
+    var code by remember { mutableStateOf<io.github.sherazi5110.cloudstream.WeTrakr.DeviceCode?>(null) }
+    var status by remember { mutableStateOf<String?>(null) }
+    var job by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    DisposableEffect(Unit) { onDispose { job?.cancel() } }
+    Hint("WeTrakr (wetrakr.com) is a free tracker for movies, shows and anime. Connected, what you watch here shows as now watching " +
+        "there and is marked watched once you've seen 80% of it. Each profile connects its own account; only a sign-in token is kept on this device.")
+    when {
+        !io.github.sherazi5110.cloudstream.WeTrakr.available -> Hint("Not available in this build yet.")
+        connected -> {
+            Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("✓ Connected to WeTrakr", style = MaterialTheme.typography.titleSmall, color = Palette.accent, modifier = Modifier.weight(1f))
+                PillButton("Disconnect", null, primary = false, compact = true) {
+                    io.github.sherazi5110.cloudstream.WeTrakr.disconnect(); connected = false; status = null
+                }
+            }
+            var share by remember { mutableStateOf(io.github.sherazi5110.cloudstream.WeTrakr.shareNowPlaying) }
+            SwitchRow("Show what I'm watching", "WeTrakr shows the title as playing, with its progress. Off: titles are only marked watched when you finish them.", share) {
+                share = it; io.github.sherazi5110.cloudstream.WeTrakr.shareNowPlaying = it
+            }
+        }
+        code != null -> {
+            val c = code!!
+            Text("Go to ${c.url.removePrefix("https://")} on your phone or computer and enter:", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 8.dp))
+            Text(c.userCode, style = MaterialTheme.typography.displaySmall, color = Palette.accent, modifier = Modifier.padding(vertical = 6.dp))
+            if (App.isTv) {
+                val qr = remember(c.url) { qrBitmap(c.url + "?code=" + c.userCode, 480).asImageBitmap() }
+                androidx.compose.foundation.Image(qr, "QR code for WeTrakr", Modifier.size(180.dp).background(Color.White, RoundedCornerShape(8.dp)).padding(8.dp))
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Spinner(Modifier.size(22.dp))
+                Text("Waiting for you to approve…", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 10.dp).weight(1f))
+                PillButton("Cancel", null, primary = false, compact = true) { job?.cancel(); code = null }
+            }
+        }
+        else -> PillButton("Connect WeTrakr", Icons.Filled.Link, compact = true, modifier = Modifier.padding(top = 6.dp)) {
+            status = null
+            job = scope.launch {
+                try {
+                    val c = io.github.sherazi5110.cloudstream.WeTrakr.start()
+                    code = c
+                    val until = System.currentTimeMillis() + c.expiresIn * 1000L
+                    while (System.currentTimeMillis() < until) {
+                        kotlinx.coroutines.delay(c.interval * 1000L)
+                        if (io.github.sherazi5110.cloudstream.WeTrakr.poll(c)) { connected = true; code = null; App.toast("WeTrakr connected"); return@launch }
+                    }
+                    code = null; status = "The code expired. Try again."
+                } catch (e: kotlinx.coroutines.CancellationException) { throw e
+                } catch (e: Exception) { code = null; status = "Couldn't connect: ${e.message}" }
+            }
+        }
+    }
+    status?.let { Hint(it) }
 }

@@ -103,7 +103,7 @@ fun CatalogScreen(screen: Screen.Catalog) {
 
     Column(Modifier.fillMaxSize()) {
         BackBar(screen.title)
-        LazyVerticalGrid(gridCells, state = grid, contentPadding = PaddingValues(16.dp),
+        LazyVerticalGrid(gridCells, state = grid, contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 16.dp + LocalBottomInset.current),
             horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             uniqueItems(items, key = { it.url }) { item -> PosterCard(item, 200.dp, Modifier.fillMaxWidth()) { openTitle(item) } }
             if (loading) item(span = { GridItemSpan(maxLineSpan) }) { Spinner(Modifier.fillMaxWidth().height(80.dp)) }
@@ -194,10 +194,10 @@ fun SearchScreen() {
             results.isEmpty() -> EmptyState("Nothing found", (scopedApi?.let { "${it.name} had" } ?: "No extension had") + " results for \"$query\".", Modifier.fillMaxWidth())
             // One extension: its results as a grid.
             scopedApi != null -> LazyVerticalGrid(GridCells.Adaptive(if (isWide) 140.dp else 112.dp),
-                contentPadding = PaddingValues(16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 16.dp + LocalBottomInset.current), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 uniqueItems(results.flatMap { it.second }, key = { it.url }) { item -> PosterCard(item, 200.dp, Modifier.fillMaxWidth()) { openTitle(item) } }
             }
-            else -> androidx.compose.foundation.lazy.LazyColumn(contentPadding = PaddingValues(bottom = 24.dp)) {
+            else -> androidx.compose.foundation.lazy.LazyColumn(contentPadding = PaddingValues(bottom = 24.dp + LocalBottomInset.current)) {
                 uniqueItems(results, key = { it.first.name }) { (api, list) ->
                     Column(Modifier.padding(top = 8.dp)) {
                         SectionTitle("${api.name} · ${list.size}", Modifier.padding(horizontal = 16.dp))
@@ -234,7 +234,7 @@ fun LibraryScreen() {
         if (tab == 2) DownloadsTab()
         else if (tab == 0) {
             if (bookmarks.isEmpty()) EmptyState("Your list is empty", "Tap + My list on a title page to keep it here.", Modifier.fillMaxWidth())
-            else LazyVerticalGrid(gridCells, contentPadding = PaddingValues(16.dp),
+            else LazyVerticalGrid(gridCells, contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 16.dp + LocalBottomInset.current),
                 horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 uniqueItems(bookmarks, key = { "${it.apiName}|${it.url}" }) { b ->
                     Column {
@@ -247,7 +247,7 @@ fun LibraryScreen() {
             }
         } else {
             if (history.isEmpty()) EmptyState("No history yet", "Titles you watch appear here.", Modifier.fillMaxWidth())
-            else LazyVerticalGrid(if (isWide) GridCells.Adaptive(260.dp) else GridCells.Adaptive(170.dp), contentPadding = PaddingValues(16.dp),
+            else LazyVerticalGrid(if (isWide) GridCells.Adaptive(260.dp) else GridCells.Adaptive(170.dp), contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 16.dp + LocalBottomInset.current),
                 horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 uniqueItems(history, key = { "${it.apiName}|${it.url}" }) { e ->
                     var menu by remember { mutableStateOf(false) }

@@ -64,6 +64,12 @@ object ProfileMenu {
                 selected = p.id == current.id) { ProfileSwitch.to(p) }
         }.toMutableList()
         rows += Popover.separator()
+        rows += Popover.row(icon(Icons.BUG, 18.0), "Report a glitch", if (com.lagradost.cloudstream3.linux.Os.isMac) "⌘⇧R" else "F12") {
+            // After the menu has closed, so the picture shows the page, not the menu.
+            javafx.animation.PauseTransition(javafx.util.Duration.millis(250.0)).apply {
+                setOnFinished { GlitchWindow.report(Nav.window.stage) }
+            }.play()
+        }
         if (!current.kids) {
             rows += Popover.row(icon(Icons.PEOPLE, 18.0), "Manage profiles") { Nav.window.showOverlay(ProfilePicker(startup = false, manage = true)) }
             rows += Popover.row(icon(Icons.SETTINGS, 18.0), "Settings") { Nav.window.show(Tab.SETTINGS) }

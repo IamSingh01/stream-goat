@@ -160,7 +160,7 @@ object Metadata {
     /** "Avaraachan & Sons (2026) WEB-DL [Hindi (DD5.1)]" → ("Avaraachan & Sons", 2026). */
     fun cleanTitle(raw: String): Pair<String, Int?> {
         val year = Regex("[(\\[ ](19\\d{2}|20\\d{2})[)\\] ]").find(" $raw ")?.groupValues?.get(1)?.toIntOrNull()
-        var t = raw.replace(Regex("\\[[^]]*]|\\{[^}]*}"), " ")
+        var t = raw.replace(Regex("\\[[^\\]]*]|\\{[^\\}]*\\}"), " ")
         t = t.replace(Regex("\\((19|20)\\d{2}\\).*$"), " ")
         t = t.replace(Regex("\\b(19|20)\\d{2}\\b.*$"), " ").ifBlank { raw }
         t = t.replace(releaseJunk, " ").replace(Regex("\\b[Ss]\\d{1,2}([Ee]\\d{1,3})?\\b|\\bSeason \\d+\\b", RegexOption.IGNORE_CASE), " ")

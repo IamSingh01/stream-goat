@@ -148,6 +148,13 @@ class LiveTvMetadataTest {
             LiveApi.loadLinks(LiveApi.data(c), false, {}) { out += it }
         }
         assertFalse(LiveTv.retryPlain)
+        // On by default: an https channel also gets the retry that accepts an expired (genuine) certificate.
+        assertTrue(LiveTv.allowExpired)
+        links(secure).let { l ->
+            assertEquals(listOf(LiveApi.EXPIRED), l.drop(1).map { it.name })
+            assertEquals("https://tv.example/live/cinear/playlist.m3u8" + LiveApi.EXPIRED_MARK, l[1].url)
+        }
+        LiveTv.allowExpired = false
         assertEquals(1, links(secure).size)
         LiveTv.retryPlain = true
         try {
@@ -159,6 +166,7 @@ class LiveTvMetadataTest {
             assertEquals(1, links(secure.copy(source = "xtream-login")).size)
         } finally {
             LiveTv.retryPlain = false
+            LiveTv.allowExpired = true
         }
         Unit
     }

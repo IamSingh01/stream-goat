@@ -16,17 +16,20 @@ android {
         targetSdk = 36
         // CI passes the release tag (-PappVersion=7.0.0); local builds use the numbers below.
         val tagVersion = (findProperty("appVersion") as String?)?.removePrefix("v")?.removePrefix("V")
-        versionName = tagVersion ?: "8.0.1"
+        versionName = tagVersion ?: "9.0.1"
         versionCode = tagVersion?.let { v ->
             val (major, minor, patch) = (v.substringBefore('-').split('.').map { it.toIntOrNull() ?: 0 } + listOf(0, 0, 0)).take(3)
             major * 10000 + minor * 100 + patch
-        } ?: 80001
+        } ?: 90001
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // Google Drive backup: the project's Google sign-in client (GitHub secrets, docs/google-drive-setup.md).
         // For an installed app Google doesn't treat the client secret as secret; it ships in the app.
         fun quoted(name: String) = "\"" + (System.getenv(name) ?: "").replace("\"", "") + "\""
         buildConfigField("String", "GOOGLE_CLIENT_ID", quoted("GOOGLE_CLIENT_ID"))
         buildConfigField("String", "GOOGLE_CLIENT_SECRET", quoted("GOOGLE_CLIENT_SECRET"))
+        // WeTrakr sync: the app key (client_id) of the Stream Goat app registered on wetrakr.com (GitHub secret
+        // WETRAKR_CLIENT_ID). Its client secret is never put in the app: the device sign-in doesn't need it.
+        buildConfigField("String", "WETRAKR_CLIENT_ID", quoted("WETRAKR_CLIENT_ID"))
     }
 
     // The release key comes from the environment (GitHub Actions secrets, see android/README.md) and is never
@@ -123,11 +126,22 @@ dependencies {
     implementation("app.cash.zipline:zipline-android:1.27.0")
 
     // Posters and backdrops (OkHttp, so the app's DNS/cookie settings apply; WebP is native on Android).
+    // Liquid glass: real blur of the page behind bars and panels (Android 12+; a tinted fallback below).
+    implementation("dev.chrisbanes.haze:haze:1.6.10")
     implementation("io.coil-kt.coil3:coil-compose:3.3.0")
     implementation("io.coil-kt.coil3:coil-network-okhttp:3.3.0")
 
     // The player: libVLC for Android (Maven Central), with this app's own controls.
     implementation("org.videolan.android:libvlc-all:3.6.5")
+    // Torrent streaming (opt-in, Settings → Player): libtorrent through libtorrent4j, native code for each ABI.
+    val libtorrent = "2.1.0-39"
+    implementation("org.libtorrent4j:libtorrent4j:$libtorrent")
+    implementation("org.libtorrent4j:libtorrent4j-android-arm64:$libtorrent")
+    implementation("org.libtorrent4j:libtorrent4j-android-arm:$libtorrent")
+    implementation("org.libtorrent4j:libtorrent4j-android-x86:$libtorrent")
+    implementation("org.libtorrent4j:libtorrent4j-android-x86_64:$libtorrent")
+    // Unit tests run on this computer (Linux): its native library, for a seeder-to-player test on localhost.
+    testImplementation("org.libtorrent4j:libtorrent4j-linux:$libtorrent")
     // NewPipe Extractor, which the official app ships: extensions such as YoutubeProvider (official repository) use it.
     implementation("com.github.teamnewpipe:NewPipeExtractor:v0.26.3")
     // QR codes for "Add from phone" (scan with the phone's camera).
@@ -141,3 +155,19 @@ dependencies {
 // Paparazzi (Android screenshots drawn on the computer: ./gradlew :app:recordPaparazziDebug) clashes with
 // Gradle's HTML test report; the XML results are kept.
 tasks.withType<Test>().configureEach { reports.html.required.set(false) }
+
+// The torrent test runs libtorrent's native engine, which can crash the test process as it exits when it shares
+// that process with Paparazzi's renderer: it gets a process of its own, right after the other unit tests.
+afterEvaluate {
+    val unit = tasks.named<Test>("testDebugUnitTest")
+    unit.configure { filter { excludeTestsMatching("*TorrentStreamingTest"); isFailOnNoMatchingTests = false } }
+    val torrent = tasks.register<Test>("torrentUnitTest") {
+        val base = unit.get()
+        testClassesDirs = base.testClassesDirs
+        classpath = base.classpath
+        jvmArgs(base.allJvmArgs.filter { it.startsWith("--add-opens") || it.startsWith("-D") })
+        filter { includeTestsMatching("*TorrentStreamingTest"); isFailOnNoMatchingTests = false }
+        dependsOn(base.dependsOn)
+    }
+    unit.configure { finalizedBy(torrent) }
+}

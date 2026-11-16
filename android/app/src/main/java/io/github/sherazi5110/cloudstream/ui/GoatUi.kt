@@ -25,6 +25,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.toArgb
@@ -38,20 +40,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
-
-/**
- * The Stream Goat logo: Syed Ali Hamza's goat eating grass in front of a circle, the artwork's rainbow or the
- * theme's accent colour (Settings → Appearance → Logo). Follows theme changes.
- */
-@Composable
-fun Logo(size: Dp = 36.dp) {
-    val px = with(LocalDensity.current) { (size.toPx() * 1.25f).roundToInt().coerceIn(16, 768) }
-    val rainbow = ThemeState.logoRainbow
-    val accent = Palette.accent.toArgb()
-    val bitmap = remember(px, rainbow, accent) { runCatching { GoatArt.logo(px, rainbow, accent).asImageBitmap() }.getOrNull() }
-    if (bitmap != null) Image(bitmap, contentDescription = "Stream Goat", modifier = Modifier.size(size))
-    else Image(painterResource(R.drawable.logo), contentDescription = "Stream Goat", modifier = Modifier.size(size))
-}
 
 /** An animation's frames, painted in the background in the current logo style (null until each is ready). */
 @Composable
@@ -74,21 +62,11 @@ fun rememberGoatFrames(kind: String, px: Int): SnapshotStateList<ImageBitmap?> {
  */
 @Composable
 fun OfflineState(modifier: Modifier = Modifier, onRetry: () -> Unit) {
-    val frames = rememberGoatFrames("offline", 480)
-    var index by remember { mutableIntStateOf(0) }
-    LaunchedEffect(frames.size) {
-        while (frames.isNotEmpty()) { delay(1700); index = (index + 1) % frames.size }
-    }
     Column(modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        // The pictures have room around the circle for their signs and cables.
-        Box(Modifier.size(260.dp).padding(bottom = 0.dp), contentAlignment = Alignment.Center) {
-            Crossfade(targetState = index, animationSpec = tween(280), label = "offline") { i ->
-                // Until a frame is ready, the one before it (or the first) stays.
-                (frames.getOrNull(i) ?: frames.take(i).lastOrNull { it != null } ?: frames.firstOrNull())?.let {
-                    Image(it, contentDescription = null, modifier = Modifier.fillMaxSize())
-                }
-            }
-        }
+        // The logo, breathing slowly.
+        val pulse by androidx.compose.animation.core.rememberInfiniteTransition(label = "offline").animateFloat(0.55f, 1f,
+            androidx.compose.animation.core.infiniteRepeatable(tween(1400), androidx.compose.animation.core.RepeatMode.Reverse), label = "pulse")
+        Box(Modifier.size(120.dp).graphicsLayer { alpha = pulse }, contentAlignment = Alignment.Center) { Logo(120.dp) }
         Text("You're offline", style = MaterialTheme.typography.titleLarge)
         Text("Stream Goat can't reach the internet. Check your Wi-Fi, then try again. Downloaded titles still play.",
             style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center, color = Palette.muted)

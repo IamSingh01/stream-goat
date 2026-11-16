@@ -1,5 +1,6 @@
 package com.lagradost.cloudstream3.linux.ui
 
+import com.lagradost.cloudstream3.linux.Os
 import android.widget.Toast
 import com.lagradost.cloudstream3.MainAPI
 import com.lagradost.cloudstream3.SearchResponse
@@ -40,7 +41,7 @@ import kotlin.system.exitProcess
 
 object AppInfo {
     const val NAME = "Stream Goat"
-    const val VERSION = "8.0.1"
+    const val VERSION = "9.0.1"
     const val CREDIT = "Syed Ali Hamza"
 }
 
@@ -152,12 +153,20 @@ class AppWindow(val stage: Stage) : StackPane() {
         Theme.onChange { applyTheme() }
 
         addEventFilter(KeyEvent.KEY_PRESSED) { e ->
+            // Report a glitch: F12, or ⌘⇧R on a Mac (also over the player).
+            if (e.code == KeyCode.F12 || (Os.isMac && e.isMetaDown && e.isShiftDown && e.code == KeyCode.R)) {
+                GlitchWindow.report(stage); e.consume(); return@addEventFilter
+            }
             (playerLayer.children.firstOrNull() as? PlayerKeys)?.let { it.handle(e); return@addEventFilter }
             when {
                 e.code == KeyCode.ESCAPE -> { if (closeOverlay() || back()) e.consume() }
-                e.code == KeyCode.F11 -> { stage.isFullScreen = !stage.isFullScreen; e.consume() }
+                e.code == KeyCode.F11 || (Os.isMac && e.code == KeyCode.F && e.isControlDown && e.isMetaDown) ->
+                    { stage.isFullScreen = !stage.isFullScreen; e.consume() }
                 e.code == KeyCode.LEFT && e.isAltDown -> { back(); e.consume() }
-                (e.code == KeyCode.F && e.isControlDown) || (e.code == KeyCode.SLASH && e.target !is javafx.scene.control.TextInputControl) -> {
+                // macOS: ⌘[ goes back, ⌘W closes the window (⌘Q quits through the app menu).
+                Os.isMac && e.isMetaDown && e.code == KeyCode.OPEN_BRACKET -> { back(); e.consume() }
+                Os.isMac && e.isMetaDown && e.code == KeyCode.W -> { stage.close(); e.consume() }
+                (e.code == KeyCode.F && e.isShortcutDown && !(Os.isMac && e.isControlDown)) || (e.code == KeyCode.SLASH && e.target !is javafx.scene.control.TextInputControl) -> {
                     show(Tab.SEARCH); (pages[Tab.SEARCH] as? SearchPage)?.focusField(); e.consume()
                 }
             }
@@ -177,8 +186,12 @@ class AppWindow(val stage: Stage) : StackPane() {
         rail.children.setAll(StackPane(logo).apply { pad(2.0, 0.0, 18.0, 0.0); onClick { show(Tab.HOME) } })
         navItems.clear()
         val kids = Profiles.isKids
+        // The tabs sit in a vertical pill, centred beside the page; Settings after a thin line.
+        val pill = VBox(6.0).apply { styleClass += "rail-pill"; alignment = Pos.CENTER }
+        rail.children += spacer()
+        rail.children += pill
         Tab.entries.filter { (!kids || it.forKids) && (it != Tab.LIVE || LiveTv.availableToProfile) }.forEach { tab ->
-            if (tab == Tab.SETTINGS) rail.children += spacer()
+            if (tab == Tab.SETTINGS) pill.children += Region().apply { styleClass += "rail-divider" }
             val item = StackPane(icon(tab.icon, 22.0)).apply {
                 styleClass += "rail-item"
                 if (tab == currentTab) styleClass += "active"
@@ -186,9 +199,9 @@ class AppWindow(val stage: Stage) : StackPane() {
                 tooltip(tab.label)
             }
             navItems[tab] = item
-            rail.children += item
+            pill.children += item
         }
-        if (kids) rail.children += spacer()
+        rail.children += spacer()
         rail.children += StackPane(icon(Icons.FULLSCREEN, 20.0)).apply {
             styleClass += "rail-item"
             onClick { stage.isFullScreen = !stage.isFullScreen }
@@ -266,6 +279,9 @@ class AppWindow(val stage: Stage) : StackPane() {
     /** Shows a page under the top bar; Home's banner runs underneath it, other pages start below. */
     private fun setContent(node: Node) {
         content.children.setAll(node)
+        com.lagradost.cloudstream3.linux.Glitch.screen = (node as? GlitchNamed)?.glitchName ?: "${currentTab.label}" +
+            (if (node !== pages[currentTab]) " → ${node.javaClass.simpleName.removeSuffix("Page")}" else "")
+        com.lagradost.cloudstream3.linux.Glitch.step("Opened ${com.lagradost.cloudstream3.linux.Glitch.screen}")
         val fullBleed = node is HomePage || node is LiveTvPage
         content.padding = if (fullBleed) Insets.EMPTY else Insets(TopBar.HEIGHT, 0.0, 0.0, 0.0)
         topBar.setSolid(!fullBleed)
@@ -344,6 +360,12 @@ class AppWindow(val stage: Stage) : StackPane() {
 
     fun startup(repoLink: String?) {
         Toast.showHandler = { msg -> Platform.runLater { Toasts.show(msg) } }
+        // The last run didn't close properly (a crash in the video engine, a force-quit freeze): say what's known.
+        com.lagradost.cloudstream3.linux.Glitch.pending?.let { report ->
+            if (System.getenv("CS_SCREENSHOT") == null) javafx.animation.PauseTransition(javafx.util.Duration.seconds(4.5)).apply {
+                setOnFinished { GlitchWindow.showCrash(stage, report) }
+            }.play()
+        }
         ui.launch {
             PluginManager.progress.collectLatest { p ->
                 (splash as? SplashScreen)?.status(if (p.total == 0) "Starting…" else "Loading extensions ${p.done}/${p.total}")
@@ -445,3 +467,6 @@ object Nav {
         window.push(DetailsPage(api, url, name, poster, null))
     }
 }
+
+/** A page that names itself in glitch reports ("Details: Dune (HDHub4U)"). */
+interface GlitchNamed { val glitchName: String }

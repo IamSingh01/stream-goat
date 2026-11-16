@@ -23,7 +23,7 @@ import java.util.concurrent.Executors
  * rewrites HLS playlists so every variant playlist, segment and key goes through it too.
  */
 object StreamProxy {
-    private data class Target(val url: String, val headers: Map<String, String>)
+    private data class Target(val url: String, val headers: Map<String, String>, val expiredOk: Boolean = false)
 
     private val targets = ConcurrentHashMap<String, Target>()
     @Volatile private var server: ServerSocket? = null
@@ -43,10 +43,10 @@ object StreamProxy {
     }
 
     /** Returns a loopback URL that fetches [url] with [headers]. */
-    fun wrap(url: String, headers: Map<String, String>): String {
+    fun wrap(url: String, headers: Map<String, String>, expiredOk: Boolean = false): String {
         val s = start()
-        val id = id(url, headers)
-        targets[id] = Target(url, headers)
+        val id = id(url + if (expiredOk) "#expired-ok" else "", headers)
+        targets[id] = Target(url, headers, expiredOk)
         // Keep the original file name/extension: the player uses it to guess the format.
         val name = runCatching { URI(url).path.substringAfterLast('/') }.getOrNull().orEmpty()
             .ifBlank { "stream" }.let { URLEncoder.encode(it, "UTF-8").replace("+", "%20") }
@@ -87,13 +87,13 @@ object StreamProxy {
             .apply { if (method == "HEAD") head() }
             .build()
         try {
-            app.baseClient.newCall(request).execute().use { response ->
+            (if (target.expiredOk) ExpiredCertTrust.client(app.baseClient) else app.baseClient).newCall(request).execute().use { response ->
                 val type = response.header("Content-Type").orEmpty()
                 val copied = response.headers.filter { (n, _) -> n.lowercase() !in skipResponse }
                 if (method != "HEAD" && isPlaylist(target.url, type)) {
                     val text = response.body.string()
                     if (text.trimStart().startsWith("#EXTM3U")) {
-                        val bytes = rewrite(text, response.request.url.toString(), target.headers).toByteArray()
+                        val bytes = rewrite(text, response.request.url.toString(), target.headers, target.expiredOk).toByteArray()
                         respond(out, response.code, listOf("Content-Type" to "application/vnd.apple.mpegurl"), bytes)
                     } else respond(out, response.code, copied, text.toByteArray())
                     return
@@ -134,9 +134,9 @@ object StreamProxy {
     private val uriAttribute = Regex("URI=\"([^\"]+)\"")
 
     /** Points every URI in an HLS playlist (segments, variants, keys, maps) back at the proxy. */
-    fun rewrite(playlist: String, baseUrl: String, headers: Map<String, String>): String {
+    fun rewrite(playlist: String, baseUrl: String, headers: Map<String, String>, expiredOk: Boolean = false): String {
         val base = URI(baseUrl)
-        fun proxied(ref: String) = wrap(base.resolve(ref.trim().replace(" ", "%20")).toString(), headers)
+        fun proxied(ref: String) = wrap(base.resolve(ref.trim().replace(" ", "%20")).toString(), headers, expiredOk)
         return playlist.lineSequence().joinToString("\n") { line ->
             when {
                 line.isBlank() -> line

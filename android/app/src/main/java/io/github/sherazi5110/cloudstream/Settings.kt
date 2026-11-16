@@ -28,6 +28,8 @@ object Settings {
         "auto_play",
         "auto_play_next", "skip_buttons", "auto_skip", "subtitle_language", "preferred_quality", "player_volume", "hero_slider", "anti_spoiler",
         "player_equalizer", "audio_language", "subtitle_size", "subtitle_color", "subtitle_outline", "subtitle_background",
+        "subtitle_font", "subtitle_bold", "subtitle_italic", "subtitle_outline_color", "subtitle_edge", "subtitle_bg_color",
+        "subtitle_bg_opacity", "subtitle_height", "subtitle_align", "subtitle_no_captions", "subtitle_no_ads", "subtitle_upper",
         "player_zoom", "last_home_provider", "home_plugin_file", "show_nsfw",
         "theme_mode", "theme_accent", "theme_wallpaper", "theme_wallpaper_dim", "theme_wallpaper_blur",
     )
@@ -142,11 +144,68 @@ object Settings {
     var subtitleBackground: Boolean
         get() = string("subtitle_background", "false") == "true"
         set(v) = put("subtitle_background", v)
+    /** Font family: DEFAULT, SERIF, MONO, CONDENSED. */
+    var subtitleFont: String
+        get() = string("subtitle_font", "DEFAULT")
+        set(v) = put("subtitle_font", v)
+    var subtitleBold: Boolean
+        get() = string("subtitle_bold", "false") == "true"
+        set(v) = put("subtitle_bold", v)
+    var subtitleItalic: Boolean
+        get() = string("subtitle_italic", "false") == "true"
+        set(v) = put("subtitle_italic", v)
+    var subtitleOutlineColor: String
+        get() = string("subtitle_outline_color", "#000000")
+        set(v) = put("subtitle_outline_color", v)
+    /** Edge around the letters: OUTLINE, SHADOW, BOTH, NONE. */
+    var subtitleEdge: String
+        get() = string("subtitle_edge", "OUTLINE")
+        set(v) = put("subtitle_edge", v)
+    var subtitleBackgroundColor: String
+        get() = string("subtitle_bg_color", "#000000")
+        set(v) = put("subtitle_bg_color", v)
+    /** Background box opacity in percent (only with [subtitleBackground]). */
+    var subtitleBackgroundOpacity: Int
+        get() = string("subtitle_bg_opacity", "60").toIntOrNull()?.coerceIn(0, 100) ?: 60
+        set(v) = put("subtitle_bg_opacity", v)
+    /** Height above the bottom of the picture: 0 (bottom) … 3 (high). */
+    var subtitleHeight: Int
+        get() = string("subtitle_height", "0").toIntOrNull()?.coerceIn(0, 3) ?: 0
+        set(v) = put("subtitle_height", v)
+    /** Text alignment: CENTER, LEFT, RIGHT. */
+    var subtitleAlign: String
+        get() = string("subtitle_align", "CENTER")
+        set(v) = put("subtitle_align", v)
+    /** Removes [door knocks], (laughs), ♪ lyrics and SPEAKER: labels. */
+    var subtitleNoCaptions: Boolean
+        get() = string("subtitle_no_captions", "false") == "true"
+        set(v) = put("subtitle_no_captions", v)
+    /** Removes "Subtitles by…", "Downloaded from…" and website lines. */
+    var subtitleNoAds: Boolean
+        get() = string("subtitle_no_ads", "true") == "true"
+        set(v) = put("subtitle_no_ads", v)
+    /** Phones: shaking opens Report a glitch. */
+    var shakeToReport: Boolean
+        get() = string("shake_to_report", "true") == "true"
+        set(v) = put("shake_to_report", v)
+    var subtitleUppercase: Boolean
+        get() = string("subtitle_upper", "false") == "true"
+        set(v) = put("subtitle_upper", v)
 
     /** Player zoom mode, a [io.github.sherazi5110.cloudstream.player.Zoom] name. */
     var playerZoom: String
         get() = string("player_zoom", "FIT")
         set(v) = put("player_zoom", v)
+
+    /** The player's rotation on phones and tablets: LANDSCAPE (either way round), PORTRAIT or AUTO (as the device is held). */
+    var playerOrientation: String
+        get() = string("player_orientation", "LANDSCAPE")
+        set(v) = put("player_orientation", v)
+
+    /** Even out loud and quiet sounds (libVLC's compressor): quieter explosions and music, clearer voices. */
+    var levelAudio: Boolean
+        get() = string("level_audio", "false").toBoolean()
+        set(v) = put("level_audio", v.toString())
 
     /**
      * Show adult (NSFW) extensions and titles, like the Android app's setting. Off by default,

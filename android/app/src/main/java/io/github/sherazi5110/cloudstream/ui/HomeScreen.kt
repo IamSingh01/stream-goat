@@ -1,5 +1,9 @@
 package io.github.sherazi5110.cloudstream.ui
 
+import dev.chrisbanes.haze.HazeTint
+import dev.chrisbanes.haze.HazeStyle
+import dev.chrisbanes.haze.hazeEffect
+import dev.chrisbanes.haze.hazeSource
 import kotlinx.coroutines.launch
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.foundation.background
@@ -112,7 +116,7 @@ private fun NoExtensions() {
 
 @Composable
 private fun PhoneHome(state: HomeState) {
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp + LocalBottomInset.current)) {
         item(key = "hero") { PhoneHero(state) }
         if (state.continueWatching.isNotEmpty()) item(key = "continue") {
             ContinueRow(state.continueWatching, cardWidth = 200.dp)
@@ -225,7 +229,7 @@ fun ContinueRow(entries: List<WatchEntry>, cardWidth: androidx.compose.ui.unit.D
     val edge = if (isWide) 40.dp else 16.dp
     Column(Modifier.padding(top = 12.dp)) {
         SectionTitle("Continue Watching", Modifier.padding(horizontal = edge))
-        LazyRow(
+        TvRowScroll { LazyRow(
             contentPadding = PaddingValues(horizontal = edge, vertical = 10.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
@@ -244,7 +248,7 @@ fun ContinueRow(entries: List<WatchEntry>, cardWidth: androidx.compose.ui.unit.D
                     WatchedMenu(menu, e) { menu = false }
                 }
             }
-        }
+        } }
     }
 }
 
@@ -273,7 +277,7 @@ fun CatalogRow(
             section.list.name, Modifier.padding(horizontal = edge),
             action = if (isTv) null else "View all",
         ) { viewAll() }
-        LazyRow(
+        TvRowScroll { LazyRow(
             contentPadding = PaddingValues(horizontal = edge, vertical = 10.dp),
             horizontalArrangement = Arrangement.spacedBy(if (isWide) 14.dp else 10.dp),
         ) {
@@ -281,7 +285,7 @@ fun CatalogRow(
                 PosterCard(item, posterWidth, onFocus = onFocus?.let { { it(item) } }) { openTitle(item) }
             }
             item(key = "view-all") { ViewAllTile(section.list.name, posterWidth) { viewAll() } }
-        }
+        } }
     }
 }
 
@@ -297,6 +301,8 @@ fun CatalogRow(
 internal fun WideHome(state: HomeState) {
     var focused by remember { mutableStateOf<SearchResponse?>(null) }
     val list = rememberLazyListState()
+    // Liquid glass: what scrolls under the top bar is blurred and fades out, with no hard edge (Apple's scroll edge).
+    val topHaze = dev.chrisbanes.haze.rememberHazeState()
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val bannerHeight = (maxHeight * 0.74f).coerceIn(340.dp, 640.dp)
         val scope = rememberCoroutineScope()
@@ -304,7 +310,7 @@ internal fun WideHome(state: HomeState) {
         // remote on the banner's Play button that pushed the banner's top (logo, title) up under the top bar. Here
         // the list only scrolls as far as needed, and the banner always shows whole when it has the focus.
         androidx.compose.runtime.CompositionLocalProvider(androidx.compose.foundation.gestures.LocalBringIntoViewSpec provides MinimalScroll) {
-        LazyColumn(Modifier.fillMaxSize(), state = list, contentPadding = PaddingValues(bottom = 32.dp)) {
+        LazyColumn(Modifier.fillMaxSize().then(if (Palette.isGlass) Modifier.hazeSource(topHaze) else Modifier), state = list, contentPadding = PaddingValues(bottom = 32.dp + LocalBottomInset.current)) {
             item(key = "banner") {
                 Box(Modifier.onFocusChanged { f ->
                     if (f.hasFocus && (list.firstVisibleItemIndex != 0 || list.firstVisibleItemScrollOffset != 0)) scope.launch { list.animateScrollToItem(0) }
@@ -323,7 +329,14 @@ internal fun WideHome(state: HomeState) {
         // Fixed top bar; it gets a backdrop once the banner has scrolled away.
         val scrolled = list.firstVisibleItemIndex > 0
         TopBar(
-            Modifier.background(if (scrolled) Palette.background.copy(alpha = 0.94f) else Color.Transparent),
+            when {
+                !scrolled -> Modifier
+                Palette.isGlass && Glass.canBlur -> Modifier.hazeEffect(topHaze, HazeStyle(Color.Transparent, HazeTint(Palette.background.copy(alpha = 0.55f)), 24.dp, 0f)) {
+                    progressive = dev.chrisbanes.haze.HazeProgressive.verticalGradient(startIntensity = 1f, endIntensity = 0f)
+                }
+                Palette.isGlass -> Modifier.background(Brush.verticalGradient(listOf(Palette.background.copy(alpha = 0.92f), Palette.background.copy(alpha = 0.7f), Color.Transparent)))
+                else -> Modifier.background(Palette.background.copy(alpha = 0.94f))
+            },
         ) {
             SourcePicker(state)
             Spacer(Modifier.width(10.dp))
@@ -412,7 +425,7 @@ private fun BannerPage(item: SearchResponse, rank: Int?, rowName: String?, heigh
 private fun ViewAllTile(title: String, width: androidx.compose.ui.unit.Dp, onClick: () -> Unit) {
     Column(Modifier.width(width)) {
         Column(
-            Modifier.fillMaxWidth().aspectRatio(2f / 3f).card(onClick = onClick)
+            Modifier.fillMaxWidth().aspectRatio(2f / 3f).card(selectFirst = true, onClick = onClick)
                 .background(Palette.surfaceHigh, RoundedCornerShape(10.dp))
                 .border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(10.dp)),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -453,9 +466,10 @@ private fun HomeEditor(state: HomeState, onClose: () -> Unit) {
         api?.let { addAll(io.github.sherazi5110.cloudstream.Catalogs.all(it)) }
     } }
     androidx.compose.ui.window.Dialog(onDismissRequest = onClose, properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)) {
+        DialogGlass()
         Column(
             Modifier.padding(24.dp).widthIn(max = 640.dp).fillMaxWidth().fillMaxHeight(0.9f)
-                .background(Palette.surface, RoundedCornerShape(16.dp)).padding(20.dp),
+                .glassPanel(RoundedCornerShape(22.dp), blur = false).padding(20.dp),
         ) {
             Text("Home screen", style = MaterialTheme.typography.headlineSmall)
             Text("Pick an extension, then choose and order its catalogs.", style = MaterialTheme.typography.bodyMedium,

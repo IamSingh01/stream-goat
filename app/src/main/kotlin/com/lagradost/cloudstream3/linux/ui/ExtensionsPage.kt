@@ -337,6 +337,17 @@ class ExtensionsPage : StackPane(), Refreshable {
                 actions.children += label(if (failure == null) "Installed" else "Error", if (failure == null) "good-text" else "error-text", "small")
                 actions.children += spacer()
                 if (row.hasUpdate) actions.children += button("Update", Icons.REFRESH, "btn-accent", "btn-small") { install(row.wrapper!!) }
+                // A failed one (e.g. its file is missing after restoring a backup): download it again in one click.
+                if (failure != null && !row.hasUpdate) actions.children += button("Reinstall", Icons.REFRESH, "btn-accent", "btn-small") {
+                    if (busy.add(row.internalName)) renderGrid()
+                    ui.launch {
+                        val r = withContext(Engine.dispatcher) { PluginManager.reinstall(row.internalName) }
+                        busy -= row.internalName
+                        r.onSuccess { Toasts.show("${row.wrapper?.plugin?.name ?: row.internalName} works again") }
+                            .onFailure { Toasts.show("Couldn't reinstall: ${it.message ?: it}", seconds = 8.0) }
+                        applyFilter()
+                    }
+                }
                 actions.children += button(null, Icons.DELETE, "btn-danger", "btn-small") { uninstall(row) }.tooltip("Uninstall")
             }
         }

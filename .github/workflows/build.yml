@@ -39,6 +39,7 @@ jobs:
           # Google Drive backup: the project's Google sign-in client (docs/google-drive-setup.md); empty without it.
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          WETRAKR_CLIENT_ID: ${{ secrets.WETRAKR_CLIENT_ID }}
         run: |
           ./scripts/build-deb.sh
           ./gradlew :app:distTar
@@ -120,6 +121,7 @@ jobs:
           # Google Drive backup: the project's Google sign-in client (docs/google-drive-setup.md); empty without it.
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          WETRAKR_CLIENT_ID: ${{ secrets.WETRAKR_CLIENT_ID }}
         run: |
           echo "sdk.dir=$ANDROID_HOME" > local.properties
           VERSION_ARG=""
@@ -147,7 +149,7 @@ jobs:
         # A pull request's APKs also go to the "test-build" pre-release, for direct download links (e.g. typed into
         # Downloader on a TV). A pre-release never counts as the latest release: the apps' update check and the
         # website's download buttons don't see it.
-        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'picture-keys'  # only the test branch, not small fixes
         uses: softprops/action-gh-release@v2
         with:
           tag_name: test-build

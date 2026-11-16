@@ -40,19 +40,31 @@ import org.videolan.libvlc.MediaPlayer
 import org.videolan.libvlc.interfaces.IMedia
 import org.videolan.libvlc.util.VLCVideoLayout
 
-/** The one libVLC instance (it is heavy to create). */
+/** The one libVLC instance (it is heavy to create). A new subtitle style needs a new one ([restart]). */
 object Vlc {
-    val lib: LibVLC by lazy {
-        LibVLC(App.context, arrayListOf(
-            "--http-reconnect",
-            // 1.5 s of buffer before playing (was 3 s): starts as quickly as the official app's player.
-            "--network-caching=1500",
-            "--audio-time-stretch", // keeps the pitch at other speeds
-            "--subsdec-encoding=UTF-8",
-            "--freetype-rel-fontsize=16",
-            "--freetype-color=16777215",
-            "--freetype-outline-thickness=4",
-        ))
+    @Volatile private var instance: LibVLC? = null
+    /** The subtitle look [instance] was made with. */
+    @Volatile var look: SubtitleStyle.Look? = null
+        private set
+
+    val lib: LibVLC
+        get() = instance ?: synchronized(this) {
+            instance ?: SubtitleStyle.current().let { l ->
+                look = l
+                LibVLC(App.context, arrayListOf(
+                    "--http-reconnect",
+                    // 1.5 s of buffer before playing (was 3 s): starts as quickly as the official app's player.
+                    "--network-caching=1500",
+                    "--audio-time-stretch", // keeps the pitch at other speeds
+                    "--subsdec-encoding=UTF-8",
+                ).apply { addAll(SubtitleStyle.vlcOptions(l)) })
+            }.also { instance = it }
+        }
+
+    /** Drops the instance so the next player gets the current subtitle style (released after the players queued before). */
+    fun restart() {
+        val old = synchronized(this) { instance.also { instance = null } } ?: return
+        VlcThread.run { old.release() }
     }
 }
 
@@ -83,7 +95,9 @@ class PlayerController(
     /** True while libVLC opens a source or stops the previous one: calls that wait for it are skipped or queued. */
     @Volatile private var opening = false
     private val main = Handler(Looper.getMainLooper())
-    val player = MediaPlayer(Vlc.lib)
+    /** Replaced by a new one when the subtitle style changes ([restyle]). */
+    var player = MediaPlayer(Vlc.lib)
+        private set
 
     val links = mutableStateListOf<ExtractorLink>()
     val subtitles = mutableStateListOf<SubtitleFile>()
@@ -99,6 +113,8 @@ class PlayerController(
     var zoom by mutableStateOf(runCatching { Zoom.valueOf(Settings.playerZoom) }.getOrDefault(Zoom.FIT))
     var selectedSubtitle by mutableStateOf<String?>(null)
     var error by mutableStateOf<String?>(null)
+    /** Set when a stream that answers fine still doesn't play: what to send the developer (a problem in the app). */
+    var appIssue by mutableStateOf<String?>(null)
     var ended by mutableStateOf(false)
 
     /** Auto-play waits for this; "Choose source" turns it off. */
@@ -110,6 +126,9 @@ class PlayerController(
     private var watchdog: Job? = null
     private var saver: Job? = null
     val isLive = live || response is LiveStreamLoadResponse
+    /** A Live TV channel's key in its list (for "Hide not working"). */
+    private val channelKey: String? = if (api is io.github.sherazi5110.cloudstream.LiveApi)
+        runCatching { org.json.JSONObject(response.url).optString("key").ifBlank { null } }.getOrNull() else null
     private var languagesApplied = false
     private var playCalledAt = 0L
 
@@ -127,15 +146,30 @@ class PlayerController(
         Library.progress(api.name, playable.data)?.let { p ->
             if (p.duration > 0 && p.position / p.duration in 0.02..0.92) startAt = (p.position * 1000).toLong()
         }
+        listen()
+        scope.launch { findSources() }
+        saver = scope.launch {
+            while (true) { delay(10_000); if (playing) { save(); trakr?.tick(percent()) } }
+        }
+    }
+
+    private fun listen() {
         player.setEventListener { e ->
             when (e.type) {
                 MediaPlayer.Event.Playing -> {
                     // Next time (Continue Watching, Resume) this title starts with the same source.
                     current?.takeIf { api !is io.github.sherazi5110.cloudstream.LiveApi }?.let { io.github.sherazi5110.cloudstream.LastSource.remember(api.name, response.url, it) }
                     playing = true; buffering = false; started = true; error = null; watchdog?.cancel()
+                    channelKey?.let { io.github.sherazi5110.cloudstream.LiveTv.markWorking(it) }
+                    trakr?.playing(percent())
                     if (!languagesApplied) { languagesApplied = true; main.postDelayed({ applyLanguages() }, 1500) }
+                    applyDelays()
+                    restoreTracks?.let { (a, sp) ->
+                        restoreTracks = null
+                        main.postDelayed({ if (a >= 0) setAudio(a); sp?.let { setSpu(it) } }, 1200)
+                    }
                 }
-                MediaPlayer.Event.Paused -> playing = false
+                MediaPlayer.Event.Paused -> { playing = false; trakr?.paused(percent()) }
                 MediaPlayer.Event.Buffering -> buffering = e.buffering < 100f
                 MediaPlayer.Event.TimeChanged -> { time = e.timeChanged; if (buffering && playing) buffering = false; updateSkip(e.timeChanged) }
                 MediaPlayer.Event.LengthChanged -> { length = e.lengthChanged; loadSegments() }
@@ -143,10 +177,54 @@ class PlayerController(
                 MediaPlayer.Event.EncounteredError -> main.post { failover() }
             }
         }
-        scope.launch { findSources() }
-        saver = scope.launch {
-            while (true) { delay(10_000); if (playing) save() }
-        }
+    }
+
+    /** Subtitle and audio sync in milliseconds (positive = later). libVLC resets them with every source. */
+    var subtitleDelay by mutableLongStateOf(0L)
+        private set
+    var audioDelay by mutableLongStateOf(0L)
+        private set
+    fun syncSubtitles(ms: Long) { subtitleDelay = ms.coerceIn(-600_000, 600_000); applyDelays() }
+    fun syncAudio(ms: Long) { audioDelay = ms.coerceIn(-600_000, 600_000); applyDelays() }
+    private fun applyDelays() {
+        val sub = subtitleDelay * 1000; val audio = audioDelay * 1000
+        VlcThread.run { if (player.spuDelay != sub) player.spuDelay = sub; if (player.audioDelay != audio) player.audioDelay = audio }
+    }
+
+    /** Audio and subtitle track to pick again after [restyle] (subtitle null = a file, re-added by play). */
+    private var restoreTracks: Pair<Int, Int?>? = null
+
+    /**
+     * Applies a new subtitle look: libVLC reads it only when it starts, so a new libVLC and player take over
+     * and the source opens again where it was (like VLC for Android does after changing subtitle settings).
+     * True when the player was replaced (a chosen subtitle file is then shown again by play).
+     */
+    fun restyle(): Boolean {
+        if (released || Vlc.look == SubtitleStyle.current()) return false
+        val old = player
+        old.setEventListener(null)
+        val l = layout
+        detachAll()
+        val keep = if (started) audioTrack() to (if (selectedSubtitle == null) spuTrack() else null) else null
+        VlcThread.run { old.stop(); old.release() }
+        Vlc.restart()
+        player = MediaPlayer(Vlc.lib)
+        listen()
+        l?.let { attach(it) }
+        val link = current ?: return true
+        // Ended, or a torrent still joining (it plays on the new player when ready): nothing to reopen.
+        if (ended || lastVariantUrl == null && io.github.sherazi5110.cloudstream.Torrents.isTorrent(link)) return true
+        restoreTracks = keep
+        play(link, lastVariantUrl)
+        return true
+    }
+
+    /** The cleaned-up subtitles settings changed: show the chosen subtitle file again with them. */
+    fun reloadSubtitle() {
+        if (released) return
+        val sel = selectedSubtitle ?: return
+        subtitles.firstOrNull { it.url == sel }?.let { addSubtitle(it); return }
+        addedFiles.firstOrNull { it.first.absolutePath == sel }?.let { selectFile(it.first) }
     }
 
     /** These sources came from the 20-minute cache (or the search started on the title page). */
@@ -159,7 +237,11 @@ class PlayerController(
             when (event) {
                 is LinkEvent.Link -> {
                     val link = event.link
-                    if (link.type == ExtractorLinkType.MAGNET || link.type == ExtractorLinkType.TORRENT) return@collect
+                    // Torrents play only with torrent streaming on (Settings → Player); otherwise they're counted, to say so.
+                    if (io.github.sherazi5110.cloudstream.Torrents.isTorrent(link) && !io.github.sherazi5110.cloudstream.Torrents.enabled) {
+                        skippedTorrents++
+                        return@collect
+                    }
                     if (links.none { it.url == link.url }) links.add(link)
                     // The source that last played this title starts as soon as it's found (Continue Watching, Resume).
                     if (autoPlay && current == null && io.github.sherazi5110.cloudstream.LastSource.find(api.name, response.url, listOf(link)) != null) {
@@ -174,14 +256,31 @@ class PlayerController(
                     searching = false
                     event.error?.let { searchError = it.message ?: it.toString() }
                     if (autoPlay && current == null) ranked().firstOrNull()?.let { play(it) }
-                    if (links.isEmpty()) searchError = searchError ?: "No sources found"
+                    if (links.isEmpty()) searchError = if (skippedTorrents > 0)
+                        "Only torrent sources were found ($skippedTorrents). Turn on Settings → Player → Torrent streaming, or set the add-on " +
+                            "up with a debrid service (Torrentio: torrentio.strem.fun/configure)."
+                    else searchError ?: "No sources found"
                 }
             }
         }
     }
 
-    /** Best first: closest to the preferred quality without going over it. */
-    fun ranked(): List<ExtractorLink> = Engine.rank(links.toList())
+    /** Best first: closest to the preferred quality without going over it; torrents after direct links. */
+    fun ranked(): List<ExtractorLink> = Engine.rank(links.toList()).sortedBy { io.github.sherazi5110.cloudstream.Torrents.isTorrent(it) }
+
+    /** Torrent sources left out because torrent streaming is off. */
+    private var skippedTorrents = 0
+    /** While a torrent connects and buffers: peers, speed, how much of the start is there. */
+    var torrentStatus by mutableStateOf<io.github.sherazi5110.cloudstream.Torrents.Status?>(null)
+        private set
+    private var torrentJob: Job? = null
+    private var openTorrent: String? = null
+
+    private fun closeTorrent() {
+        torrentJob?.cancel()
+        torrentStatus = null
+        openTorrent?.let { uri -> openTorrent = null; Thread { io.github.sherazi5110.cloudstream.Torrents.close(uri) }.start() }
+    }
 
     /**
      * Like the official app: while the extension is still finding links nothing starts, so the best of all of
@@ -194,10 +293,90 @@ class PlayerController(
     fun stopAutoPlay() { autoPlay = false; grace?.cancel() }
 
     /** Starts [link], keeping the current position when switching sources mid-playback. */
-    fun play(link: ExtractorLink) {
+    /** The qualities inside the current HLS source (empty when it has one), and the one pinned (null = automatic). */
+    var variants by mutableStateOf<List<HlsVariants.Variant>>(emptyList())
+        private set
+    var variant by mutableStateOf<HlsVariants.Variant?>(null)
+        private set
+    private var master: HlsVariants.Master? = null
+    private var mastersJob: Job? = null
+
+    /** Pins a quality of the current source ([v] null = automatic), keeping the position. */
+    fun setQuality(v: HlsVariants.Variant?) {
+        val link = current ?: return
+        val m = master ?: return
+        scope.launch {
+            val target = when {
+                v == null -> null
+                !m.separateAudio -> v.url
+                else -> withContext(Dispatchers.IO) {
+                    // The audio is separate: a master with only this quality, so it keeps its sound.
+                    val headers = headersOf(link)
+                    val proxied = headers.keys.any { !it.equals("Referer", true) && !it.equals("User-Agent", true) }
+                    val text = HlsVariants.single(m, v) { if (proxied) StreamProxy.wrap(it, headers) else it }
+                    val file = java.io.File(App.context.cacheDir, "quality-${v.url.hashCode()}.m3u8").apply { writeText(text) }
+                    Uri.fromFile(file).toString()
+                }
+            }
+            variant = v
+            play(link, target)
+        }
+    }
+
+    private fun headersOf(link: ExtractorLink) = buildMap {
+        putAll(link.headers)
+        if (link.referer.isNotBlank() && keys.none { it.equals("Referer", true) }) put("Referer", link.referer)
+    }
+
+    /** Reads an HLS source's master playlist for its qualities (in the background; nothing waits for it). */
+    private fun loadVariants(link: ExtractorLink) {
+        mastersJob?.cancel()
+        master = null; variants = emptyList(); variant = null
+        if (!(link.isM3u8 || link.url.substringBefore('?').endsWith(".m3u8"))) return
+        mastersJob = scope.launch {
+            val m = withContext(Dispatchers.IO) {
+                runCatching {
+                    val request = okhttp3.Request.Builder().url(link.url).apply {
+                        headersOf(link).forEach { (k, v) -> header(k, v) }
+                        if (headersOf(link).keys.none { it.equals("User-Agent", true) }) header("User-Agent", USER_AGENT)
+                    }.build()
+                    com.lagradost.cloudstream3.app.baseClient.newCall(request).execute().use { r ->
+                        if (!r.isSuccessful) null else HlsVariants.parse(r.body.string().take(512 * 1024), r.request.url.toString())
+                    }
+                }.getOrNull()
+            }
+            if (current?.url == link.url && m != null) { master = m; variants = m.variants }
+        }
+    }
+
+    /** Starts [link] ([variantUrl]: one of its qualities instead), keeping the position when switching mid-playback. */
+    fun play(link: ExtractorLink, variantUrl: String? = null) {
+        if (variantUrl == null && openTorrent != null && openTorrent != link.url) closeTorrent()
+        // A torrent: join it and buffer its start, then play it from this device's own little server.
+        if (variantUrl == null && io.github.sherazi5110.cloudstream.Torrents.isTorrent(link)) {
+            grace?.cancel(); watchdog?.cancel()
+            current = link
+            tried += link.url
+            error = null; ended = false; buffering = true
+            openTorrent = link.url
+            torrentJob?.cancel()
+            torrentJob = scope.launch {
+                val local = runCatching { io.github.sherazi5110.cloudstream.Torrents.open(link.url) { st -> torrentStatus = st } }
+                if (current?.url != link.url) return@launch
+                local.onSuccess { url -> play(link, url) }.onFailure { e ->
+                    if (e is kotlinx.coroutines.CancellationException) return@onFailure
+                    torrentStatus = null
+                    App.toast("Torrent: ${e.message}")
+                    failover()
+                }
+            }
+            return
+        }
         grace?.cancel()
+        lastVariantUrl = variantUrl
         playCalledAt = android.os.SystemClock.elapsedRealtime()
         val keep = if (started) time.takeIf { it > 0 } ?: startAt else startAt
+        if (variantUrl == null && (current?.url != link.url || variant != null)) loadVariants(link.also { current = it })
         current = link
         matchSurface(link)
         tried += link.url
@@ -209,7 +388,10 @@ class PlayerController(
             if (link.referer.isNotBlank() && keys.none { it.equals("Referer", true) }) put("Referer", link.referer)
         }
         val needsProxy = headers.keys.any { !it.equals("Referer", true) && !it.equals("User-Agent", true) }
-        val url = if (needsProxy) StreamProxy.wrap(link.url, headers) else link.url
+        val source = (variantUrl ?: link.url).removeSuffix(io.github.sherazi5110.cloudstream.LiveApi.EXPIRED_MARK)
+        // A Live TV server with an expired (but genuine) certificate: through the local proxy, which accepts it.
+        val expiredOk = link.name == io.github.sherazi5110.cloudstream.LiveApi.EXPIRED
+        val url = if (source.startsWith("file:")) source else if (needsProxy || expiredOk) StreamProxy.wrap(source, headers, expiredOk) else source
         val media = Media(Vlc.lib, Uri.parse(url)).apply {
             setHWDecoderEnabled(true, false)
             if (!needsProxy) {
@@ -217,9 +399,17 @@ class PlayerController(
                 headers.entries.firstOrNull { it.key.equals("Referer", true) }?.let { addOption(":http-referrer=${it.value}") }
             }
             if (keep > 0) addOption(":start-time=${keep / 1000.0}")
+            // Even out loud and quiet sounds: a gentle compressor with make-up gain (voices up, peaks down).
+            if (io.github.sherazi5110.cloudstream.Settings.levelAudio) {
+                addOption(":audio-filter=compressor")
+                listOf("rms-peak=0.2", "attack=25", "release=150", "threshold=-24", "ratio=4", "knee=4", "makeup-gain=9")
+                    .forEach { addOption(":compressor-$it") }
+            }
         }
         io.github.sherazi5110.cloudstream.CrashReport.playing("${api.name}: ${response.name} (${playable.label}); source ${link.name} [${link.type}] from " +
             "${runCatching { Uri.parse(link.url).host }.getOrNull() ?: "?"}")
+        io.github.sherazi5110.cloudstream.GlitchReport.step("Playing source ${link.name} [${link.type}] from ${runCatching { Uri.parse(link.url).host }.getOrNull() ?: "?"}" +
+            (variant?.let { " at ${it.label}" } ?: ""))
         // Opening stops the previous source first, which waits for its network reads to end: on a slow host that
         // took seconds and froze the screen ("not responding"). Like VLC for Android, it runs on its own thread.
         val rate = speed
@@ -238,7 +428,7 @@ class PlayerController(
         // a TV channel after 12 s (it has nothing else to wait for).
         watchdog?.cancel()
         if (!started) watchdog = scope.launch {
-            delay(if (api is io.github.sherazi5110.cloudstream.LiveApi) 12_000 else 25_000)
+            delay(if (api is io.github.sherazi5110.cloudstream.LiveApi) 12_000 else if (io.github.sherazi5110.cloudstream.Torrents.isTorrent(link)) 60_000 else 25_000)
             if (!started && current?.url == link.url) failover()
         }
         selectedSubtitle?.let { url ->
@@ -250,7 +440,45 @@ class PlayerController(
     /** Shows an already added subtitle file again (a new source starts without it). */
     fun selectFile(file: java.io.File) {
         selectedSubtitle = file.absolutePath
-        VlcThread.run { player.addSlave(IMedia.Slave.Type.Subtitle, Uri.fromFile(file), true) }
+        showSubtitle(file.absolutePath, null)
+    }
+
+    /** Adds a subtitle file to the player: cleaned first (Subtitle style: captions, ads, capitals) when it is SRT/VTT. */
+    private fun showSubtitle(source: String, headers: Map<String, String>?) {
+        val direct = if (source.startsWith("/")) Uri.fromFile(java.io.File(source))
+            else headers?.takeIf { it.isNotEmpty() }?.let { Uri.parse(StreamProxy.wrap(source, it)) } ?: Uri.parse(source)
+        val clean = SubtitleStyle.currentClean()
+        if (!clean.active) { VlcThread.run { player.addSlave(IMedia.Slave.Type.Subtitle, direct, true) }; return }
+        val wanted = selectedSubtitle
+        scope.launch {
+            val file = runCatching { cleanedFile(source, headers, clean) }
+                .onFailure { android.util.Log.w("StreamGoat", "subtitle clean-up failed", it) }.getOrNull()
+            if (selectedSubtitle != wanted) return@launch // something else was picked meanwhile
+            val uri = file?.let { Uri.fromFile(it) } ?: direct
+            VlcThread.run { player.addSlave(IMedia.Slave.Type.Subtitle, uri, true) }
+        }
+    }
+
+    /** [source] cleaned with [c], cached; null when it isn't a text subtitle file (left to libVLC as it is). */
+    private suspend fun cleanedFile(source: String, headers: Map<String, String>?, c: SubtitleStyle.Clean): java.io.File? = withContext(Dispatchers.IO) {
+        val dir = java.io.File(App.context.cacheDir, "subtitles").apply { mkdirs() }
+        val prefix = "c-${source.hashCode().toUInt()}-${c.key}."
+        dir.listFiles()?.firstOrNull { it.name.startsWith(prefix) && it.length() > 0 }?.let { return@withContext it }
+        val bytes = when {
+            source.startsWith("/") -> java.io.File(source).readBytes()
+            source.startsWith("file:") -> java.io.File(Uri.parse(source).path!!).readBytes()
+            else -> {
+                val h = headers ?: listOfNotNull(current?.referer?.takeIf { it.isNotBlank() }?.let { "Referer" to it }).toMap()
+                val r = com.lagradost.cloudstream3.app.get(source, headers = h, timeout = 20)
+                if (!r.isSuccessful) throw java.io.IOException("HTTP ${r.code}")
+                r.body.bytes()
+            }
+        }
+        val text = SubtitleStyle.decode(bytes)
+        if (!text.contains("-->")) return@withContext null
+        val out = SubtitleStyle.clean(text, c)
+        val ext = if (out.trimStart().startsWith("WEBVTT")) "vtt" else if (out === text) "ass" else "srt"
+        java.io.File(dir, prefix + ext).apply { writeText(out) }
     }
 
     /**
@@ -295,8 +523,23 @@ class PlayerController(
                 val first = links.firstOrNull { it.name != io.github.sherazi5110.cloudstream.LiveApi.PLAIN } ?: current
                 error = "Checking why ${response.name} doesn't play…"
                 if (first != null) scope.launch {
-                    error = io.github.sherazi5110.cloudstream.LiveTv.failureMessage(response.name, first.url, first.headers,
-                        plainTried = tried.any { it.startsWith("http://") } && first.url.startsWith("https://"))
+                    val why = io.github.sherazi5110.cloudstream.LiveTv.diagnose(first.url, first.headers)
+                    if (why == null) {
+                        // The stream answers like a stream, yet the player couldn't play it: likely the app's fault, not the link's.
+                        error = "${response.name}'s stream is online, but the player couldn't play it. This looks like a problem in Stream Goat, not the channel."
+                        appIssue = buildString {
+                            appendLine("Live TV channel that answers but doesn't play")
+                            appendLine("Channel: ${response.name}")
+                            appendLine("Address: ${first.url.take(300)}")
+                            if (first.headers.isNotEmpty()) appendLine("Headers sent: ${first.headers.keys.joinToString()}")
+                            appendLine("Addresses tried: ${tried.size}")
+                        }
+                    } else {
+                        error = io.github.sherazi5110.cloudstream.LiveTv.failureMessage(response.name, first.url, first.headers,
+                            plainTried = tried.any { it.startsWith("http://") } && first.url.startsWith("https://"))
+                        // A broken link: "Hide not working" then leaves it out of the list too.
+                        channelKey?.let { io.github.sherazi5110.cloudstream.LiveTv.markNotWorking(it, why) }
+                    }
                 }
             } else error = "This source can't be played. Pick another one in Sources."
             buffering = false
@@ -318,10 +561,20 @@ class PlayerController(
     }
 
     /** A subtitle file downloaded from the internet (OpenSubtitles) or translated. */
+    /** Downloads an OpenSubtitles result and shows it (lives as long as the player, not the menu it was picked in). */
+    fun addOnlineSubtitle(r: io.github.sherazi5110.cloudstream.OnlineSubtitles.Result) {
+        App.toast("Downloading ${r.languageName} subtitles…")
+        scope.launch {
+            runCatching { io.github.sherazi5110.cloudstream.OnlineSubtitles.download(r) }
+                .onSuccess { addSubtitleFile(it, r.languageName) }
+                .onFailure { e -> if (e !is kotlinx.coroutines.CancellationException) App.toast("Couldn't download the subtitles: ${e.message}") }
+        }
+    }
+
     fun addSubtitleFile(file: java.io.File, name: String = file.name) {
         selectedSubtitle = file.absolutePath
         addedFiles += file to name
-        VlcThread.run { player.addSlave(IMedia.Slave.Type.Subtitle, Uri.fromFile(file), true) }
+        showSubtitle(file.absolutePath, null)
     }
 
     /** Subtitle files added during this playback (online, translated), with their names. */
@@ -421,6 +674,17 @@ class PlayerController(
         VlcThread.run { player.rate = rate }
     }
 
+    /** The resize button: Fit → Fill → Stretch → Fit (the others stay in Settings → Player). */
+    fun cycleZoom(): Zoom {
+        val next = when (zoom) { Zoom.FIT -> Zoom.FILL; Zoom.FILL -> Zoom.STRETCH; else -> Zoom.FIT }
+        setZoomMode(next)
+        return next
+    }
+
+    /** Reopens the current source where it is (after changing something that applies when a source opens). */
+    fun reopen() { current?.let { play(it, lastVariantUrl) } }
+    private var lastVariantUrl: String? = null
+
     fun setZoomMode(z: Zoom) {
         zoom = z
         VlcThread.run { player.videoScale = z.scale }
@@ -439,8 +703,7 @@ class PlayerController(
 
     fun addSubtitle(s: SubtitleFile) {
         selectedSubtitle = s.url
-        val url = s.headers?.takeIf { it.isNotEmpty() }?.let { StreamProxy.wrap(s.url, it) } ?: s.url
-        VlcThread.run { player.addSlave(IMedia.Slave.Type.Subtitle, Uri.parse(url), true) }
+        showSubtitle(s.url, s.headers)
     }
 
     private var layout: VLCVideoLayout? = null
@@ -487,7 +750,12 @@ class PlayerController(
     fun detach(view: Any) { if (view === layout) detachAll() }
 
     /** Records progress for Continue Watching and the episode list. */
+    /** WeTrakr sync for this playback (movies and episodes; not Live TV). */
+    private val trakr by lazy { if (isLive) null else io.github.sherazi5110.cloudstream.WeTrakr.Session(response, playable.season, playable.episode) }
+    private fun percent(): Double = if (length > 0) time * 100.0 / length else 0.0
+
     fun save(finished: Boolean = false) {
+        if (finished) trakr?.stopped(100.0)
         if (isLive || !started) return
         val len = length.takeIf { it > 0 } ?: return
         val pos = if (finished) len else time
@@ -497,9 +765,14 @@ class PlayerController(
         ))
     }
 
+    private var released = false
+
     fun release() {
+        if (started) trakr?.stopped(percent())
+        released = true
         io.github.sherazi5110.cloudstream.CrashReport.playing(null)
         save()
+        closeTorrent()
         scope.cancel()
         main.removeCallbacksAndMessages(null)
         player.setEventListener(null)
