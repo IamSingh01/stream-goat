@@ -512,7 +512,7 @@ async function home(params = {}) {
       ${continueRow()}
       ${rows.map((r) => r.items ? shelf(r.title, r.items) : "").join("")}
       ${rows.some((r) => !r.items) ? '<div class="spinner"></div>' : ""}
-      ${rows.every((r) => r.items && !r.items.length) ? `<div class="empty"><b>Couldn't load the catalogs</b>${navigator.onLine === false
+      ${rows.every((r) => r.items && !r.items.length) ? `<div class="empty"><img src="icon-192.png" alt="" class="empty-logo"><b>Couldn't load the catalogs</b>${navigator.onLine === false
         ? "You're offline." : "Your add-ons didn't answer. Check your connection, or try again in a moment."}<br><br>
         <button class="btn" onclick="cache.home=null;router()">Try again</button></div>` : ""}
     </div>`;
