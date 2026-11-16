@@ -1,5 +1,9 @@
 package io.github.sherazi5110.cloudstream.ui
 
+import dev.chrisbanes.haze.HazeTint
+import dev.chrisbanes.haze.HazeStyle
+import dev.chrisbanes.haze.hazeEffect
+import dev.chrisbanes.haze.hazeSource
 import kotlinx.coroutines.launch
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.foundation.background
@@ -297,6 +301,8 @@ fun CatalogRow(
 internal fun WideHome(state: HomeState) {
     var focused by remember { mutableStateOf<SearchResponse?>(null) }
     val list = rememberLazyListState()
+    // Liquid glass: what scrolls under the top bar is blurred and fades out, with no hard edge (Apple's scroll edge).
+    val topHaze = dev.chrisbanes.haze.rememberHazeState()
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val bannerHeight = (maxHeight * 0.74f).coerceIn(340.dp, 640.dp)
         val scope = rememberCoroutineScope()
@@ -304,7 +310,7 @@ internal fun WideHome(state: HomeState) {
         // remote on the banner's Play button that pushed the banner's top (logo, title) up under the top bar. Here
         // the list only scrolls as far as needed, and the banner always shows whole when it has the focus.
         androidx.compose.runtime.CompositionLocalProvider(androidx.compose.foundation.gestures.LocalBringIntoViewSpec provides MinimalScroll) {
-        LazyColumn(Modifier.fillMaxSize(), state = list, contentPadding = PaddingValues(bottom = 32.dp + LocalBottomInset.current)) {
+        LazyColumn(Modifier.fillMaxSize().then(if (Palette.isGlass) Modifier.hazeSource(topHaze) else Modifier), state = list, contentPadding = PaddingValues(bottom = 32.dp + LocalBottomInset.current)) {
             item(key = "banner") {
                 Box(Modifier.onFocusChanged { f ->
                     if (f.hasFocus && (list.firstVisibleItemIndex != 0 || list.firstVisibleItemScrollOffset != 0)) scope.launch { list.animateScrollToItem(0) }
@@ -323,7 +329,14 @@ internal fun WideHome(state: HomeState) {
         // Fixed top bar; it gets a backdrop once the banner has scrolled away.
         val scrolled = list.firstVisibleItemIndex > 0
         TopBar(
-            Modifier.background(if (scrolled) Palette.background.copy(alpha = 0.94f) else Color.Transparent),
+            when {
+                !scrolled -> Modifier
+                Palette.isGlass && Glass.canBlur -> Modifier.hazeEffect(topHaze, HazeStyle(Color.Transparent, HazeTint(Palette.background.copy(alpha = 0.55f)), 24.dp, 0f)) {
+                    progressive = dev.chrisbanes.haze.HazeProgressive.verticalGradient(startIntensity = 1f, endIntensity = 0f)
+                }
+                Palette.isGlass -> Modifier.background(Brush.verticalGradient(listOf(Palette.background.copy(alpha = 0.92f), Palette.background.copy(alpha = 0.7f), Color.Transparent)))
+                else -> Modifier.background(Palette.background.copy(alpha = 0.94f))
+            },
         ) {
             SourcePicker(state)
             Spacer(Modifier.width(10.dp))

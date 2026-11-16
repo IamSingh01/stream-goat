@@ -12,6 +12,8 @@ import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.asComposeRenderEffect
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
@@ -42,6 +44,54 @@ object Glass {
     val solid: Color get() = Color(0xFF17132B).copy(alpha = 0.95f)
 }
 
+/**
+ * The lens (Android 13+), after Liquid-Glass-Android's lens pipeline: inside a bevel along the edge the backdrop is
+ * pulled inward (refraction) with a slight colour split (dispersion), colours get a vibrancy lift, and two rim
+ * highlights light the edge where it faces the light (top-left) and the opposite inner wall (bottom-right).
+ */
+private const val LENS = """
+uniform shader content;
+uniform float2 size;
+uniform float radius;
+uniform float bevel;
+uniform float refraction;
+float sdBox(float2 p, float2 b, float r) { float2 q = abs(p) - b + r; return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r; }
+half4 main(float2 xy) {
+    float2 c = size * 0.5;
+    float2 p = xy - c;
+    float d = sdBox(p, c, radius);
+    float inside = -d;
+    float e = 1.0;
+    float2 n = normalize(float2(sdBox(p + float2(e, 0), c, radius) - sdBox(p - float2(e, 0), c, radius),
+                                sdBox(p + float2(0, e), c, radius) - sdBox(p - float2(0, e), c, radius)) + 1e-4);
+    float t = clamp(1.0 - inside / bevel, 0.0, 1.0);
+    float2 off = -n * refraction * t * t;
+    half4 col = content.eval(xy + off);
+    col.r = content.eval(xy + off * 1.10).r;
+    col.b = content.eval(xy + off * 0.90).b;
+    half l = dot(col.rgb, half3(0.299, 0.587, 0.114));
+    col.rgb = mix(half3(l), col.rgb, 1.22);
+    float2 L = normalize(float2(-0.5, -0.866));
+    float lobe = pow(abs(dot(n, L)), 4.5);
+    float rim = (1.0 - smoothstep(0.0, 2.2, inside)) * lobe;
+    float glow = (1.0 - smoothstep(0.0, 7.0, inside)) * max(dot(n, L), 0.0);
+    col.rgb += (rim * 0.65 + glow * 0.10) * col.a;
+    return col;
+}
+"""
+
+/** The lens on a glass layer, or nothing where the device can't run it. */
+private fun Modifier.lens(radiusDp: Float): Modifier = if (Build.VERSION.SDK_INT < 33) this else composed {
+    val shader = androidx.compose.runtime.remember { runCatching { android.graphics.RuntimeShader(LENS) }.getOrNull() }
+    if (shader == null) this else this.graphicsLayer {
+        shader.setFloatUniform("size", size.width, size.height)
+        shader.setFloatUniform("radius", minOf(radiusDp * density, size.minDimension / 2))
+        shader.setFloatUniform("bevel", minOf(14f * density, size.minDimension / 3))
+        shader.setFloatUniform("refraction", 9f * density)
+        renderEffect = android.graphics.RenderEffect.createRuntimeShaderEffect(shader, "content").asComposeRenderEffect()
+    }
+}
+
 /** The rim and highlight on glass: a gradient edge and a soft light across the top. */
 private fun Modifier.glassRim(shape: Shape): Modifier = this
     .border(1.dp, Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.30f), Color.White.copy(alpha = 0.06f))), shape)
@@ -54,14 +104,15 @@ private fun Modifier.glassRim(shape: Shape): Modifier = this
  * A glass panel (sheet, menu, dialog, bar). In the glass theme: blur of the page behind (when [blur] and the page
  * is a haze source), dark tint, rim, highlight and shadow. In other themes: the theme's solid surface.
  */
-fun Modifier.glassPanel(shape: Shape, blur: Boolean = true, elevation: Int = 18): Modifier = composed {
+fun Modifier.glassPanel(shape: Shape, blur: Boolean = true, elevation: Int = 18, cornerDp: Float = 22f): Modifier = composed {
     if (!Palette.isGlass) return@composed this.background(Palette.panel, shape)
     val haze = Glass.LocalHaze.current
     val base = this.shadow(elevation.dp, shape, clip = false, ambientColor = Color.Black, spotColor = Color.Black).clip(shape)
     val filled = if (blur && haze != null && Glass.canBlur)
         base.hazeEffect(haze, HazeStyle(backgroundColor = Palette.background, tint = HazeTint(Glass.tint), blurRadius = 28.dp, noiseFactor = 0.06f))
     else base.background(if (blur) Glass.tint.copy(alpha = 0.92f) else Glass.solid)
-    filled.glassRim(shape)
+    // The lens bends what's behind (blurred glass only: flat tint has nothing to bend, the rim still shows).
+    filled.glassRim(shape).then(if (blur && haze != null && Glass.canBlur) Modifier.lens(cornerDp) else Modifier)
 }
 
 /**
