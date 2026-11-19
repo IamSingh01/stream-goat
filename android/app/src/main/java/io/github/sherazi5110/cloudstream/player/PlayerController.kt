@@ -106,6 +106,8 @@ class PlayerController(
     var current by mutableStateOf<ExtractorLink?>(null)
     var started by mutableStateOf(false)
     var playing by mutableStateOf(false)
+    /** The playing video's real size, e.g. "3840×2160" (null until it's known). */
+    var measured by mutableStateOf<String?>(null)
     /** Set after the hardware decoder stalled on this title: decode in software from then on. */
     private var softwareDecode = false
     var buffering by mutableStateOf(true)
@@ -177,6 +179,15 @@ class PlayerController(
                     // Next time (Continue Watching, Resume) this title starts with the same source.
                     current?.takeIf { api !is io.github.sherazi5110.cloudstream.LiveApi }?.let { io.github.sherazi5110.cloudstream.LastSource.remember(api.name, response.url, it) }
                     playing = true; buffering = false; started = true; error = null; watchdog?.cancel()
+                    // The real picture size (extensions sometimes label a 4K file as 1080p): shown in the player and
+                    // remembered for the source list.
+                    main.postDelayed({
+                        runCatching {
+                            val t = player.currentVideoTrack ?: return@runCatching
+                            measured = if (t.width > 0 && t.height > 0) "${t.width}×${t.height}" else null
+                            current?.let { io.github.sherazi5110.cloudstream.MeasuredQuality.remember(it.url, t.width, t.height) }
+                        }
+                    }, 1500)
                     channelKey?.let { io.github.sherazi5110.cloudstream.LiveTv.markWorking(it) }
                     trakr?.playing(percent())
                     if (!languagesApplied) { languagesApplied = true; main.postDelayed({ applyLanguages() }, 1500) }

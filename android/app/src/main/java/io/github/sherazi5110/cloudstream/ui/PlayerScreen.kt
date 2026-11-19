@@ -405,7 +405,9 @@ private fun Controls(c: PlayerController, sheetOpen: Boolean = false, onSheet: (
             RoundIcon(Icons.AutoMirrored.Filled.ArrowBack, "Back") { Nav.back() }
             Column(Modifier.weight(1f).padding(start = 12.dp)) {
                 Text(c.response.name, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                val sub = if (c.playables.size > 1) c.playable.label else c.current?.name
+                val sub = (if (c.playables.size > 1) c.playable.label else c.current?.name)?.let { s ->
+                    c.measured?.let { m -> "$s · actual $m" + if (m.substringBefore('×').toIntOrNull()?.let { it >= 3200 } == true) " (4K)" else "" } ?: s
+                }
                 sub?.let { Text(it, style = MaterialTheme.typography.bodySmall, maxLines = 1) }
             }
             // Report a glitch: a picture of the player as it is now, the source playing and the last steps.

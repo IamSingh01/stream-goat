@@ -111,7 +111,11 @@ fun SourcesPanel(all: List<ExtractorLink>, currentUrl: String?, searching: Boole
     var picked by remember { mutableStateOf(emptySet<String>()) }
     data class Row(val link: ExtractorLink, val tags: List<String>, val text: String)
     val rows = remember(all.size, all.firstOrNull()?.url) {
-        all.map { l -> Row(l, SourceFilters.tags(l.name + " " + l.source, l.quality), listOf(l.name, l.source, SourceFilters.quality(l.name, l.quality).orEmpty()).joinToString(" ")) }
+        all.map { l ->
+            // A source that already played here shows the quality the player measured, not the extension's label.
+            val q = io.github.sherazi5110.cloudstream.MeasuredQuality.get(l.url) ?: l.quality
+            Row(l, SourceFilters.tags(l.name + " " + l.source, q), listOf(l.name, l.source, SourceFilters.quality(l.name, q).orEmpty()).joinToString(" "))
+        }
     }
     val chips = remember(rows) { SourceFilters.chips(rows.map { it.tags }) }
     val shown = rows.filter { r -> picked.all { it in r.tags } && SourceFilters.matches(r.text, query) }
