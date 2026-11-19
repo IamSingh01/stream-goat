@@ -1,5 +1,6 @@
 package io.github.sherazi5110.cloudstream.ui
 
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.PhoneAndroid
@@ -87,6 +88,7 @@ enum class Section(val title: String, val text: String, val icon: ImageVector) {
     LIVETV("Live TV", "M3U playlists, Xtream Codes, guides", Icons.Filled.LiveTv),
     WETRAKR("WeTrakr sync", "Mark what you watch on WeTrakr", Icons.Filled.Sync),
     BROWSE("Browse & ad blocker", "Ad blocker, site and music history", Icons.Filled.Shield),
+    HIDDEN("Hidden content", "Titles you hid, with Restore", Icons.Filled.VisibilityOff),
     METADATA("Metadata & integrations", "TMDB, IMDb ratings, AniList", Icons.Filled.Star),
     NETWORK("Network", "DNS over HTTPS, cookies", Icons.Filled.Public),
     ABOUT("About", "Version, source code", Icons.Filled.Info),
@@ -146,7 +148,8 @@ fun SettingsPageScreen(screen: Screen.SettingsPage) {
 private fun SectionContent(s: Section) {
     when (s) {
         Section.EXTENSIONS -> Unit
-        Section.PROFILES -> { ProfilesSection(); HiddenTitlesSection() }
+        Section.PROFILES -> ProfilesSection()
+        Section.HIDDEN -> HiddenTitlesSection()
         Section.APPEARANCE -> AppearanceSection()
         Section.PLAYER -> PlayerSection()
         Section.LIVETV -> LiveTvSection()
