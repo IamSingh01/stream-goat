@@ -131,7 +131,6 @@ fun BrowseScreen() {
     var address by remember { mutableStateOf(Browser.url) }
     // The address bar follows the page (also when it was opened from Home or by a link).
     androidx.compose.runtime.LaunchedEffect(Browser.url) { address = Browser.url }
-    var showVideos by remember { mutableStateOf(false) }
     val home = Browser.url.isBlank()
     BackHandler(enabled = Browser.canBack) { Browser.view?.goBack() }
 
@@ -188,26 +187,12 @@ fun BrowseScreen() {
                 }
             }
             if (home) BrowseHome { Browser.open(it); address = it }
-            if (Browser.videos.isNotEmpty() && !home) {
-                PillButton("Play in Stream Goat (${Browser.videos.size})", Icons.Filled.PlayArrow,
-                    Modifier.align(Alignment.BottomEnd).padding(16.dp + LocalBottomInset.current)) { showVideos = true }
-            }
         }
     }
     Browser.full?.let { v ->
         BackHandler { Browser.fullDone?.onCustomViewHidden(); Browser.full = null }
         AndroidView({ (v.parent as? android.view.ViewGroup)?.removeView(v); v },
             Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black))
-    }
-    if (showVideos) SimpleDialog("Videos on this page", { showVideos = false }) {
-        Hint("Found while the page played. Pick one to play it in Stream Goat's player (no ads, subtitles and speed controls).")
-        Browser.videos.forEach { v ->
-            Text(v.url.substringAfterLast('/').substringBefore('?').ifBlank { v.url }, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).card(RoundedCornerShape(10.dp)) {
-                    showVideos = false
-                    scope.launch { WebMediaApi.play(v) }
-                }.background(Palette.surface, RoundedCornerShape(10.dp)).padding(12.dp))
-        }
     }
 }
 
@@ -333,7 +318,7 @@ private fun BrowseHome(open: (String) -> Unit) {
         item {
             Text("Browse", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(top = 8.dp))
             Hint("Type a site's address or a search above. Ads, pop-ups and trackers are blocked (open-source lists, " +
-                "updated automatically). When a page plays a video, \"Play in Stream Goat\" plays it in the app's own player.")
+                "updated automatically). Videos play in each site's own player.")
         }
         item {
             SectionTitle("Saved sites", Modifier.padding(top = 16.dp))
