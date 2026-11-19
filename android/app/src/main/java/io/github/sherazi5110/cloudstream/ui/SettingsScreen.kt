@@ -1,5 +1,6 @@
 package io.github.sherazi5110.cloudstream.ui
 
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Sync
@@ -141,7 +142,7 @@ fun SettingsPageScreen(screen: Screen.SettingsPage) {
 private fun SectionContent(s: Section) {
     when (s) {
         Section.EXTENSIONS -> Unit
-        Section.PROFILES -> ProfilesSection()
+        Section.PROFILES -> { ProfilesSection(); HiddenTitlesSection() }
         Section.APPEARANCE -> AppearanceSection()
         Section.PLAYER -> PlayerSection()
         Section.LIVETV -> LiveTvSection()
@@ -242,6 +243,9 @@ private fun AppearanceSection() {
     Hint("Phone/TV changes how the app reacts to touch and the remote; it applies when the app restarts. Landscape screens always get the side rail.")
     Heading("Home")
     var slider by remember { mutableStateOf(Settings.heroSlider) }
+    Heading("Text size")
+    ChoiceChips(listOf(0.85f, 1f, 1.15f, 1.3f), { when (it) { 0.85f -> "Small"; 1f -> "Default"; 1.15f -> "Large"; else -> "Largest" } },
+        { it == TextSize.scale }) { TextSize.scale = it; Settings.textScale = it }
     SwitchRow("Banner slides through the top titles", null, slider) { slider = it; Settings.heroSlider = it }
     var spoiler by remember { mutableStateOf(Settings.antiSpoiler) }
     SwitchRow("Anti-spoiler", "Hide pictures and descriptions of episodes you haven't watched.", spoiler) { spoiler = it; Settings.antiSpoiler = it }
@@ -651,4 +655,28 @@ private fun WeTrakrSection() {
         }
     }
     status?.let { Hint(it) }
+}
+
+
+/** Titles hidden with long-press → Hide (issue #64), each with Restore, and Restore all. */
+@Composable
+private fun HiddenTitlesSection() {
+    val items = io.github.sherazi5110.cloudstream.Hidden.items
+    Heading("Hidden titles")
+    if (items.isEmpty()) {
+        Text("None. Long-press a poster (or hold OK on a TV remote) and choose Hide to keep a title out of Home, catalogs and search.",
+            style = MaterialTheme.typography.bodySmall, color = Palette.muted)
+        return
+    }
+    items.toList().forEach { h ->
+        Row(Modifier.fillMaxWidth().padding(vertical = 4.dp).background(Palette.surface, RoundedCornerShape(10.dp)).padding(10.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            NetImage(h.poster, Modifier.width(36.dp).aspectRatio(2f / 3f))
+            Text(h.name, style = MaterialTheme.typography.bodyLarge, maxLines = 1, modifier = Modifier.padding(start = 12.dp).weight(1f))
+            PillButton("Restore", null, primary = false, compact = true) { io.github.sherazi5110.cloudstream.Hidden.restore(h.url) }
+        }
+    }
+    PillButton("Restore all (${items.size})", null, Modifier.padding(top = 8.dp), primary = false, compact = true) {
+        io.github.sherazi5110.cloudstream.Hidden.restoreAll()
+    }
 }

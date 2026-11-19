@@ -111,6 +111,11 @@ object Settings {
         get() = string("check_updates", "true") == "true"
         set(v) = put("check_updates", v)
 
+    /** Text size across the app (issue #55): 0.85 small … 1.3 largest, on top of the phone's own font size. */
+    var textScale: Float
+        get() = string("text_scale", "1.0").toFloatOrNull() ?: 1f
+        set(v) = put("text_scale", v.toString())
+
     /** Home: rotate the featured banner through the first catalog's top titles. */
     var heroSlider: Boolean
         get() = string("hero_slider", "true") == "true"

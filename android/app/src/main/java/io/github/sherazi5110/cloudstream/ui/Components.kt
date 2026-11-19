@@ -187,11 +187,21 @@ fun PosterCard(
     onLongClick: (() -> Unit)? = null,
     onClick: () -> Unit,
 ) {
+    // Hidden titles (long-press → Hide) don't show anywhere a poster is listed.
+    if (io.github.sherazi5110.cloudstream.Hidden.isHidden(item.url)) return
+    var menu by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
     Column(modifier.width(width)) {
         Box(
             Modifier.fillMaxWidth().aspectRatio(2f / 3f)
-                .card(onFocus = onFocus, onLongClick = onLongClick, selectFirst = true, onClick = onClick)
+                .card(onFocus = onFocus, onLongClick = onLongClick ?: { menu = true }, selectFirst = true, onClick = onClick)
         ) {
+            androidx.compose.material3.DropdownMenu(menu, { menu = false }) {
+                androidx.compose.material3.DropdownMenuItem(text = { Text("Hide this title") }, onClick = {
+                    menu = false
+                    io.github.sherazi5110.cloudstream.Hidden.hide(item)
+                    io.github.sherazi5110.cloudstream.App.toast("Hidden. Restore it in Settings → Profiles → Hidden titles")
+                })
+            }
             NetImage(item.posterUrl, Modifier.fillMaxSize(), item.posterHeaders)
             item.scoreText()?.let { ScoreBadge(it, Modifier.align(Alignment.TopStart).padding(6.dp)) }
             PosterRating(item, Modifier.align(Alignment.BottomStart).padding(6.dp))
