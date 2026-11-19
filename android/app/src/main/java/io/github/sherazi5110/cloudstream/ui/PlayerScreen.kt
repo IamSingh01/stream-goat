@@ -1,5 +1,6 @@
 package io.github.sherazi5110.cloudstream.ui
 
+import androidx.compose.foundation.horizontalScroll
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
@@ -472,7 +473,12 @@ private fun Controls(c: PlayerController, sheetOpen: Boolean = false, onSheet: (
                 )
                 Text(clock(c.length / 1000.0), style = MaterialTheme.typography.titleSmall)
             }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            // On a phone held upright the buttons don't all fit: the row scrolls sideways instead of squeezing the last
+            // one into a column of letters (issue #53). Wide screens spread them out as before.
+            androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val narrow = maxWidth < 640.dp
+            Row(Modifier.fillMaxWidth().then(if (narrow) Modifier.horizontalScroll(androidx.compose.foundation.rememberScrollState()) else Modifier),
+                horizontalArrangement = if (narrow) Arrangement.spacedBy(2.dp) else Arrangement.SpaceBetween) {
                 BarButton(Icons.AutoMirrored.Filled.List, "Sources") { onSheet(Sheet.SOURCES) }
                 BarButton(Icons.Filled.ClosedCaption, "Subtitles") { onSheet(Sheet.SUBTITLES) }
                 BarButton(Icons.Filled.Translate, "Audio") { onSheet(Sheet.AUDIO) }
@@ -483,6 +489,7 @@ private fun Controls(c: PlayerController, sheetOpen: Boolean = false, onSheet: (
                 BarButton(Icons.Filled.AspectRatio, c.zoom.label) { c.cycleZoom(); poke() }
                 c.next?.let { next -> BarButton(Icons.Filled.SkipNext, "Next episode") { Nav.replace(Screen.Player(c.api, c.response, next)) } }
             }
+            }
         }
     }
 }
@@ -492,7 +499,7 @@ private fun BarButton(icon: ImageVector, label: String, onClick: () -> Unit) {
     Row(Modifier.card(RoundedCornerShape(8.dp), onClick = onClick).padding(horizontal = 10.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         Icon(icon, null, tint = Color.White, modifier = Modifier.size(20.dp))
         Spacer(Modifier.width(8.dp))
-        Text(label, style = MaterialTheme.typography.labelMedium)
+        Text(label, style = MaterialTheme.typography.labelMedium, maxLines = 1, softWrap = false)
     }
 }
 
