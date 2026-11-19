@@ -88,6 +88,14 @@ object Browser {
     var canBack by mutableStateOf(false)
     var canForward by mutableStateOf(false)
     var blockedHere by mutableIntStateOf(0)
+    /** Sites the ad blocker is turned off for (by tapping the shield). */
+    private val offPrefs get() = io.github.sherazi5110.cloudstream.App.context.getSharedPreferences("adblock_sites_off", 0)
+    var sitesOff by mutableStateOf(runCatching { offPrefs.getStringSet("hosts", emptySet())!!.toSet() }.getOrDefault(emptySet()))
+    fun isSiteOff(url: String) = host(url) in sitesOff
+    fun setSiteOff(url: String, off: Boolean) {
+        sitesOff = if (off) sitesOff + host(url) else sitesOff - host(url)
+        offPrefs.edit().putStringSet("hosts", sitesOff).apply()
+    }
     /** A page player that went full screen (the page hands us its video view). */
     var full by mutableStateOf<android.view.View?>(null)
     var fullDone: WebChromeClient.CustomViewCallback? = null
@@ -118,6 +126,8 @@ object Browser {
 fun BrowseScreen() {
     val scope = rememberCoroutineScope()
     var address by remember { mutableStateOf(Browser.url) }
+    // The address bar follows the page (also when it was opened from Home or by a link).
+    androidx.compose.runtime.LaunchedEffect(Browser.url) { address = Browser.url }
     var showVideos by remember { mutableStateOf(false) }
     val home = Browser.url.isBlank()
     BackHandler(enabled = Browser.canBack) { Browser.view?.goBack() }
@@ -143,10 +153,13 @@ fun BrowseScreen() {
                     Browser.view?.loadUrl("about:blank"); Browser.url = ""; address = ""; Browser.videos.clear()
                 }
             }
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 4.dp)) {
-                androidx.compose.material3.Icon(Icons.Filled.Shield, "Ad blocker",
-                    tint = if (AdBlock.enabled) Palette.accent else Palette.muted)
-                Text(if (AdBlock.enabled) "${Browser.blockedHere}" else "off", style = MaterialTheme.typography.labelMedium,
+            // Tap the shield to turn the ad blocker off for this site only (when it breaks the site's player), and back on.
+            val siteOff = !home && Browser.isSiteOff(Browser.url)
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 4.dp)
+                .card(RoundedCornerShape(50)) { if (!home) { Browser.setSiteOff(Browser.url, !siteOff); Browser.view?.reload() } }.padding(6.dp)) {
+                androidx.compose.material3.Icon(Icons.Filled.Shield, if (siteOff) "Ad blocker off for this site" else "Ad blocker",
+                    tint = if (AdBlock.enabled && !siteOff) Palette.accent else Palette.muted)
+                Text(if (!AdBlock.enabled || siteOff) "off" else "${Browser.blockedHere}", style = MaterialTheme.typography.labelMedium,
                     modifier = Modifier.padding(start = 4.dp))
             }
         }
@@ -197,7 +210,7 @@ private fun saveIcon(url: String, icon: Bitmap) = runCatching {
 }
 fun siteIcon(url: String): String? = iconFile(url).takeIf { it.isFile && it.length() > 0 }?.let { "file://" + it.path }
 
-private fun host(url: String) = runCatching { java.net.URI(url).host.removePrefix("www.") }.getOrDefault(url)
+internal fun host(url: String) = runCatching { java.net.URI(url).host.removePrefix("www.") }.getOrDefault(url)
 
 @SuppressLint("SetJavaScriptEnabled")
 private fun newWebView(ctx: android.content.Context, onUrl: (String) -> Unit): WebView = WebView(ctx).apply {
@@ -208,6 +221,10 @@ private fun newWebView(ctx: android.content.Context, onUrl: (String) -> Unit): W
     // Look like Chrome: some sites serve a blank page or a decoy video to Android's "web view".
     settings.userAgentString = settings.userAgentString.replace("; wv)", ")").replace(Regex("Version/\\S+ "), "")
     Browser.userAgent = settings.userAgentString
+    // Android's web view tells every site which app it runs in ("X-Requested-With"), and some video sites refuse
+    // to play for apps. Chrome doesn't send it, so neither do we.
+    if (androidx.webkit.WebViewFeature.isFeatureSupported(androidx.webkit.WebViewFeature.REQUESTED_WITH_HEADER_ALLOW_LIST))
+        androidx.webkit.WebSettingsCompat.setRequestedWithHeaderOriginAllowList(settings, emptySet())
     // Pop-ups and new windows (the usual way ad sites open themselves) are refused.
     settings.setSupportMultipleWindows(true)
     settings.javaScriptCanOpenWindowsAutomatically = false
@@ -231,7 +248,7 @@ private fun newWebView(ctx: android.content.Context, onUrl: (String) -> Unit): W
     webViewClient = object : WebViewClient() {
         override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
             val u = request.url
-            if (AdBlock.blocks(u.host)) {
+            if (!Browser.isSiteOff(Browser.url) && AdBlock.blocks(u.host)) {
                 AdBlock.blockedCount.incrementAndGet()
                 view.post { Browser.blockedHere++ }
                 return WebResourceResponse("text/plain", "utf-8", java.io.ByteArrayInputStream(ByteArray(0)))
@@ -259,7 +276,7 @@ private fun newWebView(ctx: android.content.Context, onUrl: (String) -> Unit): W
         override fun onPageFinished(view: WebView, url: String) {
             Browser.canBack = view.canGoBack(); Browser.canForward = view.canGoForward()
             if (url == "about:blank") return
-            val css = AdBlock.hideCss()
+            val css = if (Browser.isSiteOff(url)) "" else AdBlock.hideCss()
             if (css.isNotEmpty()) view.evaluateJavascript(
                 "(function(){var s=document.createElement('style');s.textContent=" + JSONObject.quote(css) + ";document.head&&document.head.appendChild(s);})()", null)
             WebHistory.sites.add(HistoryStore.Entry(url, view.title?.ifBlank { null } ?: host(url), host(url)))
