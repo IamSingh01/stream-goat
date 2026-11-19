@@ -31,6 +31,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.PlayArrow
@@ -88,6 +89,8 @@ object Browser {
     var canBack by mutableStateOf(false)
     var canForward by mutableStateOf(false)
     var blockedHere by mutableIntStateOf(0)
+    /** Why the page didn't load (no internet, the site is down...), shown over the page. */
+    var error by mutableStateOf<String?>(null)
     /** Sites the ad blocker is turned off for (by tapping the shield). */
     private val offPrefs get() = io.github.sherazi5110.cloudstream.App.context.getSharedPreferences("adblock_sites_off", 0)
     var sitesOff by mutableStateOf(runCatching { offPrefs.getStringSet("hosts", emptySet())!!.toSet() }.getOrDefault(emptySet()))
@@ -149,6 +152,10 @@ fun BrowseScreen() {
                     if (saved) WebHistory.bookmarks.remove(Browser.url)
                     else WebHistory.bookmarks.add(HistoryStore.Entry(Browser.url, Browser.title.ifBlank { host(Browser.url) }, host(Browser.url), siteIcon(Browser.url)))
                 }
+                val ctx = androidx.compose.ui.platform.LocalContext.current
+                IconAction(Icons.AutoMirrored.Filled.OpenInNew, "Open in your browser") {
+                    runCatching { ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(Browser.url))) }
+                }
                 IconAction(Icons.Filled.Close, "Close page") {
                     Browser.view?.loadUrl("about:blank"); Browser.url = ""; address = ""; Browser.videos.clear()
                 }
@@ -172,6 +179,14 @@ fun BrowseScreen() {
                 modifier = Modifier.fillMaxSize(),
                 onRelease = { (it.parent as? android.view.ViewGroup)?.removeView(it) },
             )
+            Browser.error?.takeIf { !home }?.let { msg ->
+                Column(Modifier.fillMaxSize().background(Palette.background).padding(24.dp), verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(msg, style = MaterialTheme.typography.bodyLarge)
+                    Hint("Check your connection, or the site may be down. You can also open it in your own browser (the arrow at the top).")
+                    PillButton("Try again", Icons.Filled.Refresh) { Browser.error = null; Browser.view?.reload() }
+                }
+            }
             if (home) BrowseHome { Browser.open(it); address = it }
             if (Browser.videos.isNotEmpty() && !home) {
                 PillButton("Play in Stream Goat (${Browser.videos.size})", Icons.Filled.PlayArrow,
@@ -218,8 +233,7 @@ private fun newWebView(ctx: android.content.Context, onUrl: (String) -> Unit): W
     settings.javaScriptEnabled = true
     settings.domStorageEnabled = true
     settings.mediaPlaybackRequiresUserGesture = false
-    // Look like Chrome: some sites serve a blank page or a decoy video to Android's "web view".
-    settings.userAgentString = settings.userAgentString.replace("; wv)", ")").replace(Regex("Version/\\S+ "), "")
+    // The web view's own user agent is kept: changing it makes Cloudflare's "are you human" check fail on many sites.
     Browser.userAgent = settings.userAgentString
     // Android's web view tells every site which app it runs in ("X-Requested-With"), and some video sites refuse
     // to play for apps. Chrome doesn't send it, so neither do we.
@@ -268,7 +282,14 @@ private fun newWebView(ctx: android.content.Context, onUrl: (String) -> Unit): W
             // intent:// and app links that ads use to jump out of the browser; blocked hosts on the main frame too.
             return scheme != "http" && scheme != "https" || AdBlock.blocks(request.url.host)
         }
+        override fun onReceivedError(view: WebView, request: WebResourceRequest, err: android.webkit.WebResourceError) {
+            if (request.isForMainFrame) Browser.error = "This page didn't load: ${err.description} (${err.errorCode})"
+        }
+        override fun onReceivedSslError(view: WebView, handler: android.webkit.SslErrorHandler, e: android.net.http.SslError) {
+            handler.cancel(); Browser.error = "This site's security certificate isn't valid, so it wasn't opened."
+        }
         override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
+            Browser.error = null
             if (url == "about:blank") return
             if (url != Browser.url) { Browser.videos.clear(); Browser.blockedHere = 0 }
             Browser.url = url; onUrl(url)
