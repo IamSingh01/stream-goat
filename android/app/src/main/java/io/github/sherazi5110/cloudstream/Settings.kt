@@ -116,6 +116,11 @@ object Settings {
         get() = string("text_scale", "1.0").toFloatOrNull() ?: 1f
         set(v) = put("text_scale", v.toString())
 
+    /** The ad blocker for web pages (Browse tab). */
+    var adBlock: Boolean
+        get() = string("ad_block", "true") == "true"
+        set(v) = put("ad_block", v.toString())
+
     /** Home: rotate the featured banner through the first catalog's top titles. */
     var heroSlider: Boolean
         get() = string("hero_slider", "true") == "true"

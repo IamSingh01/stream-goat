@@ -9,7 +9,7 @@ import com.lagradost.cloudstream3.MainAPI
 import io.github.sherazi5110.cloudstream.Playable
 
 /** The bottom bar (phone) / icon rail (TV) destinations. */
-enum class Tab(val label: String) { HOME("Home"), LIVE("Live TV"), SEARCH("Search"), LIBRARY("My list"), EXTENSIONS("Extensions"), MORE("Settings") }
+enum class Tab(val label: String) { HOME("Home"), LIVE("Live TV"), SEARCH("Search"), LIBRARY("My list"), MUSIC("Music"), BROWSE("Browse"), EXTENSIONS("Extensions"), MORE("Settings") }
 
 /** Screens opened on top of a tab. */
 sealed interface Screen {

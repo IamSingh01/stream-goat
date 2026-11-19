@@ -163,6 +163,7 @@ fun PlayerScreen(screen: Screen.Player) {
         insets?.hide(WindowInsetsCompat.Type.systemBars())
         val orientation = activity?.requestedOrientation
         view.keepScreenOn = true
+        io.github.sherazi5110.cloudstream.Music.pauseForVideo()
         onDispose {
             insets?.show(WindowInsetsCompat.Type.systemBars())
             if (!isTv) activity?.requestedOrientation = orientation ?: ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED

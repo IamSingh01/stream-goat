@@ -50,6 +50,7 @@ object App {
         // NewPipe Extractor, as the official app sets it up (YouTube extensions call it directly).
         runCatching { org.schabi.newpipe.extractor.NewPipe.init(com.lagradost.cloudstream3.DownloaderTestImpl.getInstance()) }
         io.github.sherazi5110.cloudstream.ui.ThemeState.load()
+        AdBlock.start()
         // A profile switch changes the look, the library and which extensions show.
         Profiles.onChange {
             io.github.sherazi5110.cloudstream.ui.ThemeState.load()

@@ -1,5 +1,7 @@
 package io.github.sherazi5110.cloudstream.ui
 
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.ui.graphics.asImageBitmap
@@ -84,6 +86,7 @@ enum class Section(val title: String, val text: String, val icon: ImageVector) {
     PLAYER("Player", "Sources, quality, subtitles, audio", Icons.Filled.PlayCircle),
     LIVETV("Live TV", "M3U playlists, Xtream Codes, guides", Icons.Filled.LiveTv),
     WETRAKR("WeTrakr sync", "Mark what you watch on WeTrakr", Icons.Filled.Sync),
+    BROWSE("Browse & ad blocker", "Ad blocker, site and music history", Icons.Filled.Shield),
     METADATA("Metadata & integrations", "TMDB, IMDb ratings, AniList", Icons.Filled.Star),
     NETWORK("Network", "DNS over HTTPS, cookies", Icons.Filled.Public),
     ABOUT("About", "Version, source code", Icons.Filled.Info),
@@ -148,6 +151,7 @@ private fun SectionContent(s: Section) {
         Section.PLAYER -> PlayerSection()
         Section.LIVETV -> LiveTvSection()
         Section.WETRAKR -> WeTrakrSection()
+        Section.BROWSE -> BrowseSection()
         Section.METADATA -> MetadataSection()
         Section.NETWORK -> NetworkSection()
         Section.ABOUT -> AboutSection()
@@ -683,5 +687,30 @@ private fun HiddenTitlesSection() {
     }
     PillButton("Restore all (${items.size})", null, Modifier.padding(top = 8.dp), primary = false, compact = true) {
         io.github.sherazi5110.cloudstream.Hidden.restoreAll()
+    }
+}
+
+
+/** The ad blocker (open-source lists, updated by itself) and the Browse/Music history. */
+@Composable
+private fun BrowseSection() {
+    val scope = rememberCoroutineScope()
+    SwitchRow("Block ads, pop-ups and trackers", "In the Browse tab: on every web page, and pages can't open new windows or jump to other apps.",
+        io.github.sherazi5110.cloudstream.AdBlock.enabled) { io.github.sherazi5110.cloudstream.AdBlock.turn(it) }
+    Heading("Filter lists")
+    Hint("Open-source lists, downloaded again every 3 days: " + io.github.sherazi5110.cloudstream.AdBlock.lists.joinToString(", ") { it.name } + ".")
+    val at = io.github.sherazi5110.cloudstream.AdBlock.updatedAt
+    Text(if (at == 0L) "Not downloaded yet" else "%,d blocked servers · updated %s · %,d blocked since the app started".format(
+        io.github.sherazi5110.cloudstream.AdBlock.ruleCount, java.text.DateFormat.getDateInstance().format(java.util.Date(at)),
+        io.github.sherazi5110.cloudstream.AdBlock.blockedCount.get()), style = MaterialTheme.typography.bodyMedium)
+    PillButton(if (io.github.sherazi5110.cloudstream.AdBlock.updating) "Updating…" else "Update now", Icons.Filled.Refresh,
+        Modifier.padding(top = 8.dp), primary = false, compact = true) { scope.launch { io.github.sherazi5110.cloudstream.AdBlock.update() } }
+    Heading("History")
+    Hint("Kept only on this device (and in your backups): ${io.github.sherazi5110.cloudstream.WebHistory.sites.items.size} sites, " +
+        "${io.github.sherazi5110.cloudstream.WebHistory.bookmarks.items.size} bookmarks, ${io.github.sherazi5110.cloudstream.WebHistory.songs.items.size} songs.")
+    Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        PillButton("Clear site history", null, primary = false, compact = true) { io.github.sherazi5110.cloudstream.WebHistory.sites.clear() }
+        PillButton("Clear music history", null, primary = false, compact = true) { io.github.sherazi5110.cloudstream.WebHistory.songs.clear() }
+        PillButton("Clear cookies", null, primary = false, compact = true) { android.webkit.CookieManager.getInstance().removeAllCookies(null) }
     }
 }
