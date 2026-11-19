@@ -38,7 +38,9 @@ object App {
     fun detectTv(): Boolean {
         val ui = context.getSystemService(Context.UI_MODE_SERVICE) as UiModeManager
         return ui.currentModeType == Configuration.UI_MODE_TYPE_TELEVISION ||
-            context.packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK)
+            context.packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK) ||
+            // Projectors and TV boxes that don't call themselves TVs: no touchscreen means a remote.
+            !context.packageManager.hasSystemFeature(PackageManager.FEATURE_TOUCHSCREEN)
     }
 
     fun init(context: Context) {

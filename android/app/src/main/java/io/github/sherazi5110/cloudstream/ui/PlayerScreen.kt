@@ -388,7 +388,8 @@ private fun RoundIcon(icon: ImageVector, label: String, modifier: Modifier = Mod
 @Composable
 private fun Controls(c: PlayerController, onSheet: (Sheet) -> Unit, onLock: () -> Unit, poke: () -> Unit) {
     val playFocus = remember { FocusRequester() }
-    LaunchedEffect(Unit) { if (isTv) runCatching { playFocus.requestFocus() } }
+    val inputMode = androidx.compose.ui.platform.LocalInputModeManager.current.inputMode
+    LaunchedEffect(Unit) { if (isTv || inputMode == androidx.compose.ui.input.InputMode.Keyboard) runCatching { playFocus.requestFocus() } }
     var now by remember { mutableStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) { while (true) { now = System.currentTimeMillis(); delay(15_000) } }
     val timeFormat = remember { DateFormat.getTimeInstance(DateFormat.SHORT) }

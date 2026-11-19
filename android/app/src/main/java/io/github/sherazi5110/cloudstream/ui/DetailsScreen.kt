@@ -254,7 +254,7 @@ private fun Details(api: MainAPI, r: LoadResponse) {
                             SectionTitle("Cast", Modifier.padding(horizontal = edge))
                             TvRowScroll { LazyRow(contentPadding = PaddingValues(horizontal = edge, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                                 items(cast.take(30)) { (name, role, photo) ->
-                                    Column(Modifier.width(104.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Column(Modifier.width(104.dp).card(RoundedCornerShape(12.dp)) { Nav.search(name) }, horizontalAlignment = Alignment.CenterHorizontally) {
                                         NetImage(photo, Modifier.size(92.dp).clip(CircleShape))
                                         Text(name, style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 8.dp))
                                         role?.let { Text(it, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis) }

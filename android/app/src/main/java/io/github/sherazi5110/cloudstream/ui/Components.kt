@@ -1,5 +1,7 @@
 package io.github.sherazi5110.cloudstream.ui
 
+import androidx.compose.foundation.focusGroup
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.animation.core.animateFloatAsState
@@ -132,7 +134,12 @@ internal val RevealScroll = object : androidx.compose.foundation.gestures.BringI
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun TvRowScroll(content: @Composable () -> Unit) {
-    if (isTv) androidx.compose.runtime.CompositionLocalProvider(androidx.compose.foundation.gestures.LocalBringIntoViewSpec provides RevealScroll, content = content)
+    if (isTv) androidx.compose.runtime.CompositionLocalProvider(androidx.compose.foundation.gestures.LocalBringIntoViewSpec provides RevealScroll) {
+        // Right on the last card stays put (it used to jump to the profile button at the far side of the screen).
+        androidx.compose.foundation.layout.Box(Modifier
+            .focusProperties { onExit = { if (requestedFocusDirection == androidx.compose.ui.focus.FocusDirection.Right) cancelFocusChange() } }
+            .focusGroup()) { content() }
+    }
     else content()
 }
 

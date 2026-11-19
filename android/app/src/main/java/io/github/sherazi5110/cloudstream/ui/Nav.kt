@@ -57,6 +57,15 @@ object Nav {
         searchScope = homeProvider
     }
 
+    /** Searches every extension for [text] (an actor's name from the Cast row). */
+    fun search(text: String) {
+        stack.clear()
+        select(Tab.SEARCH)
+        searchScope = null
+        searchQuery = text
+        searchSubmitted = text
+    }
+
     val top: Screen? get() = stack.lastOrNull()
 
     fun open(screen: Screen) {

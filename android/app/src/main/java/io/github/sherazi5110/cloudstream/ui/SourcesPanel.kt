@@ -1,5 +1,7 @@
 package io.github.sherazi5110.cloudstream.ui
 
+import androidx.compose.foundation.focusGroup
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -128,12 +130,16 @@ fun SourcesPanel(all: List<ExtractorLink>, currentUrl: String?, searching: Boole
                 Spacer(Modifier.weight(1f))
                 IconAction(Icons.Filled.Close, "Close") { onClose() }
             }
+            val chipsFocus = remember { FocusRequester() }
+            val searchFocus = remember { FocusRequester() }
             OutlinedTextField(query, { query = it }, singleLine = true, placeholder = { Text("Search: hindi, english, 1080p, a server's name…") },
                 leadingIcon = { Icon(Icons.Filled.Search, null) }, shape = RoundedCornerShape(50),
                 colors = OutlinedTextFieldDefaults.colors(unfocusedContainerColor = Palette.surfaceHigh, focusedContainerColor = Palette.surfaceHigh,
                     unfocusedBorderColor = Color.Transparent, focusedBorderColor = Palette.accent),
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
-            if (chips.isNotEmpty()) LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(vertical = 10.dp)) {
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp).focusRequester(searchFocus)
+                    .focusProperties { down = if (chips.isNotEmpty()) chipsFocus else first })
+            if (chips.isNotEmpty()) LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(vertical = 10.dp),
+                modifier = Modifier.focusRequester(chipsFocus).focusProperties { up = searchFocus; down = first }.focusGroup()) {
                 items(chips) { tag ->
                     val on = tag in picked
                     Text(tag, style = MaterialTheme.typography.labelLarge, modifier = Modifier
@@ -149,7 +155,7 @@ fun SourcesPanel(all: List<ExtractorLink>, currentUrl: String?, searching: Boole
                 items(shown.size, key = { i -> "${i}|${shown[i].link.url}" }) { i ->
                     val r = shown[i]
                     val playing = r.link.url == currentUrl
-                    Row(Modifier.fillMaxWidth().then(if (i == 0) Modifier.focusRequester(first) else Modifier)
+                    Row(Modifier.fillMaxWidth().then(if (i == 0) Modifier.focusRequester(first).focusProperties { up = if (chips.isNotEmpty()) chipsFocus else searchFocus } else Modifier)
                         .card(RoundedCornerShape(12.dp), focusScale = 1.01f) { onPick(r.link); onClose() }
                         .background(if (playing) Palette.accent.copy(alpha = 0.18f) else Palette.surfaceHigh, RoundedCornerShape(12.dp))
                         .padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
