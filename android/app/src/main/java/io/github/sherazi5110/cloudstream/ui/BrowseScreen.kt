@@ -72,7 +72,8 @@ import kotlinx.coroutines.launch
 import org.json.JSONObject
 
 /** A video address seen while a page loaded (the page's own player asked for it). */
-data class FoundVideo(val url: String, val page: String, val title: String)
+/** A video request seen on a page, with the headers the page sent for it (sites check them before serving the real video). */
+data class FoundVideo(val url: String, val page: String, val title: String, val headers: Map<String, String> = emptyMap())
 
 /**
  * The Browse tab's state, kept while the app runs: the web page stays as it was when you switch tabs and come back.
@@ -85,6 +86,11 @@ object Browser {
     var canBack by mutableStateOf(false)
     var canForward by mutableStateOf(false)
     var blockedHere by mutableIntStateOf(0)
+    /** A page player that went full screen (the page hands us its video view). */
+    var full by mutableStateOf<android.view.View?>(null)
+    var fullDone: WebChromeClient.CustomViewCallback? = null
+    /** The browser's user agent, sent along when the app's player plays a video found on a page. */
+    var userAgent = ""
     val videos = mutableStateListOf<FoundVideo>()
 
     private val media = Regex("""\.(m3u8|mpd|mp4|webm|mkv)(\?|$)""", RegexOption.IGNORE_CASE)
@@ -158,6 +164,11 @@ fun BrowseScreen() {
             }
         }
     }
+    Browser.full?.let { v ->
+        BackHandler { Browser.fullDone?.onCustomViewHidden(); Browser.full = null }
+        AndroidView({ (v.parent as? android.view.ViewGroup)?.removeView(v); v },
+            Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black))
+    }
     if (showVideos) SimpleDialog("Videos on this page", { showVideos = false }) {
         Hint("Found while the page played. Pick one to play it in Stream Goat's player (no ads, subtitles and speed controls).")
         Browser.videos.forEach { v ->
@@ -178,13 +189,19 @@ private fun newWebView(ctx: android.content.Context, onUrl: (String) -> Unit): W
     settings.javaScriptEnabled = true
     settings.domStorageEnabled = true
     settings.mediaPlaybackRequiresUserGesture = false
+    // Look like Chrome: some sites serve a blank page or a decoy video to Android's "web view".
+    settings.userAgentString = settings.userAgentString.replace("; wv)", ")").replace(Regex("Version/\\S+ "), "")
+    Browser.userAgent = settings.userAgentString
     // Pop-ups and new windows (the usual way ad sites open themselves) are refused.
     settings.setSupportMultipleWindows(true)
     settings.javaScriptCanOpenWindowsAutomatically = false
-    CookieManager.getInstance().setAcceptThirdPartyCookies(this, false)
+    // Video players are often embedded from another site and need their own cookies to load.
+    CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
     webChromeClient = object : WebChromeClient() {
         override fun onProgressChanged(view: WebView, p: Int) { Browser.progress = p }
         override fun onReceivedTitle(view: WebView, t: String?) { Browser.title = t.orEmpty() }
+        override fun onShowCustomView(v: android.view.View, callback: CustomViewCallback) { Browser.full = v; Browser.fullDone = callback }
+        override fun onHideCustomView() { Browser.full = null; Browser.fullDone = null }
         override fun onCreateWindow(view: WebView, isDialog: Boolean, isUserGesture: Boolean, resultMsg: Message?): Boolean {
             if (AdBlock.enabled) AdBlock.blockedCount.incrementAndGet()
             return false
@@ -199,8 +216,9 @@ private fun newWebView(ctx: android.content.Context, onUrl: (String) -> Unit): W
                 return WebResourceResponse("text/plain", "utf-8", java.io.ByteArrayInputStream(ByteArray(0)))
             }
             val s = u.toString()
+            val sent = request.requestHeaders.filterKeys { it.equals("Referer", true) || it.equals("Origin", true) }
             if (Browser.isMedia(s)) view.post {
-                if (Browser.videos.none { it.url == s }) Browser.videos += FoundVideo(s, Browser.url, Browser.title)
+                if (Browser.videos.none { it.url == s }) Browser.videos += FoundVideo(s, Browser.url, Browser.title, sent)
             }
             return null
         }
@@ -271,14 +289,20 @@ object WebMediaApi : MainAPI() {
         val url = o.getString("url")
         val type = if (url.contains(".m3u8", true)) ExtractorLinkType.M3U8 else if (url.contains(".mpd", true)) ExtractorLinkType.DASH else ExtractorLinkType.VIDEO
         callback(newExtractorLink("Browser", host(o.optString("page")).ifBlank { "Web page" }, url, type) {
-            referer = o.optString("page")
+            val h = o.optJSONObject("headers")
+            val sent = h?.keys()?.asSequence()?.associateWith { h.getString(it) }.orEmpty()
+            headers = sent.filterKeys { !it.equals("Referer", true) }
+            referer = sent.entries.firstOrNull { it.key.equals("Referer", true) }?.value ?: o.optString("page")
             quality = com.lagradost.cloudstream3.utils.Qualities.Unknown.value
         })
         return true
     }
 
     suspend fun play(v: FoundVideo) {
-        val data = JSONObject().put("url", v.url).put("page", v.page).toString()
+        val headers = JSONObject(v.headers)
+        if (Browser.userAgent.isNotBlank()) headers.put("User-Agent", Browser.userAgent)
+        CookieManager.getInstance().getCookie(v.url)?.let { headers.put("Cookie", it) }
+        val data = JSONObject().put("url", v.url).put("page", v.page).put("headers", headers).toString()
         val title = v.title.ifBlank { host(v.page) }
         val response: LoadResponse = newMovieLoadResponse(title, v.page, TvType.Movie, data)
         Playback.play(this, response, Playable(title, data))
