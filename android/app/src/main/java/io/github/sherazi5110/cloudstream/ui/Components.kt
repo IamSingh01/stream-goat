@@ -1,5 +1,6 @@
 package io.github.sherazi5110.cloudstream.ui
 
+import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.foundation.focusGroup
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.input.pointer.pointerInput
@@ -138,7 +139,9 @@ fun TvRowScroll(content: @Composable () -> Unit) {
         // Right on the last card stays put (it used to jump to the profile button at the far side of the screen).
         androidx.compose.foundation.layout.Box(Modifier
             .focusProperties { onExit = { if (requestedFocusDirection == androidx.compose.ui.focus.FocusDirection.Right) cancelFocusChange() } }
-            .focusGroup()) { content() }
+            // Coming back to a row (Up/Down from the next row) returns to the card that was selected there, instead
+            // of whichever card happens to be nearest on screen.
+            .focusRestorer()) { content() }
     }
     else content()
 }

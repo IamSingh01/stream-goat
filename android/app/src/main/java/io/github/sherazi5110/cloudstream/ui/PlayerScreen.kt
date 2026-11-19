@@ -266,7 +266,7 @@ fun PlayerScreen(screen: Screen.Player) {
                     RoundIcon(Icons.Filled.Lock, "Unlock", Modifier.padding(24.dp)) { locked = false; poke++ }
                 }
             } else AnimatedVisibility(controls && !inPip(), enter = fadeIn(), exit = fadeOut()) {
-                Controls(c, onSheet = { sheet = it }, onLock = { locked = true; poke++ }, poke = { poke++ })
+                Controls(c, sheetOpen = sheet != null, onSheet = { sheet = it }, onLock = { locked = true; poke++ }, poke = { poke++ })
             }
             val seg = c.activeSegment
             if (countdownLeft > 0) {
@@ -386,10 +386,14 @@ private fun RoundIcon(icon: ImageVector, label: String, modifier: Modifier = Mod
 }
 
 @Composable
-private fun Controls(c: PlayerController, onSheet: (Sheet) -> Unit, onLock: () -> Unit, poke: () -> Unit) {
+private fun Controls(c: PlayerController, sheetOpen: Boolean = false, onSheet: (Sheet) -> Unit, onLock: () -> Unit, poke: () -> Unit) {
     val playFocus = remember { FocusRequester() }
     val inputMode = androidx.compose.ui.platform.LocalInputModeManager.current.inputMode
-    LaunchedEffect(Unit) { if (isTv || inputMode == androidx.compose.ui.input.InputMode.Keyboard) runCatching { playFocus.requestFocus() } }
+    // When the controls appear, and again when a panel (Audio, Subtitles, Sources…) closes, the remote's selection
+    // goes to Play/pause instead of nowhere (it used to bounce to the back button or need an extra OK).
+    LaunchedEffect(sheetOpen) {
+        if (!sheetOpen && (isTv || inputMode == androidx.compose.ui.input.InputMode.Keyboard)) { delay(80); runCatching { playFocus.requestFocus() } }
+    }
     var now by remember { mutableStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) { while (true) { now = System.currentTimeMillis(); delay(15_000) } }
     val timeFormat = remember { DateFormat.getTimeInstance(DateFormat.SHORT) }
