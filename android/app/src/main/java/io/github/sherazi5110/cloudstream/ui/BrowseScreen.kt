@@ -241,7 +241,7 @@ private fun newWebView(ctx: android.content.Context, onUrl: (String) -> Unit): W
         androidx.webkit.WebSettingsCompat.setRequestedWithHeaderOriginAllowList(settings, emptySet())
     // Pop-ups and new windows (the usual way ad sites open themselves) are refused.
     settings.setSupportMultipleWindows(true)
-    settings.javaScriptCanOpenWindowsAutomatically = false
+    settings.javaScriptCanOpenWindowsAutomatically = true
     // Video players are often embedded from another site and need their own cookies to load.
     CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
     webChromeClient = object : WebChromeClient() {
@@ -254,9 +254,29 @@ private fun newWebView(ctx: android.content.Context, onUrl: (String) -> Unit): W
         }
         override fun onShowCustomView(v: android.view.View, callback: CustomViewCallback) { Browser.full = v; Browser.fullDone = callback }
         override fun onHideCustomView() { Browser.full = null; Browser.fullDone = null }
+        /**
+         * A link that opens a "new tab": there are no tabs, so it opens right here (Back returns to the page before).
+         * Pop-ups the page opens by itself, without a tap, are refused, and so are taps that lead to an ad server.
+         */
         override fun onCreateWindow(view: WebView, isDialog: Boolean, isUserGesture: Boolean, resultMsg: Message?): Boolean {
-            if (AdBlock.enabled) AdBlock.blockedCount.incrementAndGet()
-            return false
+            if (!isUserGesture || resultMsg == null) { if (AdBlock.enabled) AdBlock.blockedCount.incrementAndGet(); return false }
+            val catcher = WebView(view.context)
+            catcher.webViewClient = object : WebViewClient() {
+                private var done = false
+                fun take(url: String?) {
+                    if (done || url.isNullOrBlank() || url == "about:blank") return
+                    done = true
+                    val host = runCatching { android.net.Uri.parse(url).host }.getOrNull()
+                    if (url.startsWith("http") && !(!Browser.isSiteOff(Browser.url) && AdBlock.blocks(host))) view.loadUrl(url)
+                    else if (AdBlock.enabled) { AdBlock.blockedCount.incrementAndGet(); Browser.blockedHere++ }
+                    catcher.post { catcher.stopLoading(); catcher.destroy() }
+                }
+                override fun shouldOverrideUrlLoading(v: WebView, request: WebResourceRequest): Boolean { take(request.url.toString()); return true }
+                override fun onPageStarted(v: WebView, url: String?, favicon: Bitmap?) { take(url) }
+            }
+            (resultMsg.obj as WebView.WebViewTransport).webView = catcher
+            resultMsg.sendToTarget()
+            return true
         }
     }
     webViewClient = object : WebViewClient() {
