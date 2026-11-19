@@ -1,6 +1,9 @@
 package io.github.sherazi5110.cloudstream.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -108,12 +111,29 @@ private fun TrackRow(title: String, artist: String, image: String?, now: Boolean
 @Composable
 fun MiniPlayer(modifier: Modifier = Modifier) {
     val t = Music.current ?: return
+    var open by remember { mutableStateOf(false) }
     Column(modifier.fillMaxWidth().padding(horizontal = 12.dp).background(Palette.panel, RoundedCornerShape(16.dp))) {
         if (Music.length > 0) LinearProgressIndicator(progress = { (Music.position.toFloat() / Music.length).coerceIn(0f, 1f) },
             modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 0.dp))
+        if (open) Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            NetImage(t.thumbnail, Modifier.size(220.dp).clip(RoundedCornerShape(12.dp)))
+            Text(t.title, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 10.dp))
+            Text(t.artist, style = MaterialTheme.typography.bodyMedium, color = Palette.muted)
+            if (Music.length > 0) {
+                var drag by remember { mutableStateOf<Float?>(null) }
+                androidx.compose.material3.Slider(value = drag ?: (Music.position.toFloat() / Music.length).coerceIn(0f, 1f),
+                    onValueChange = { drag = it }, onValueChangeFinished = { drag?.let { Music.seekTo((it * Music.length).toLong()) }; drag = null },
+                    modifier = Modifier.fillMaxWidth())
+                Row(Modifier.fillMaxWidth()) {
+                    Text(clock(Music.position), style = MaterialTheme.typography.labelSmall)
+                    Spacer(Modifier.weight(1f))
+                    Text(clock(Music.length), style = MaterialTheme.typography.labelSmall)
+                }
+            }
+        }
         Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            NetImage(t.thumbnail, Modifier.size(40.dp).clip(RoundedCornerShape(6.dp)))
-            Column(Modifier.weight(1f).padding(start = 10.dp)) {
+            NetImage(t.thumbnail, Modifier.size(40.dp).clip(RoundedCornerShape(6.dp)).card(RoundedCornerShape(6.dp)) { open = !open })
+            Column(Modifier.weight(1f).padding(start = 10.dp).clickable { open = !open }) {
                 Text(t.title, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(Music.error ?: if (Music.loading) "Loading…" else t.artist, style = MaterialTheme.typography.bodySmall, maxLines = 1)
             }
@@ -121,7 +141,10 @@ fun MiniPlayer(modifier: Modifier = Modifier) {
             IconAction(if (Music.playing) Icons.Filled.Pause else Icons.Filled.PlayArrow, "Play/pause") { Music.toggle() }
             IconAction(Icons.Filled.SkipNext, "Next") { Music.next() }
             Spacer(Modifier.width(4.dp))
+            IconAction(if (open) Icons.Filled.ExpandMore else Icons.Filled.ExpandLess, if (open) "Close player" else "Open player") { open = !open }
             IconAction(Icons.Filled.Close, "Stop") { Music.stop() }
         }
     }
 }
+
+private fun clock(ms: Long): String { val s = ms / 1000; return "%d:%02d".format(s / 60, s % 60) }

@@ -145,7 +145,8 @@ fun BrowseScreen() {
         if (Browser.progress < 100) LinearProgressIndicator(progress = { Browser.progress / 100f }, modifier = Modifier.fillMaxWidth().height(2.dp))
 
         Box(Modifier.weight(1f).fillMaxWidth()) {
-            AndroidView(
+            // The web view only exists while a page is open: an empty one painted the whole screen black.
+            if (!home) AndroidView(
                 factory = { ctx -> Browser.view ?: newWebView(ctx) { address = it }.also { Browser.view = it; if (Browser.url.isNotBlank()) it.loadUrl(Browser.url) } },
                 modifier = Modifier.fillMaxSize(),
                 onRelease = { (it.parent as? android.view.ViewGroup)?.removeView(it) },
@@ -173,6 +174,7 @@ private fun host(url: String) = runCatching { java.net.URI(url).host.removePrefi
 
 @SuppressLint("SetJavaScriptEnabled")
 private fun newWebView(ctx: android.content.Context, onUrl: (String) -> Unit): WebView = WebView(ctx).apply {
+    setBackgroundColor(android.graphics.Color.rgb(14, 14, 18))
     settings.javaScriptEnabled = true
     settings.domStorageEnabled = true
     settings.mediaPlaybackRequiresUserGesture = false

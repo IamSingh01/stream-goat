@@ -79,9 +79,13 @@ object Music {
             if (current != track) return@launch
             if (audio == null) { loading = false; error = "Couldn't play \"${track.title}\""; return@launch }
             withContext(Dispatchers.Main) {
-                player.stop()
-                player.media = Media(Vlc.lib, Uri.parse(audio)).apply { addOption(":no-video"); release() }
-                player.play()
+                runCatching {
+                    player.stop()
+                    val m = Media(Vlc.lib, Uri.parse(audio)).apply { addOption(":no-video") }
+                    player.media = m
+                    m.release()      // the player keeps its own reference
+                    player.play()
+                }.onFailure { loading = false; error = "Couldn't play \"${track.title}\"" }
             }
         }
     }
