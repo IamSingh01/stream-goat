@@ -712,7 +712,7 @@ private fun BrowseSection() {
     Hint("Kept only on this device (and in your backups): ${io.github.sherazi5110.cloudstream.WebHistory.sites.items.size} sites, " +
         "${io.github.sherazi5110.cloudstream.WebHistory.bookmarks.items.size} bookmarks, ${io.github.sherazi5110.cloudstream.WebHistory.songs.items.size} songs.")
     Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        PillButton("Clear site history", null, primary = false, compact = true) { io.github.sherazi5110.cloudstream.WebHistory.sites.clear() }
+        PillButton("Clear site history", null, primary = false, compact = true) { io.github.sherazi5110.cloudstream.WebHistory.sites.clear(); io.github.sherazi5110.cloudstream.WebHistory.watching.clear() }
         PillButton("Clear music history", null, primary = false, compact = true) { io.github.sherazi5110.cloudstream.WebHistory.songs.clear() }
         PillButton("Clear cookies", null, primary = false, compact = true) { android.webkit.CookieManager.getInstance().removeAllCookies(null) }
     }

@@ -240,6 +240,9 @@ private fun newWebView(ctx: android.content.Context, onUrl: (String) -> Unit): W
             val sent = request.requestHeaders.filterKeys { it.equals("Referer", true) || it.equals("Origin", true) }
             if (Browser.isMedia(s)) view.post {
                 if (Browser.videos.none { it.url == s }) Browser.videos += FoundVideo(s, Browser.url, Browser.title, sent)
+                // A page that plays a video goes in "Continue on the web" on Home.
+                if (Browser.url.isNotBlank() && WebHistory.watching.items.firstOrNull()?.id != Browser.url)
+                    WebHistory.watching.add(HistoryStore.Entry(Browser.url, Browser.title.ifBlank { host(Browser.url) }, host(Browser.url), siteIcon(Browser.url)))
             }
             return null
         }
@@ -284,7 +287,7 @@ private fun BrowseHome(open: (String) -> Unit) {
             }
         }
         if (WebHistory.sites.items.isNotEmpty()) {
-            item { SectionTitle("History", Modifier.padding(top = 16.dp), action = "Clear") { WebHistory.sites.clear() } }
+            item { SectionTitle("History", Modifier.padding(top = 16.dp), action = "Clear") { WebHistory.sites.clear(); WebHistory.watching.clear() } }
             items(WebHistory.sites.items.take(60), key = { "h" + it.id }) { e -> SiteRow(e, open) { WebHistory.sites.remove(e.id) } }
         }
     }
@@ -355,5 +358,42 @@ object WebMediaApi : MainAPI() {
         val title = v.title.ifBlank { host(v.page) }
         val response: LoadResponse = newMovieLoadResponse(title, v.page, TvType.Movie, data)
         Playback.play(this, response, Playable(title, data))
+    }
+}
+
+/** On Home: the web pages you were watching a video on, to go back to them in the Browse tab. */
+@Composable
+fun WebContinueRow(edge: androidx.compose.ui.unit.Dp) {
+    val items = WebHistory.watching.items
+    if (items.isEmpty() || io.github.sherazi5110.cloudstream.ui.ProfileUi.current.kids) return
+    Column(Modifier.padding(top = 12.dp)) {
+        SectionTitle("Continue on the web", Modifier.padding(horizontal = edge))
+        TvRowScroll { androidx.compose.foundation.lazy.LazyRow(
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = edge, vertical = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            items(items.toList(), key = { "w" + it.id }) { e ->
+                var menu by remember { mutableStateOf(false) }
+                Box {
+                    Row(Modifier.width(260.dp).card(RoundedCornerShape(14.dp), onLongClick = { menu = true }) {
+                        Nav.tab = Tab.BROWSE; Browser.open(e.id)
+                    }.background(Palette.surface, RoundedCornerShape(14.dp)).padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        val logo = e.image ?: siteIcon(e.id)
+                        Box(Modifier.size(44.dp).clip(RoundedCornerShape(10.dp)).background(Palette.panel), contentAlignment = Alignment.Center) {
+                            if (logo != null) NetImage(logo, Modifier.size(30.dp))
+                            else Text(host(e.id).take(1).uppercase(), style = MaterialTheme.typography.titleLarge)
+                        }
+                        Column(Modifier.weight(1f).padding(start = 10.dp)) {
+                            Text(e.title, style = MaterialTheme.typography.labelLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            Text(host(e.id), style = MaterialTheme.typography.bodySmall, color = Palette.muted, maxLines = 1)
+                        }
+                        androidx.compose.material3.Icon(Icons.Filled.PlayArrow, null, tint = Palette.accent)
+                    }
+                    androidx.compose.material3.DropdownMenu(menu, { menu = false }) {
+                        androidx.compose.material3.DropdownMenuItem({ Text("Remove") }, { menu = false; WebHistory.watching.remove(e.id) })
+                    }
+                }
+            }
+        } }
     }
 }

@@ -43,4 +43,6 @@ object WebHistory {
     val sites = HistoryStore("browse_history", 300)
     val bookmarks = HistoryStore("browse_bookmarks", 100)
     val songs = HistoryStore("music_history", 300)
+    /** Pages where a video played, for "Continue on the web" on Home. */
+    val watching = HistoryStore("web_watching", 12)
 }
