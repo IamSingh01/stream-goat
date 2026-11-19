@@ -1,5 +1,6 @@
 package io.github.sherazi5110.cloudstream.ui
 
+import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.material.icons.filled.Link
@@ -395,6 +396,10 @@ private fun LiveTvSection() {
         if (busy) Spinner(Modifier.padding(start = 12.dp).size(28.dp))
     }
     if (kind == LiveTv.Kind.M3U) Hint("Or choose a playlist file (.m3u, .m3u8) saved on this device.")
+    // No typing with the remote: scan the QR code with a phone and paste the playlist link there.
+    PillButton("Add from phone (scan a QR code)", Icons.Filled.PhoneAndroid, Modifier.padding(top = 10.dp), primary = false, compact = true) {
+        Nav.open(Screen.AddFromPhone)
+    }
     if (kind == LiveTv.Kind.M3U && LiveTv.isIptvOrgIndex(url)) Hint("That's iptv-org's whole list: 10,000+ channels from every country, and many play only in " +
         "their own country or have stopped. Live TV opens on your country's channels from it, or add just one country below (smaller and quicker).")
     // iptv-org's free channels, one country at a time (its whole list is too big and mostly region-locked elsewhere).
