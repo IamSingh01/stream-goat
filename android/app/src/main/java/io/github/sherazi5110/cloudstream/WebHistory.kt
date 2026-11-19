@@ -32,6 +32,8 @@ class HistoryStore(private val file: String, private val cap: Int) {
         while (items.size > cap) items.removeAt(items.lastIndex)
         save()
     }
+    /** Replaces the entry with the same id, keeping its place. */
+    fun update(e: Entry) { val i = items.indexOfFirst { it.id == e.id }; if (i >= 0) { items[i] = e; save() } }
     fun remove(id: String) { items.removeAll { it.id == id }; save() }
     fun contains(id: String) = items.any { it.id == id }
     fun clear() { items.clear(); save() }

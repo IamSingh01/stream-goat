@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -51,6 +52,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -133,9 +135,9 @@ fun BrowseScreen() {
                 modifier = Modifier.weight(1f))
             if (!home) {
                 val saved = WebHistory.bookmarks.contains(Browser.url)
-                IconAction(if (saved) Icons.Filled.Star else Icons.Filled.StarBorder, "Bookmark") {
+                IconAction(if (saved) Icons.Filled.Star else Icons.Filled.StarBorder, if (saved) "Remove saved site" else "Save site") {
                     if (saved) WebHistory.bookmarks.remove(Browser.url)
-                    else WebHistory.bookmarks.add(HistoryStore.Entry(Browser.url, Browser.title.ifBlank { Browser.url }, host(Browser.url)))
+                    else WebHistory.bookmarks.add(HistoryStore.Entry(Browser.url, Browser.title.ifBlank { host(Browser.url) }, host(Browser.url), siteIcon(Browser.url)))
                 }
                 IconAction(Icons.Filled.Close, "Close page") {
                     Browser.view?.loadUrl("about:blank"); Browser.url = ""; address = ""; Browser.videos.clear()
@@ -181,6 +183,20 @@ fun BrowseScreen() {
     }
 }
 
+/** Site logos, saved on the device as pages show them (no outside favicon service, so no one sees what you visit). */
+private fun iconFile(url: String) = java.io.File(java.io.File(io.github.sherazi5110.cloudstream.App.context.filesDir, "site_icons").apply { mkdirs() },
+    host(url).replace(Regex("[^a-zA-Z0-9.-]"), "_") + ".png")
+private fun saveIcon(url: String, icon: Bitmap) = runCatching {
+    val f = iconFile(url)
+    if (f.isFile && f.length() > 0 && icon.width < 32) return@runCatching
+    f.outputStream().use { icon.compress(Bitmap.CompressFormat.PNG, 100, it) }
+    // A saved site picks up its logo once the page has shown it.
+    WebHistory.bookmarks.items.filter { host(it.id) == host(url) && it.image == null }.forEach {
+        android.os.Handler(android.os.Looper.getMainLooper()).post { WebHistory.bookmarks.update(it.copy(image = "file://" + f.path)) }
+    }
+}
+fun siteIcon(url: String): String? = iconFile(url).takeIf { it.isFile && it.length() > 0 }?.let { "file://" + it.path }
+
 private fun host(url: String) = runCatching { java.net.URI(url).host.removePrefix("www.") }.getOrDefault(url)
 
 @SuppressLint("SetJavaScriptEnabled")
@@ -200,6 +216,11 @@ private fun newWebView(ctx: android.content.Context, onUrl: (String) -> Unit): W
     webChromeClient = object : WebChromeClient() {
         override fun onProgressChanged(view: WebView, p: Int) { Browser.progress = p }
         override fun onReceivedTitle(view: WebView, t: String?) { Browser.title = t.orEmpty() }
+        override fun onReceivedIcon(view: WebView, icon: Bitmap?) {
+            val url = view.url ?: return
+            if (icon == null) return
+            io.github.sherazi5110.cloudstream.App.scope.launch(kotlinx.coroutines.Dispatchers.IO) { saveIcon(url, icon) }
+        }
         override fun onShowCustomView(v: android.view.View, callback: CustomViewCallback) { Browser.full = v; Browser.fullDone = callback }
         override fun onHideCustomView() { Browser.full = null; Browser.fullDone = null }
         override fun onCreateWindow(view: WebView, isDialog: Boolean, isUserGesture: Boolean, resultMsg: Message?): Boolean {
@@ -253,13 +274,41 @@ private fun BrowseHome(open: (String) -> Unit) {
             Hint("Type a site's address or a search above. Ads, pop-ups and trackers are blocked (open-source lists, " +
                 "updated automatically). When a page plays a video, \"Play in Stream Goat\" plays it in the app's own player.")
         }
-        if (WebHistory.bookmarks.items.isNotEmpty()) {
-            item { SectionTitle("Bookmarks", Modifier.padding(top = 16.dp)) }
-            items(WebHistory.bookmarks.items.toList(), key = { "b" + it.id }) { e -> SiteRow(e, open) { WebHistory.bookmarks.remove(e.id) } }
+        item {
+            SectionTitle("Saved sites", Modifier.padding(top = 16.dp))
+            if (WebHistory.bookmarks.items.isEmpty())
+                Hint("Open a site and tap the star next to the address to save it here.")
+            else androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(top = 8.dp)) {
+                WebHistory.bookmarks.items.forEach { e -> SiteCard(e, open) }
+            }
         }
         if (WebHistory.sites.items.isNotEmpty()) {
             item { SectionTitle("History", Modifier.padding(top = 16.dp), action = "Clear") { WebHistory.sites.clear() } }
             items(WebHistory.sites.items.take(60), key = { "h" + it.id }) { e -> SiteRow(e, open) { WebHistory.sites.remove(e.id) } }
+        }
+    }
+}
+
+/** A saved site: its logo (or first letter) and title. Long-press (hold OK on a remote) to remove it. */
+@Composable
+private fun SiteCard(e: HistoryStore.Entry, open: (String) -> Unit) {
+    var menu by remember { mutableStateOf(false) }
+    Box {
+        Column(Modifier.width(132.dp).card(RoundedCornerShape(14.dp), onLongClick = { menu = true }) { open(e.id) }
+            .background(Palette.surface, RoundedCornerShape(14.dp)).padding(12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally) {
+            val logo = e.image ?: siteIcon(e.id)
+            Box(Modifier.size(56.dp).clip(RoundedCornerShape(12.dp)).background(Palette.panel), contentAlignment = Alignment.Center) {
+                if (logo != null) NetImage(logo, Modifier.size(40.dp))
+                else Text(host(e.id).take(1).uppercase(), style = MaterialTheme.typography.headlineSmall)
+            }
+            Text(e.title.ifBlank { host(e.id) }, style = MaterialTheme.typography.labelLarge, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.padding(top = 8.dp))
+            Text(host(e.id), style = MaterialTheme.typography.bodySmall, color = Palette.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        androidx.compose.material3.DropdownMenu(menu, { menu = false }) {
+            androidx.compose.material3.DropdownMenuItem({ Text("Remove") }, { menu = false; WebHistory.bookmarks.remove(e.id) })
         }
     }
 }
