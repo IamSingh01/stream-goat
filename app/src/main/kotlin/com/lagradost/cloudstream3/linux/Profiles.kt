@@ -168,7 +168,9 @@ object ContentFilter {
             val langs = Settings.extensionLanguages
             if (langs.isNotEmpty() && (api.lang as String?)?.lowercase() !in langs) return false
             val types = Settings.mediaTypes
-            if (types.isNotEmpty() && api.supportedTypes.none { it.name in types }) return false
+            // Adult extensions follow the adult switch, not "Preferred media" (which has no adult choice).
+            val adultOn = nsfwAllowed && TvType.NSFW in api.supportedTypes
+            if (types.isNotEmpty() && !adultOn && api.supportedTypes.none { it.name in types }) return false
         }
         val f = filter ?: return true
         return api.name in f.extensions
