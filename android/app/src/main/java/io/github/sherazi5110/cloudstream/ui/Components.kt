@@ -163,7 +163,7 @@ fun NetImage(
         return
     }
     val request = remember(url, headers) {
-        ImageRequest.Builder(context).data(url).crossfade(true).apply {
+        ImageRequest.Builder(context).data(url).crossfade(!isTv).apply {
             if (!headers.isNullOrEmpty()) httpHeaders(NetworkHeaders.Builder().apply { headers.forEach { (k, v) -> set(k, v) } }.build())
         }.build()
     }
