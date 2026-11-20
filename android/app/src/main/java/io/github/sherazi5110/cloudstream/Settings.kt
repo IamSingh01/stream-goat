@@ -212,6 +212,16 @@ object Settings {
         get() = string("player_orientation", "LANDSCAPE")
         set(v) = put("player_orientation", v)
 
+    /** Volume boost in percent (100 = normal, up to 200): for quiet streams and weak speakers. */
+    var volumeBoost: Int
+        get() = string("volume_boost", "100").toIntOrNull()?.coerceIn(100, 200) ?: 100
+        set(v) = put("volume_boost", v.coerceIn(100, 200).toString())
+
+    /** Send Dolby/DTS 5.1 and 7.1 sound as is to an AV receiver or soundbar (HDMI/optical passthrough). */
+    var passthrough: Boolean
+        get() = string("audio_passthrough", "false").toBoolean()
+        set(v) = put("audio_passthrough", v.toString())
+
     /** Even out loud and quiet sounds (libVLC's compressor): quieter explosions and music, clearer voices. */
     var levelAudio: Boolean
         get() = string("level_audio", "false").toBoolean()

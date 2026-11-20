@@ -5,6 +5,7 @@ import android.os.Handler
 import android.os.Looper
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -114,6 +115,9 @@ class PlayerController(
     var time by mutableLongStateOf(0L)
     var length by mutableLongStateOf(0L)
     var speed by mutableFloatStateOf(1f)
+    /** Volume in percent: above 100 boosts quiet streams (libVLC amplifies up to 200). */
+    var boost by mutableIntStateOf(Settings.volumeBoost)
+        private set
     var zoom by mutableStateOf(runCatching { Zoom.valueOf(Settings.playerZoom) }.getOrDefault(Zoom.FIT))
     var selectedSubtitle by mutableStateOf<String?>(null)
     var error by mutableStateOf<String?>(null)
@@ -442,12 +446,17 @@ class PlayerController(
         // took seconds and froze the screen ("not responding"). Like VLC for Android, it runs on its own thread.
         val rate = speed
         val scale = zoom.scale
+        val volume = boost
         opening = true
         VlcThread.run {
             try {
+                // 5.1/7.1 sound: by default libVLC plays every channel the device can (multichannel on TVs and
+                // receivers, mixed down to stereo on phones); passthrough sends Dolby/DTS untouched to a receiver.
+                runCatching { player.setAudioDigitalOutputEnabled(Settings.passthrough) }
                 player.media = media
                 media.release()
                 player.play()
+                player.volume = volume
                 player.rate = rate
                 player.videoScale = scale
             } finally { opening = false }
@@ -695,6 +704,12 @@ class PlayerController(
     fun seekTo(ms: Long) {
         time = ms
         VlcThread.run { player.setTime(ms) }
+    }
+
+    fun changeBoost(percent: Int) {
+        boost = percent.coerceIn(100, 200)
+        Settings.volumeBoost = boost
+        VlcThread.run { player.volume = boost }
     }
 
     fun setRate(rate: Float) {

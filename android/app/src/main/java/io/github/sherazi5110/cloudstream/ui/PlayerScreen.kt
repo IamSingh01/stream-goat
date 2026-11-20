@@ -110,7 +110,7 @@ import java.text.DateFormat
 import java.util.Date
 import kotlin.math.abs
 
-private enum class Sheet(val title: String) { SOURCES("Sources"), SUBTITLES("Subtitles"), ONLINE("Online subtitles"), TRANSLATE("Translate subtitles"), AUDIO("Audio"), SPEED("Speed"), ZOOM("Zoom"), QUALITY("Quality"),
+private enum class Sheet(val title: String) { SOURCES("Sources"), SUBTITLES("Subtitles"), ONLINE("Online subtitles"), TRANSLATE("Translate subtitles"), AUDIO("Audio"), BOOST("Volume boost"), SPEED("Speed"), ZOOM("Zoom"), QUALITY("Quality"),
     SUB_SYNC("Sync subtitles"), AUDIO_SYNC("Sync audio"), SUB_STYLE("Subtitle style") }
 
 fun Context.findActivity(): Activity? = when (this) {
@@ -593,6 +593,14 @@ private fun SheetPanel(sheet: Sheet, c: PlayerController, modifier: Modifier, on
                 }
             }
             Sheet.AUDIO -> c.audioTracks().filter { it.id != -1 }.map { t -> Option(t.name, null, t.id == c.audioTrack()) { c.setAudio(t.id); onClose() } } +
+                Option("Volume boost: ${c.boost}%", "Louder than the device's maximum, for quiet streams", c.boost > 100) { onOpen(Sheet.BOOST) } +
+                Option(if (Settings.passthrough) "Surround passthrough (5.1/7.1): On" else "Surround passthrough (5.1/7.1): Off",
+                    "On: Dolby and DTS go as they are to your receiver or soundbar. Off: the app plays 5.1 itself (all channels on TVs and receivers, mixed to stereo on phones)",
+                    Settings.passthrough) {
+                    Settings.passthrough = !Settings.passthrough
+                    c.reopen()
+                    onClose()
+                } +
                 Option("Sync audio", if (c.audioDelay == 0L) "Earlier or later, to match the lips" else delayText(c.audioDelay), false) { onOpen(Sheet.AUDIO_SYNC) } +
                 Option(if (Settings.levelAudio) "Even out loud and quiet sounds: On" else "Even out loud and quiet sounds: Off",
                     "Quieter music and explosions, clearer voices (good on TVs)", Settings.levelAudio) {
@@ -600,6 +608,7 @@ private fun SheetPanel(sheet: Sheet, c: PlayerController, modifier: Modifier, on
                     c.reopen()
                     onClose()
                 }
+            Sheet.BOOST -> listOf(100, 125, 150, 175, 200).map { v -> Option("$v%", if (v == 100) "Normal" else "Louder (may distort)", v == c.boost) { c.changeBoost(v); onClose() } }
             Sheet.SPEED -> listOf(0.25f, 0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f).map { r -> Option("$r×", if (r == 1f) "Normal" else null, r == c.speed) { c.setRate(r); onClose() } }
             Sheet.ZOOM -> Zoom.entries.map { z -> Option(z.label, null, z == c.zoom) { c.setZoomMode(z); onClose() } }
             Sheet.SUB_SYNC, Sheet.AUDIO_SYNC, Sheet.SUB_STYLE -> emptyList()
