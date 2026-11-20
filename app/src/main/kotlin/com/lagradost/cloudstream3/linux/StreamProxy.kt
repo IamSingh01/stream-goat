@@ -75,7 +75,7 @@ object StreamProxy {
         // Keep the original file name/extension: players use it to guess the format.
         val name = runCatching { URI(url).path.substringAfterLast('/') }.getOrNull().orEmpty()
             .ifBlank { "stream" }.let { URLEncoder.encode(it, "UTF-8").replace("+", "%20") }
-        return "http://127.0.0.1:${s.address.port}/s/$id/$name"
+        return "http://127.0.0.1:${s.address.port}/s/$id/${Disguise.segmentName(name)}"
     }
 
     /** Stable ids, so rewriting the same live playlist again doesn't grow the table. */
@@ -119,9 +119,21 @@ object StreamProxy {
                         exchange.sendResponseHeaders(response.code, -1)
                         return
                     }
+                    // Video segments hidden behind a fake picture header (only the sound played): skip to the real
+                    // MPEG-TS and say it's video.
+                    val input = java.io.BufferedInputStream(body.byteStream(), 64 * 1024)
+                    var sendLength = length
+                    if (exchange.requestHeaders.getFirst("Range") == null && response.code == 200) {
+                        val skip = Disguise.junkBefore(input)
+                        if (skip > 0) {
+                            input.skip(skip.toLong())
+                            sendLength = length?.minus(skip)
+                            exchange.responseHeaders.set("Content-Type", "video/mp2t")
+                        }
+                    }
                     // 0 means chunked when the length is unknown.
-                    exchange.sendResponseHeaders(response.code, length ?: 0)
-                    body.byteStream().use { input -> input.copyTo(exchange.responseBody, 64 * 1024) }
+                    exchange.sendResponseHeaders(response.code, sendLength ?: 0)
+                    input.use { it.copyTo(exchange.responseBody, 64 * 1024) }
                 }
             } catch (t: Throwable) {
                 // The player closing a connection mid-stream (seek, stop) lands here too.
@@ -154,5 +166,29 @@ object StreamProxy {
                 else -> proxied(line)
             }
         }
+    }
+}
+
+/** Video segments disguised as pictures (a fake image header in front of MPEG-TS). Same as the Android app's. */
+object Disguise {
+    private val imageExt = Regex("\\.(jpe?g|png|gif|webp|bmp|ico|txt|html|css|js)$", RegexOption.IGNORE_CASE)
+
+    fun segmentName(name: String): String = if (imageExt.containsMatchIn(name)) imageExt.replace(name, ".ts") else name
+
+    fun junkBefore(input: java.io.InputStream): Int {
+        val peek = 64 * 1024
+        input.mark(peek)
+        val buf = ByteArray(peek)
+        var n = 0
+        while (n < peek) { val r = input.read(buf, n, peek - n); if (r <= 0) break; n += r }
+        input.reset()
+        return junkBefore(buf, n)
+    }
+
+    fun junkBefore(buf: ByteArray, n: Int): Int {
+        fun ts(at: Int) = (0 until 4).all { at + it * 188 < n && buf[at + it * 188] == 0x47.toByte() }
+        if (n < 188 * 4 || ts(0)) return 0
+        for (i in 1 until n - 188 * 3) if (ts(i)) return i
+        return 0
     }
 }
