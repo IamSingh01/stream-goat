@@ -50,7 +50,7 @@ object StreamProxy {
         // Keep the original file name/extension: the player uses it to guess the format.
         val name = runCatching { URI(url).path.substringAfterLast('/') }.getOrNull().orEmpty()
             .ifBlank { "stream" }.let { URLEncoder.encode(it, "UTF-8").replace("+", "%20") }
-        return "http://127.0.0.1:${s.localPort}/s/$id/$name"
+        return "http://127.0.0.1:${s.localPort}/s/$id/${Disguise.segmentName(name)}"
     }
 
     private fun id(url: String, headers: Map<String, String>): String {
@@ -98,15 +98,28 @@ object StreamProxy {
                     } else respond(out, response.code, copied, text.toByteArray())
                     return
                 }
-                val length = response.header("Content-Length")
+                var length = response.header("Content-Length")?.toLongOrNull()
+                var body = if (method != "HEAD") BufferedInputStream(response.body.byteStream(), 64 * 1024) else null
+                var headersOut = copied
+                // Some sites hide video segments behind a fake picture header (they're served as .jpg/.png with an
+                // image type): the player then treats the video as a broken image and only the sound plays. The real
+                // MPEG-TS starts a little further in; skip to it and say it's video.
+                if (body != null && range == null && response.code == 200) {
+                    val skip = Disguise.junkBefore(body)
+                    if (skip > 0) {
+                        body.skip(skip.toLong())
+                        length = length?.minus(skip)
+                        headersOut = copied.filter { (n, _) -> !n.equals("Content-Type", true) } + ("Content-Type" to "video/mp2t")
+                    }
+                }
                 val head = buildString {
                     append("HTTP/1.1 ${response.code} ${response.message.ifBlank { "OK" }}\r\n")
-                    copied.forEach { (n, v) -> append("$n: $v\r\n") }
+                    headersOut.forEach { (n, v) -> append("$n: $v\r\n") }
                     length?.let { append("Content-Length: $it\r\n") }
                     append("Connection: close\r\n\r\n")
                 }
                 out.write(head.toByteArray())
-                if (method != "HEAD") response.body.byteStream().use { it.copyTo(out, 64 * 1024) }
+                body?.use { it.copyTo(out, 64 * 1024) }
                 out.flush()
             }
         } catch (t: Throwable) {
@@ -144,5 +157,34 @@ object StreamProxy {
                 else -> proxied(line)
             }
         }
+    }
+}
+
+/** Video segments disguised as pictures (a fake image header in front of MPEG-TS). */
+object Disguise {
+    private val imageExt = Regex("\\.(jpe?g|png|gif|webp|bmp|ico|txt|html|css|js)$", RegexOption.IGNORE_CASE)
+
+    /** A segment named like a picture or a page gets a .ts name, so the player doesn't open it as one. */
+    fun segmentName(name: String): String = if (imageExt.containsMatchIn(name)) imageExt.replace(name, ".ts") else name
+
+    /**
+     * How many bytes of junk come before the MPEG-TS data in [input] (0 when it starts with it or isn't TS at all).
+     * TS is recognised by its sync byte (0x47) repeating every 188 bytes. [input] is reset, so nothing is consumed.
+     */
+    fun junkBefore(input: java.io.InputStream): Int {
+        val peek = 64 * 1024
+        input.mark(peek)
+        val buf = ByteArray(peek)
+        var n = 0
+        while (n < peek) { val r = input.read(buf, n, peek - n); if (r <= 0) break; n += r }
+        input.reset()
+        return junkBefore(buf, n)
+    }
+
+    fun junkBefore(buf: ByteArray, n: Int): Int {
+        fun ts(at: Int) = (0 until 4).all { at + it * 188 < n && buf[at + it * 188] == 0x47.toByte() }
+        if (n < 188 * 4 || ts(0)) return 0
+        for (i in 1 until n - 188 * 3) if (ts(i)) return i
+        return 0
     }
 }
