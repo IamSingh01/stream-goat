@@ -637,6 +637,16 @@ private fun WeTrakrSection() {
             SwitchRow("Show what I'm watching", "WeTrakr shows the title as playing, with its progress. Off: titles are only marked watched when you finish them.", share) {
                 share = it; io.github.sherazi5110.cloudstream.WeTrakr.shareNowPlaying = it
             }
+            val syncScope = rememberCoroutineScope()
+            var syncing by remember { mutableStateOf(false) }
+            Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("Two-way sync: what you watch in other apps on WeTrakr (and on the website) shows as watched here, " +
+                    "and what you mark watched here is sent there. Checked every 30 minutes and when you open a title.",
+                    style = MaterialTheme.typography.bodySmall, color = Palette.muted, modifier = Modifier.weight(1f))
+                PillButton(if (syncing) "Syncing…" else "Sync now", null, primary = false, compact = true) {
+                    if (!syncing) { syncing = true; syncScope.launch { runCatching { io.github.sherazi5110.cloudstream.WeTrakrSync.pull(force = true) }; syncing = false; App.toast("WeTrakr synced") } }
+                }
+            }
         }
         code != null -> {
             val c = code!!
