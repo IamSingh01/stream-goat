@@ -1,5 +1,6 @@
 package io.github.sherazi5110.cloudstream.ui
 
+import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Shield
@@ -91,6 +92,7 @@ enum class Section(val title: String, val text: String, val icon: ImageVector) {
     HIDDEN("Hidden content", "Titles you hid, with Restore", Icons.Filled.VisibilityOff),
     METADATA("Metadata & integrations", "TMDB, IMDb ratings, AniList", Icons.Filled.Star),
     NETWORK("Network", "DNS over HTTPS, cookies", Icons.Filled.Public),
+    LOGS("App logs", "What the app recorded, to copy or share", Icons.Filled.BugReport),
     ABOUT("About", "Version, source code", Icons.Filled.Info),
 }
 
@@ -157,6 +159,7 @@ private fun SectionContent(s: Section) {
         Section.BROWSE -> BrowseSection()
         Section.METADATA -> MetadataSection()
         Section.NETWORK -> NetworkSection()
+        Section.LOGS -> AppLogsSection()
         Section.ABOUT -> AboutSection()
         Section.PROVIDERS -> ProvidersSection()
         Section.GENERAL -> GeneralSection()
