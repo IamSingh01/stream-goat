@@ -354,7 +354,7 @@ class PlayerController(
                 else -> withContext(Dispatchers.IO) {
                     // The audio is separate: a master with only this quality, so it keeps its sound.
                     val headers = headersOf(link)
-                    val proxied = headers.keys.any { !it.equals("Referer", true) && !it.equals("User-Agent", true) }
+                    val proxied = true // through the local proxy, like every HLS source (see play())
                     val text = HlsVariants.single(m, v) { if (proxied) StreamProxy.wrap(it, headers) else it }
                     val file = java.io.File(App.context.cacheDir, "quality-${v.url.hashCode()}.m3u8").apply { writeText(text) }
                     Uri.fromFile(file).toString()
@@ -429,9 +429,15 @@ class PlayerController(
         val headers = buildMap {
             putAll(link.headers)
             if (link.referer.isNotBlank() && keys.none { it.equals("Referer", true) }) put("Referer", link.referer)
+            if (keys.none { it.equals("User-Agent", true) }) put("User-Agent", USER_AGENT)
         }
-        val needsProxy = headers.keys.any { !it.equals("Referer", true) && !it.equals("User-Agent", true) }
         val source = (variantUrl ?: link.url).removeSuffix(io.github.sherazi5110.cloudstream.LiveApi.EXPIRED_MARK)
+        // HLS (not Live TV) always goes through the local proxy: libVLC's own HTTP/2 client gave up on servers that
+        // reset streams ("http demux: local stream error: Stream closed", then "cannot peek" and the video stopped),
+        // while OkHttp retries and reuses connections; the proxy also fixes disguised video segments.
+        val hls = api !is io.github.sherazi5110.cloudstream.LiveApi && !source.startsWith("file:") &&
+            (link.isM3u8 || source.substringBefore('?').endsWith(".m3u8", true))
+        val needsProxy = hls || headers.keys.any { !it.equals("Referer", true) && !it.equals("User-Agent", true) }
         // A Live TV server with an expired (but genuine) certificate: through the local proxy, which accepts it.
         val expiredOk = link.name == io.github.sherazi5110.cloudstream.LiveApi.EXPIRED
         val url = if (source.startsWith("file:")) source else if (needsProxy || expiredOk) StreamProxy.wrap(source, headers, expiredOk) else source
