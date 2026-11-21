@@ -75,12 +75,10 @@ object MusicLibrary {
         App.toast("Downloading \"${t.title}\"")
         App.scope.launch(Dispatchers.IO) {
             val ok = runCatching {
-                val info = StreamInfo.getInfo(ServiceList.YouTube, t.url)
-                // M4A (AAC) plays everywhere; any audio stream otherwise.
-                val stream = info.audioStreams.filter { it.format?.suffix == "m4a" }.maxByOrNull { it.averageBitrate }
-                    ?: info.audioStreams.maxByOrNull { it.averageBitrate } ?: error("No audio")
+                // M4A (AAC) plays everywhere; from YouTube, or a Piped server when YouTube blocks this connection.
+                val audio = Music.audioUrl(t.url, m4a = true)
                 val tmp = File(dir, fileOf(t.url).name + ".part")
-                val req = okhttp3.Request.Builder().url(stream.content).header("User-Agent", "Mozilla/5.0").build()
+                val req = okhttp3.Request.Builder().url(audio).header("User-Agent", "Mozilla/5.0").build()
                 com.lagradost.cloudstream3.app.baseClient.newCall(req).execute().use { r ->
                     if (!r.isSuccessful) error("HTTP ${r.code}")
                     val total = r.body.contentLength()

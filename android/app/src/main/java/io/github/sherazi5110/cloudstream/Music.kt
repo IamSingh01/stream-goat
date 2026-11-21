@@ -102,6 +102,39 @@ object Music {
             ?: run(YoutubeSearchQueryHandlerFactory.VIDEOS)
     }
 
+    /** Public Piped servers: they fetch from YouTube themselves, for when YouTube blocks this connection ("not a bot"). */
+    private val piped = listOf("https://pipedapi.kavin.rocks", "https://pipedapi.adminforge.de", "https://api.piped.private.coffee",
+        "https://pipedapi.r4fo.com", "https://pipedapi.leptons.xyz")
+
+    /**
+     * The address of a song's audio: from YouTube directly (NewPipe), or, when YouTube refuses this connection, from
+     * a Piped server. [m4a] prefers AAC (for downloads, which play everywhere). Also loads the song's suggestions.
+     */
+    suspend fun audioUrl(url: String, m4a: Boolean = false): String = withContext(Dispatchers.IO) {
+        val direct = runCatching {
+            val info = StreamInfo.getInfo(ServiceList.YouTube, url)
+            runCatching { setSuggestions(url, info) }
+            val streams = info.audioStreams
+            ((if (m4a) streams.filter { it.format?.suffix == "m4a" }.maxByOrNull { it.averageBitrate } else null)
+                ?: streams.maxByOrNull { it.averageBitrate })?.content ?: error("No audio for this song")
+        }
+        direct.getOrNull()?.let { return@withContext it }
+        val id = Regex("(?:v=|youtu\\.be/|/shorts/)([\\w-]{11})").find(url)?.groupValues?.get(1) ?: throw direct.exceptionOrNull()!!
+        for (base in piped) {
+            val found = runCatching {
+                val text = com.lagradost.cloudstream3.app.get("$base/streams/$id", timeout = 10).text
+                val o = org.json.JSONObject(text)
+                val a = o.getJSONArray("audioStreams")
+                val list = (0 until a.length()).map { a.getJSONObject(it) }.filter { it.optString("url").startsWith("http") }
+                val best = (if (m4a) list.filter { "mp4" in it.optString("mimeType") }.maxByOrNull { it.optInt("bitrate") } else null)
+                    ?: list.maxByOrNull { it.optInt("bitrate") }
+                best?.getString("url")
+            }.getOrNull()
+            if (found != null) return@withContext found
+        }
+        throw direct.exceptionOrNull() ?: IllegalStateException("No audio for this song")
+    }
+
     /** Plays [track]; the rest of [list] after it plays next. */
     fun play(track: Track, list: List<Track> = listOf(track)) {
         queue = list
@@ -118,14 +151,14 @@ object Music {
             return
         }
         App.scope.launch {
-            val audio = runCatching {
-                withContext(Dispatchers.IO) {
-                    StreamInfo.getInfo(ServiceList.YouTube, track.url).also { runCatching { setSuggestions(track.url, it) } }
-                        .audioStreams.maxByOrNull { it.averageBitrate }?.content
-                }
-            }.getOrNull()
+            val result = runCatching { audioUrl(track.url) }
             if (current != track) return@launch
-            if (audio == null) { loading = false; error = "Couldn't play \"${track.title}\""; return@launch }
+            val audio = result.getOrNull()
+            if (audio == null) {
+                loading = false
+                error = "Couldn't play \"${track.title}\": " + (result.exceptionOrNull()?.message?.substringBefore('\n')?.take(120) ?: "no audio")
+                return@launch
+            }
             withContext(Dispatchers.Main) {
                 runCatching {
                     player.stop()
