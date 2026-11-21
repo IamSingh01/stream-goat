@@ -281,17 +281,19 @@ private fun PlayerSection() {
         autoPlay = it; Settings.autoPlay = it
     }
     Heading("Player engine")
-    var eng by remember { mutableStateOf(Settings.playerEngine) }
-    ChoiceChips(listOf("AUTO", "EXO", "MPV", "VLC"), { when (it) { "AUTO" -> "Automatic"; "EXO" -> "ExoPlayer"; "MPV" -> "mpv"; else -> "VLC" } }, { it == eng }) {
-        eng = it; Settings.playerEngine = it
+    Hint("Which player plays each kind of source. ExoPlayer is the official CloudStream app's player (extensions are made for it); " +
+        "mpv is FFmpeg-based and strong with files and unusual formats; VLC plays almost anything. If one can't play a source, " +
+        "the next is tried before another source. You can also switch while watching (the player's engine button).")
+    var ask by remember { mutableStateOf(Settings.askEngine) }
+    SwitchRow("Ask every time", "When a video starts, choose which player plays it.", ask) { ask = it; Settings.askEngine = it }
+    io.github.sherazi5110.cloudstream.player.PlayerSource.entries.forEach { src ->
+        var pick by remember { mutableStateOf(Settings.engineFor(src.key)) }
+        Text(src.label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 8.dp))
+        ChoiceChips(io.github.sherazi5110.cloudstream.player.EngineKind.entries.map { it.name }, { n ->
+            io.github.sherazi5110.cloudstream.player.EngineKind.valueOf(n).label }, { it == pick }) {
+            pick = it; Settings.setEngineFor(src.key, it)
+        }
     }
-    Hint(when (eng) {
-        "EXO" -> "ExoPlayer for everything: the official CloudStream app's player, which extensions are made for (NetMirror and the like play best on it)."
-        "MPV" -> "mpv for everything: FFmpeg-based, strong with files and unusual formats."
-        "VLC" -> "VLC for everything: plays almost anything; best for Live TV, torrents and files."
-        else -> "Automatic: ExoPlayer for extension streams (like the official app), VLC for Live TV, torrents and downloaded files. " +
-            "If one engine can't play a source, the next is tried before moving on to another source."
-    } + " You can also switch engines while watching (the player's engine button).")
     Heading("Buffering")
     var start by remember { mutableStateOf(Settings.startBufferMs) }
     Text("Load before playing (and after a jump)", style = MaterialTheme.typography.bodyMedium)

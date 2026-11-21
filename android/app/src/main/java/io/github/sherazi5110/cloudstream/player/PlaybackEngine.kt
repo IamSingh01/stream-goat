@@ -14,6 +14,15 @@ enum class EngineKind(val label: String, val detail: String) {
     VLC("VLC", "Plays almost anything; best for Live TV, torrents and files"),
 }
 
+/** The kinds of source that each have their own default engine (Settings → Player → Player engine). */
+enum class PlayerSource(val key: String, val label: String) {
+    EXTENSION("extension", "CloudStream extensions"),
+    STREMIO("stremio", "Stremio add-ons"),
+    TORRENT("torrent", "Torrents"),
+    LIVE("live", "Live TV"),
+    FILE("file", "Downloaded files"),
+}
+
 /**
  * What a source needs from the engine that plays it. [url] is where to play from (already through the local
  * proxy when [proxied]); [original] and [headers] are the source as the extension gave it, for engines that fetch

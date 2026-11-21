@@ -421,6 +421,7 @@ class PlayerController(
             return
         }
         grace?.cancel()
+        if (askingEngine) { waiting = link to variantUrl; current = link; buffering = false; return }
         lastVariantUrl = variantUrl
         playCalledAt = android.os.SystemClock.elapsedRealtime()
         // Switching or reloading a source goes on from where it was, even after it failed (the clock then reads 0).
@@ -864,10 +865,30 @@ class PlayerController(
     private fun engineFor(link: ExtractorLink, source: String): EngineKind {
         forcedEngine?.let { return it }
         pinnedEngine?.let { return it }
-        runCatching { EngineKind.valueOf(Settings.playerEngine) }.getOrNull()?.let { return it }
-        val vlcBest = api is io.github.sherazi5110.cloudstream.LiveApi || io.github.sherazi5110.cloudstream.Torrents.isTorrent(link) ||
-            source.startsWith("file:") || source.startsWith("/") || api is io.github.sherazi5110.cloudstream.OfflineApi
-        return if (vlcBest) EngineKind.VLC else EngineKind.EXO
+        return runCatching { EngineKind.valueOf(Settings.engineFor(sourceKind(link, source).key)) }.getOrDefault(EngineKind.EXO)
+    }
+
+    /** What kind of source this is, for its default engine. */
+    fun sourceKind(link: ExtractorLink? = current, source: String = link?.url.orEmpty()): PlayerSource = when {
+        api is io.github.sherazi5110.cloudstream.LiveApi -> PlayerSource.LIVE
+        link != null && io.github.sherazi5110.cloudstream.Torrents.isTorrent(link) -> PlayerSource.TORRENT
+        api is io.github.sherazi5110.cloudstream.OfflineApi || source.startsWith("file:") || source.startsWith("/") -> PlayerSource.FILE
+        api is io.github.sherazi5110.cloudstream.StremioApi -> PlayerSource.STREMIO
+        else -> PlayerSource.EXTENSION
+    }
+
+    /** Settings → Player → Ask every time: the first source waits until an engine is picked ([chooseEngine]). */
+    var askingEngine by mutableStateOf(Settings.askEngine)
+        private set
+    private var waiting: Pair<ExtractorLink, String?>? = null
+
+    /** The engine picked when asked ([remember]: make it this kind of source's default). */
+    fun chooseEngine(kind: EngineKind, remember: Boolean) {
+        val link = waiting?.first ?: current
+        if (remember && link != null) Settings.setEngineFor(sourceKind(link).key, kind.name)
+        pinnedEngine = kind
+        askingEngine = false
+        waiting?.let { (l, v) -> waiting = null; play(l, v) }
     }
 
     /** The order engines are tried in for one source. */
@@ -935,8 +956,13 @@ class PlayerController(
 
 /** The engine a playback starts with (the one Auto or Settings will most likely use, so it isn't replaced at once). */
 private fun firstEngine(api: MainAPI): PlaybackEngine {
-    val setting = runCatching { EngineKind.valueOf(Settings.playerEngine) }.getOrNull()
-    val kind = setting ?: if (api is io.github.sherazi5110.cloudstream.LiveApi || api is io.github.sherazi5110.cloudstream.OfflineApi) EngineKind.VLC else EngineKind.EXO
+    val source = when (api) {
+        is io.github.sherazi5110.cloudstream.LiveApi -> PlayerSource.LIVE
+        is io.github.sherazi5110.cloudstream.OfflineApi -> PlayerSource.FILE
+        is io.github.sherazi5110.cloudstream.StremioApi -> PlayerSource.STREMIO
+        else -> PlayerSource.EXTENSION
+    }
+    val kind = runCatching { EngineKind.valueOf(Settings.engineFor(source.key)) }.getOrDefault(EngineKind.EXO)
     return runCatching {
         when (kind) {
             EngineKind.EXO -> ExoEngine(App.context)

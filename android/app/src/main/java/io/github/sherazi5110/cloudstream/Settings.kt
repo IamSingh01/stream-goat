@@ -237,6 +237,15 @@ object Settings {
         get() = string("player_engine", "AUTO")
         set(v) = put("player_engine", v)
 
+    /** The engine for one kind of source ([PlayerSource]): "EXO", "MPV" or "VLC". */
+    fun engineFor(kind: String): String = string("player_engine_$kind", when (kind) { "extension", "stremio" -> "EXO"; else -> "VLC" })
+    fun setEngineFor(kind: String, engine: String) = put("player_engine_$kind", engine)
+
+    /** Ask which engine to play with every time a video starts. */
+    var askEngine: Boolean
+        get() = string("ask_engine", "false").toBoolean()
+        set(v) = put("ask_engine", v.toString())
+
     /** Volume boost in percent (100 = normal, up to 200): for quiet streams and weak speakers. */
     var volumeBoost: Int
         get() = string("volume_boost", "100").toIntOrNull()?.coerceIn(100, 200) ?: 100

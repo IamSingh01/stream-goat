@@ -244,6 +244,27 @@ fun PlayerScreen(screen: Screen.Player) {
             )
         }
 
+        // Settings → Player → Ask every time: which player plays this video.
+        if (c.askingEngine && c.current != null) {
+            var remember by remember { mutableStateOf(false) }
+            val kind = c.sourceKind()
+            SimpleDialog("Play with", { c.chooseEngine(io.github.sherazi5110.cloudstream.player.EngineKind.valueOf(Settings.engineFor(kind.key)), false) }) {
+                Text(c.current?.name.orEmpty() + " · " + kind.label, style = MaterialTheme.typography.bodySmall, color = Palette.muted)
+                io.github.sherazi5110.cloudstream.player.EngineKind.entries.forEach { k ->
+                    val isDefault = Settings.engineFor(kind.key) == k.name
+                    Column(Modifier.fillMaxWidth().padding(top = 8.dp).card(RoundedCornerShape(12.dp)) { c.chooseEngine(k, remember) }
+                        .background(if (isDefault) Palette.accent.copy(alpha = 0.22f) else Palette.surface, RoundedCornerShape(12.dp)).padding(14.dp)) {
+                        Text(k.label + if (isDefault) "  (default)" else "", style = MaterialTheme.typography.titleMedium)
+                        Text(k.detail, style = MaterialTheme.typography.bodySmall, color = Palette.muted)
+                    }
+                }
+                Row(Modifier.padding(top = 10.dp).card(RoundedCornerShape(8.dp)) { remember = !remember }.padding(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    androidx.compose.material3.Checkbox(remember, { remember = it })
+                    Text("Always use it for ${kind.label.lowercase()}", style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+        }
+
         if (!c.started) {
             LoadingOverlay(c, onChoose = { c.stopAutoPlay(); sheet = Sheet.SOURCES })
         } else {
