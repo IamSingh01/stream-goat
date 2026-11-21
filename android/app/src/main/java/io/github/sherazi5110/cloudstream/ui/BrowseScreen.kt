@@ -194,6 +194,25 @@ fun BrowseScreen() {
                 }
             }
             if (home) BrowseHome { Browser.open(it); address = it }
+            // The app's own video player for what the page plays (with the page's cookies and address, so the site
+            // serves the real video): for sites whose player stays black, or to get subtitles, speed and quality.
+            if (Browser.videos.isNotEmpty() && !home) {
+                var pick by remember { mutableStateOf(false) }
+                PillButton("Play video", Icons.Filled.PlayArrow,
+                    Modifier.align(Alignment.BottomEnd).padding(16.dp + LocalBottomInset.current)) {
+                    val best = Browser.videos.sortedWith(compareByDescending<FoundVideo> { ".m3u8" in it.url } .thenByDescending { ".mpd" in it.url })
+                    if (best.size == 1 || best.count { ".m3u8" in it.url } == 1) scope.launch { WebMediaApi.play(best.first()) } else pick = true
+                }
+                if (pick) SimpleDialog("Videos on this page", { pick = false }) {
+                    Hint("Pick the one to play in Stream Goat's player (the main video is usually the .m3u8 one).")
+                    Browser.videos.forEach { v ->
+                        Text(v.url.substringAfterLast('/').substringBefore('?').ifBlank { v.url }, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).card(RoundedCornerShape(10.dp)) {
+                                pick = false; scope.launch { WebMediaApi.play(v) }
+                            }.background(Palette.surface, RoundedCornerShape(10.dp)).padding(12.dp))
+                    }
+                }
+            }
         }
     }
     Browser.popup?.let { pop ->
@@ -358,7 +377,7 @@ private fun BrowseHome(open: (String) -> Unit) {
         item {
             Text("Browse", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(top = 8.dp))
             Hint("Type a site's address or a search above. Ads, pop-ups and trackers are blocked (open-source lists, " +
-                "updated automatically). Videos play in each site's own player.")
+                "updated automatically). Videos play in the site's own player; if one stays black, \"Play video\" plays it in Stream Goat's player.")
         }
         item {
             SectionTitle("Saved sites", Modifier.padding(top = 16.dp))

@@ -38,7 +38,13 @@ object AdBlock {
                 h = h.substring(dot + 1)
             }
         }
-        val css: String by lazy { if (hide.isEmpty()) "" else hide.joinToString(",") + "{display:none!important}" }
+        /**
+         * Never hides a box that holds a video: a video box has no text, so rules meant for ad boxes ("player-ad",
+         * "ad-container"…) could hide the site's player and leave only its sound.
+         */
+        val css: String by lazy {
+            if (hide.isEmpty()) "" else hide.joinToString(",") { "$it:not(:has(video)):not(video)" } + "{display:none!important}"
+        }
     }
 
     /** Reads Adblock Plus syntax (and plain hosts files): only network rules on whole hosts and generic hiding rules. */
