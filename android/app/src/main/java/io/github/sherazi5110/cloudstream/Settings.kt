@@ -232,6 +232,11 @@ object Settings {
         get() = string("start_buffer_ms", "1500").toIntOrNull()?.coerceIn(300, 20_000) ?: 1500
         set(v) = put("start_buffer_ms", v.toString())
 
+    /** Player engine: "AUTO" (ExoPlayer for extension streams, VLC for Live TV, torrents and files), "EXO", "MPV" or "VLC". */
+    var playerEngine: String
+        get() = string("player_engine", "AUTO")
+        set(v) = put("player_engine", v)
+
     /** Volume boost in percent (100 = normal, up to 200): for quiet streams and weak speakers. */
     var volumeBoost: Int
         get() = string("volume_boost", "100").toIntOrNull()?.coerceIn(100, 200) ?: 100

@@ -70,6 +70,8 @@ android {
             "META-INF/LICENSE*", "META-INF/NOTICE*", "META-INF/INDEX.LIST")
         // libVLC is ~40-60 MB per CPU type: compress it in the APK (it is extracted once on install).
         jniLibs.useLegacyPackaging = true
+        // libVLC and libmpv both bring the C++ runtime: keep one.
+        jniLibs.pickFirsts += setOf("**/libc++_shared.so")
     }
 
     // One APK per CPU type (smaller downloads), plus a universal one that runs everywhere.
@@ -133,7 +135,16 @@ dependencies {
     implementation("io.coil-kt.coil3:coil-network-okhttp:3.3.0")
 
     // The player: libVLC for Android (Maven Central), with this app's own controls.
+    // libmpv first: its C++ runtime (libc++_shared) is the newer one, which also serves libVLC (picked first below).
+    implementation("dev.jdtech.mpv:libmpv:1.0.0")
     implementation("org.videolan.android:libvlc-all:3.6.5")
+    // The other player engines: ExoPlayer (Media3, what the official app uses: extensions are made for it) and mpv.
+    val media3 = "1.11.1"
+    implementation("androidx.media3:media3-exoplayer:$media3")
+    implementation("androidx.media3:media3-exoplayer-hls:$media3")
+    implementation("androidx.media3:media3-exoplayer-dash:$media3")
+    implementation("androidx.media3:media3-datasource-okhttp:$media3")
+    implementation("androidx.media3:media3-ui:$media3")
     // Torrent streaming (opt-in, Settings → Player): libtorrent through libtorrent4j, native code for each ABI.
     val libtorrent = "2.1.0-39"
     implementation("org.libtorrent4j:libtorrent4j:$libtorrent")

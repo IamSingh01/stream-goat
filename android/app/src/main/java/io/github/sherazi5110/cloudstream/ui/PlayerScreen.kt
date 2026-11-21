@@ -55,6 +55,7 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Replay10
 import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material3.Icon
@@ -106,12 +107,11 @@ import io.github.sherazi5110.cloudstream.Settings
 import io.github.sherazi5110.cloudstream.player.PlayerController
 import io.github.sherazi5110.cloudstream.player.Zoom
 import kotlinx.coroutines.delay
-import org.videolan.libvlc.util.VLCVideoLayout
 import java.text.DateFormat
 import java.util.Date
 import kotlin.math.abs
 
-private enum class Sheet(val title: String) { SOURCES("Sources"), SUBTITLES("Subtitles"), ONLINE("Online subtitles"), TRANSLATE("Translate subtitles"), AUDIO("Audio"), BOOST("Volume boost"), SPEED("Speed"), ZOOM("Zoom"), QUALITY("Quality"),
+private enum class Sheet(val title: String) { SOURCES("Sources"), SUBTITLES("Subtitles"), ONLINE("Online subtitles"), TRANSLATE("Translate subtitles"), AUDIO("Audio"), BOOST("Volume boost"), ENGINE("Player engine"), SPEED("Speed"), ZOOM("Zoom"), QUALITY("Quality"),
     SUB_SYNC("Sync subtitles"), AUDIO_SYNC("Sync audio"), SUB_STYLE("Subtitle style") }
 
 fun Context.findActivity(): Activity? = when (this) {
@@ -235,10 +235,10 @@ fun PlayerScreen(screen: Screen.Player) {
                 }
             }
     ) {
-        // A new view per playback (next episode replaces the controller).
-        key(c) {
+        // A new view per playback (next episode replaces the controller) and per engine (each draws on its own kind).
+        key(c, c.engine) {
             AndroidView(
-                factory = { ctx -> VLCVideoLayout(ctx).also { c.attach(it) } },
+                factory = { ctx -> c.createView(ctx).also { c.attach(it) } },
                 onRelease = { c.detach(it) },
                 modifier = Modifier.fillMaxSize().graphicsLayer(scaleX = if (c.hdrSurface) 1f else pinch, scaleY = if (c.hdrSurface) 1f else pinch),
             )
@@ -496,6 +496,7 @@ private fun Controls(c: PlayerController, sheetOpen: Boolean = false, onSheet: (
                 BarButton(Icons.Filled.Translate, "Audio") { onSheet(Sheet.AUDIO) }
                 // Several qualities inside this source (an HLS master): pin one, or Auto.
                 if (c.variants.isNotEmpty()) BarButton(Icons.Filled.HighQuality, c.variant?.label ?: "Auto") { onSheet(Sheet.QUALITY) }
+                BarButton(Icons.Filled.Memory, c.engine.kind.label) { onSheet(Sheet.ENGINE) }
                 BarButton(Icons.Filled.Speed, "${c.speed}×") { onSheet(Sheet.SPEED) }
                 // One tap: Fit → Fill → Stretch (Original, 16:9 and 4:3 are in Settings → Player).
                 BarButton(Icons.Filled.AspectRatio, c.zoom.label) { c.cycleZoom(); poke() }
@@ -621,6 +622,11 @@ private fun SheetPanel(sheet: Sheet, c: PlayerController, modifier: Modifier, on
                     onClose()
                 }
             Sheet.BOOST -> listOf(100, 125, 150, 175, 200).map { v -> Option("$v%", if (v == 100) "Normal" else "Louder (may distort)", v == c.boost) { c.changeBoost(v); onClose() } }
+            Sheet.ENGINE -> listOf(Option("Automatic (Settings)", "ExoPlayer for extension streams; VLC for Live TV, torrents and files",
+                    c.pinnedEngine == null) { c.useEngine(null); onClose() }) +
+                io.github.sherazi5110.cloudstream.player.EngineKind.entries.map { k ->
+                    Option(k.label + if (c.engine.kind == k) " (playing)" else "", k.detail, c.pinnedEngine == k) { c.useEngine(k); onClose() }
+                }
             Sheet.SPEED -> listOf(0.25f, 0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f).map { r -> Option("$r×", if (r == 1f) "Normal" else null, r == c.speed) { c.setRate(r); onClose() } }
             Sheet.ZOOM -> Zoom.entries.map { z -> Option(z.label, null, z == c.zoom) { c.setZoomMode(z); onClose() } }
             Sheet.SUB_SYNC, Sheet.AUDIO_SYNC, Sheet.SUB_STYLE -> emptyList()

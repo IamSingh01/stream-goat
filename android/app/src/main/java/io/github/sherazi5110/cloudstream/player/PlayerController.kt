@@ -93,11 +93,16 @@ class PlayerController(
     live: Boolean = false,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-    /** True while libVLC opens a source or stops the previous one: calls that wait for it are skipped or queued. */
-    @Volatile private var opening = false
     private val main = Handler(Looper.getMainLooper())
-    /** Replaced by a new one when the subtitle style changes ([restyle]). */
-    var player = MediaPlayer(Vlc.lib)
+    /** The video engine playing now (ExoPlayer, mpv or VLC): Settings → Player → Player engine, Auto per source. */
+    var engine by mutableStateOf(firstEngine(api))
+        private set
+    /** True while the engine opens a source: calls that would wait for it are skipped. */
+    private val opening: Boolean get() = engine.opening
+    /** Engines already tried on each source (a source that fails on one is tried on the next before giving up). */
+    private val enginesTried = mutableMapOf<String, MutableSet<EngineKind>>()
+    /** The engine the player menu pinned for this playback (null = Settings). */
+    var pinnedEngine by mutableStateOf<EngineKind?>(null)
         private set
 
     val links = mutableStateListOf<ExtractorLink>()
@@ -179,49 +184,46 @@ class PlayerController(
     }
 
     private fun listen() {
-        player.setEventListener { e ->
-            when (e.type) {
-                MediaPlayer.Event.Playing -> {
-                    // Next time (Continue Watching, Resume) this title starts with the same source.
-                    current?.takeIf { api !is io.github.sherazi5110.cloudstream.LiveApi }?.let { io.github.sherazi5110.cloudstream.LastSource.remember(api.name, response.url, it) }
-                    playing = true; buffering = false; started = true; error = null; watchdog?.cancel()
-                    // The real picture size (extensions sometimes label a 4K file as 1080p): shown in the player and
-                    // remembered for the source list.
-                    // Read on the player's own thread: asking libVLC from the main thread while it's busy froze the
-                    // app ("isn't responding").
-                    main.postDelayed({ VlcThread.run {
-                        runCatching {
-                            val t = player.currentVideoTrack ?: return@runCatching
-                            measured = if (t.width > 0 && t.height > 0) "${t.width}×${t.height}" else null
-                            // With several qualities, Auto starts low: what plays now isn't what the source offers.
-                            // The best quality in its playlist is (and is what the source list shows).
-                            val best = variants.mapNotNull { it.height }.maxOrNull()
-                            current?.let { l ->
-                                if (best != null) io.github.sherazi5110.cloudstream.MeasuredQuality.remember(l.url, best * 16 / 9, best)
-                                else io.github.sherazi5110.cloudstream.MeasuredQuality.remember(l.url, t.width, t.height)
-                            }
-                        }
-                    } }, 1500)
-                    channelKey?.let { io.github.sherazi5110.cloudstream.LiveTv.markWorking(it) }
-                    trakr?.playing(percent())
-                    if (!languagesApplied) { languagesApplied = true; main.postDelayed({ applyLanguages() }, 1500) }
-                    applyDelays()
-                    restoreTracks?.let { (a, sp) ->
-                        restoreTracks = null
-                        main.postDelayed({ if (a >= 0) setAudio(a); sp?.let { setSpu(it) } }, 1200)
-                    }
+        engine.listener = object : PlaybackEngine.Listener {
+            override fun onPlaying() {
+                // Next time (Continue Watching, Resume) this title starts with the same source.
+                current?.takeIf { api !is io.github.sherazi5110.cloudstream.LiveApi }?.let { io.github.sherazi5110.cloudstream.LastSource.remember(api.name, response.url, it) }
+                playing = true; buffering = false; started = true; error = null; watchdog?.cancel()
+                channelKey?.let { io.github.sherazi5110.cloudstream.LiveTv.markWorking(it) }
+                trakr?.playing(percent())
+                if (!languagesApplied) { languagesApplied = true; main.postDelayed({ applyLanguages() }, 1500) }
+                applyDelays()
+                restoreTracks?.let { (a, sp) ->
+                    restoreTracks = null
+                    main.postDelayed({ if (a >= 0) setAudio(a); sp?.let { setSpu(it) } }, 1200)
                 }
-                MediaPlayer.Event.Paused -> { playing = false; trakr?.paused(percent()) }
-                MediaPlayer.Event.Buffering -> {
-                    val now = e.buffering < 100f
-                    // A pause to load in the middle of playing (not the start, not right after a jump).
-                    if (now && !buffering && started && android.os.SystemClock.elapsedRealtime() - lastSeekAt > 4000) stalled()
-                    buffering = now
+            }
+            override fun onPaused() { playing = false; trakr?.paused(percent()) }
+            override fun onBuffering(buffering: Boolean) {
+                // A pause to load in the middle of playing (not the start, not right after a jump).
+                if (buffering && !this@PlayerController.buffering && started && android.os.SystemClock.elapsedRealtime() - lastSeekAt > 4000) stalled()
+                this@PlayerController.buffering = buffering
+            }
+            override fun onTime(ms: Long) {
+                time = ms; if (ms > 0) lastGoodTime = ms
+                if (buffering && playing) buffering = false
+                updateSkip(ms)
+            }
+            override fun onLength(ms: Long) { length = ms; loadSegments() }
+            override fun onEnded() { onEndReached() }
+            override fun onError(message: String?) {
+                message?.let { android.util.Log.w("player", "${engine.kind.label}: $it") }
+                failover()
+            }
+            override fun onVideoSize(width: Int, height: Int) {
+                // The real picture size (extensions sometimes label a 4K file as 1080p): shown in the player and
+                // remembered for the source list. With several qualities, Auto starts low: the playlist's best counts.
+                measured = if (width > 0 && height > 0) "$width×$height" else null
+                val best = variants.mapNotNull { it.height }.maxOrNull()
+                current?.let { l ->
+                    if (best != null) io.github.sherazi5110.cloudstream.MeasuredQuality.remember(l.url, best * 16 / 9, best)
+                    else io.github.sherazi5110.cloudstream.MeasuredQuality.remember(l.url, width, height)
                 }
-                MediaPlayer.Event.TimeChanged -> { time = e.timeChanged; if (e.timeChanged > 0) lastGoodTime = e.timeChanged; if (buffering && playing) buffering = false; updateSkip(e.timeChanged) }
-                MediaPlayer.Event.LengthChanged -> { length = e.lengthChanged; loadSegments() }
-                MediaPlayer.Event.EndReached -> main.post { onEndReached() }
-                MediaPlayer.Event.EncounteredError -> main.post { failover() }
             }
         }
     }
@@ -234,8 +236,7 @@ class PlayerController(
     fun syncSubtitles(ms: Long) { subtitleDelay = ms.coerceIn(-600_000, 600_000); applyDelays() }
     fun syncAudio(ms: Long) { audioDelay = ms.coerceIn(-600_000, 600_000); applyDelays() }
     private fun applyDelays() {
-        val sub = subtitleDelay * 1000; val audio = audioDelay * 1000
-        VlcThread.run { if (player.spuDelay != sub) player.spuDelay = sub; if (player.audioDelay != audio) player.audioDelay = audio }
+        engine.setDelays(audioDelay, subtitleDelay)
     }
 
     /** Audio and subtitle track to pick again after [restyle] (subtitle null = a file, re-added by play). */
@@ -247,15 +248,12 @@ class PlayerController(
      * True when the player was replaced (a chosen subtitle file is then shown again by play).
      */
     fun restyle(): Boolean {
-        if (released || Vlc.look == SubtitleStyle.current()) return false
-        val old = player
-        old.setEventListener(null)
-        val l = layout
-        detachAll()
+        if (released || engine.kind != EngineKind.VLC || Vlc.look == SubtitleStyle.current()) return false
         val keep = if (started) audioTrack() to (if (selectedSubtitle == null) spuTrack() else null) else null
-        VlcThread.run { old.stop(); old.release() }
+        val l = engine.view
+        engine.release()
         Vlc.restart()
-        player = MediaPlayer(Vlc.lib)
+        engine = VlcEngine()
         listen()
         l?.let { attach(it) }
         val link = current ?: return true
@@ -448,50 +446,40 @@ class PlayerController(
         // A playlist given inline (data: address, e.g. NetMirror): only the proxy can serve it to libVLC.
         val inline = source.startsWith("data:", true)
         val headersNeedProxy = inline || headers.keys.any { !it.equals("Referer", true) && !it.equals("User-Agent", true) }
-        // A source that failed through the proxy is tried once directly (as before), in case the server objects to it.
-        val viaProxyForHls = hls && !headersNeedProxy && link.url !in directTried
+        // The engine for this source (Settings → Player → Player engine; Auto: ExoPlayer for extension streams).
+        val kind = engineFor(link, source)
+        if (engine.kind != kind) switchTo(kind)
+        enginesTried.getOrPut(link.url) { mutableSetOf() } += kind
+        // VLC and mpv fetch through the local proxy (headers, cookies, DNS over HTTPS, disguised segments, inline
+        // playlists); a source that failed through it is tried once directly with VLC. ExoPlayer fetches itself,
+        // with the app's network client, like the official app.
+        val viaProxyForHls = kind != EngineKind.EXO && hls && !headersNeedProxy && link.url !in directTried
         proxiedOnlyForHls = viaProxyForHls
-        val needsProxy = viaProxyForHls || headersNeedProxy
         // A Live TV server with an expired (but genuine) certificate: through the local proxy, which accepts it.
         val expiredOk = link.name == io.github.sherazi5110.cloudstream.LiveApi.EXPIRED
-        val url = if (source.startsWith("file:")) source else if (needsProxy || expiredOk) StreamProxy.wrap(source, headers, expiredOk) else source
-        val media = Media(Vlc.lib, Uri.parse(url)).apply {
-            setHWDecoderEnabled(!softwareDecode, false)
-            if (!needsProxy) {
-                addOption(":http-user-agent=" + (headers.entries.firstOrNull { it.key.equals("User-Agent", true) }?.value ?: USER_AGENT))
-                headers.entries.firstOrNull { it.key.equals("Referer", true) }?.let { addOption(":http-referrer=${it.value}") }
-            }
-            if (keep > 0) addOption(":start-time=${keep / 1000.0}")
-            bufferOptions(variantUrl).forEach { addOption(it) }
-            // Even out loud and quiet sounds: a gentle compressor with make-up gain (voices up, peaks down).
-            if (io.github.sherazi5110.cloudstream.Settings.levelAudio) {
-                addOption(":audio-filter=compressor")
-                listOf("rms-peak=0.2", "attack=25", "release=150", "threshold=-24", "ratio=4", "knee=4", "makeup-gain=9")
-                    .forEach { addOption(":compressor-$it") }
-            }
-        }
+        val needsProxy = expiredOk || kind != EngineKind.EXO && (viaProxyForHls || headersNeedProxy)
+        // Building the proxied playlist (and its addresses) isn't for the main thread: it froze the app for over a minute.
+        val dash = link.type == ExtractorLinkType.DASH || source.substringBefore('?').endsWith(".mpd", true)
         io.github.sherazi5110.cloudstream.CrashReport.playing("${api.name}: ${response.name} (${playable.label}); source ${link.name} [${link.type}] from " +
-            "${runCatching { Uri.parse(link.url).host }.getOrNull() ?: "?"}")
+            "${runCatching { Uri.parse(link.url).host }.getOrNull() ?: "?"} · ${kind.label}")
         io.github.sherazi5110.cloudstream.GlitchReport.step("Playing source ${link.name} [${link.type}] from ${runCatching { Uri.parse(link.url).host }.getOrNull() ?: "?"}" +
-            (variant?.let { " at ${it.label}" } ?: ""))
-        // Opening stops the previous source first, which waits for its network reads to end: on a slow host that
-        // took seconds and froze the screen ("not responding"). Like VLC for Android, it runs on its own thread.
-        val rate = speed
-        val scale = zoom.scale
-        val volume = boost
-        opening = true
-        VlcThread.run {
-            try {
-                // 5.1/7.1 sound: by default libVLC plays every channel the device can (multichannel on TVs and
-                // receivers, mixed down to stereo on phones); passthrough sends Dolby/DTS untouched to a receiver.
-                runCatching { player.setAudioDigitalOutputEnabled(Settings.passthrough) }
-                player.media = media
-                media.release()
-                player.play()
-                player.volume = volume
-                player.rate = rate
-                player.videoScale = scale
-            } finally { opening = false }
+            (variant?.let { " at ${it.label}" } ?: "") + " with ${kind.label}")
+        if (inline) io.github.sherazi5110.cloudstream.DataUrl.decode(source)?.let { t ->
+            android.util.Log.i("player", "Inline playlist from ${link.name} (first lines):\n" + t.lineSequence().take(12).joinToString("\n"))
+        }
+        val opened = engine
+        scope.launch {
+            val url = if (source.startsWith("file:") || !needsProxy) source
+                else withContext(Dispatchers.Default) { StreamProxy.wrap(source, headers, expiredOk) }
+            if (engine !== opened || current?.url != link.url || released) return@launch
+            val ahead = bufferAheadMs(variantUrl)
+            engine.open(OpenRequest(
+                url = url, original = source, headers = headers, proxied = needsProxy, startMs = keep,
+                hls = hls || inline, dash = dash, softwareDecode = softwareDecode,
+                bufferAheadMs = ahead, startBufferMs = Settings.startBufferMs, bufferMemoryMb = bufferMemoryMb(),
+                levelAudio = Settings.levelAudio, passthrough = Settings.passthrough, volume = boost, rate = speed,
+                zoom = zoom, hdrSurface = hdrSurface,
+            ))
         }
         // A source that hasn't started after 25 s (dead host, endless redirect) gives way to the next one;
         // a TV channel after 12 s (it has nothing else to wait for).
@@ -517,14 +505,14 @@ class PlayerController(
         val direct = if (source.startsWith("/")) Uri.fromFile(java.io.File(source))
             else headers?.takeIf { it.isNotEmpty() }?.let { Uri.parse(StreamProxy.wrap(source, it)) } ?: Uri.parse(source)
         val clean = SubtitleStyle.currentClean()
-        if (!clean.active) { VlcThread.run { player.addSlave(IMedia.Slave.Type.Subtitle, direct, true) }; return }
+        if (!clean.active) { engine.addSubtitle(direct); return }
         val wanted = selectedSubtitle
         scope.launch {
             val file = runCatching { cleanedFile(source, headers, clean) }
                 .onFailure { android.util.Log.w("StreamGoat", "subtitle clean-up failed", it) }.getOrNull()
             if (selectedSubtitle != wanted) return@launch // something else was picked meanwhile
             val uri = file?.let { Uri.fromFile(it) } ?: direct
-            VlcThread.run { player.addSlave(IMedia.Slave.Type.Subtitle, uri, true) }
+            engine.addSubtitle(uri)
         }
     }
 
@@ -557,8 +545,7 @@ class PlayerController(
     private fun onEndReached() {
         // A late event from the media that was just replaced (a source picked by hand): the player is
         // already opening the new one, so it isn't "ended". Ignore it.
-        if (opening || player.playerState != org.videolan.libvlc.interfaces.IMedia.State.Ended &&
-            android.os.SystemClock.elapsedRealtime() - playCalledAt < 5_000) return
+        if (opening || !engine.reallyEnded() && android.os.SystemClock.elapsedRealtime() - playCalledAt < 5_000) return
         val len = length
         val t = time
         playing = false
@@ -575,11 +562,23 @@ class PlayerController(
     /** A source failed: try the next untried one, like the Linux player. */
     private fun failover() {
         val cur = current
+        // The same source on the next engine before giving up on it (Auto, or the engine picked failed).
+        if (cur != null && !io.github.sherazi5110.cloudstream.Torrents.isTorrent(cur)) {
+            val tried = enginesTried[cur.url].orEmpty()
+            fallbackOrder().firstOrNull { it !in tried }?.let { nextKind ->
+                android.util.Log.w("player", "${cur.name}: ${engine.kind.label} couldn't play it, trying ${nextKind.label}")
+                App.toast("${engine.kind.label} couldn't play it: trying ${nextKind.label}")
+                forcedEngine = nextKind
+                play(cur, lastVariantUrl)
+                return
+            }
+        }
         if (cur != null && proxiedOnlyForHls && directTried.add(cur.url)) {
             android.util.Log.w("player", "${cur.name}: failed through the proxy, trying it directly")
             play(cur, lastVariantUrl)
             return
         }
+        forcedEngine = null
         val next = ranked().firstOrNull { it.url !in tried }
         if (next != null) {
             App.toast("${current?.name ?: "Source"} failed, trying ${next.name}")
@@ -588,7 +587,7 @@ class PlayerController(
             // Every remembered source failed: they've probably expired. Ask the extension again, once.
             refreshed = true
             Engine.forget(api, playable.data)
-            links.clear(); tried.clear(); current = null
+            links.clear(); tried.clear(); enginesTried.clear(); current = null
             searching = true; error = null
             App.toast("Those sources expired; looking again…")
             scope.launch { findSources() }
@@ -734,14 +733,14 @@ class PlayerController(
     // Everything that changes playback goes through the VLC thread, in order; what the screen shows comes from
     // libVLC's events (time, playing), so the screen never waits for libVLC.
     fun togglePause() = if (playing) pause() else resume()
-    fun pause() = VlcThread.run { player.pause() }
-    fun resume() = VlcThread.run { player.play() }
+    fun pause() = engine.pause()
+    fun resume() = engine.play()
 
     fun seekBy(ms: Long) = seekTo((time + ms).coerceIn(0, length.takeIf { it > 0 } ?: Long.MAX_VALUE))
 
     fun seekTo(ms: Long) {
         time = ms; lastGoodTime = ms; lastSeekAt = android.os.SystemClock.elapsedRealtime()
-        VlcThread.run { player.setTime(ms) }
+        engine.seekTo(ms)
     }
 
     /**
@@ -749,16 +748,11 @@ class PlayerController(
      * loading, and the most memory that may take. The time ahead is cut to what fits in that memory at the stream's
      * bitrate (3 minutes of a 25 Mbit/s 4K stream would be over 500 MB).
      */
-    private fun bufferOptions(variantUrl: String?): List<String> {
-        val memMb = Settings.bufferMemoryMb.takeIf { it > 0 } ?: if (io.github.sherazi5110.cloudstream.Images.lowMemoryDevice) 48 else 160
+    private fun bufferMemoryMb() = Settings.bufferMemoryMb.takeIf { it > 0 } ?: if (io.github.sherazi5110.cloudstream.Images.lowMemoryDevice) 48 else 160
+    private fun bufferAheadMs(variantUrl: String?): Int {
         val bitrate = (variants.firstOrNull { it.url == variantUrl } ?: variants.maxByOrNull { it.bandwidth ?: 0 })?.bandwidth
-        val fits = bitrate?.takeIf { it > 0 }?.let { (memMb * 8L * 1024 * 1024 / it).toInt() } ?: Int.MAX_VALUE
-        val aheadSec = minOf(Settings.bufferAheadSec, fits).coerceAtLeast(10)
-        return listOf(
-            ":network-caching=${Settings.startBufferMs}",
-            ":adaptive-maxbuffer=${aheadSec * 1000}",
-            ":prefetch-buffer-size=${memMb * 1024}",
-        )
+        val fits = bitrate?.takeIf { it > 0 }?.let { (bufferMemoryMb() * 8L * 1024 * 1024 / it).toInt() } ?: Int.MAX_VALUE
+        return minOf(Settings.bufferAheadSec, fits).coerceAtLeast(10) * 1000
     }
 
     /** Set when the video keeps stopping to load: the player suggests a lower quality or another source. */
@@ -781,12 +775,12 @@ class PlayerController(
     fun changeBoost(percent: Int) {
         boost = percent.coerceIn(100, 200)
         Settings.volumeBoost = boost
-        VlcThread.run { player.volume = boost }
+        engine.setVolume(boost)
     }
 
     fun setRate(rate: Float) {
         speed = rate
-        VlcThread.run { player.rate = rate }
+        engine.setRate(rate)
     }
 
     /** The resize button: Fit → Fill → Stretch → Fit (the others stay in Settings → Player). */
@@ -802,67 +796,110 @@ class PlayerController(
 
     fun setZoomMode(z: Zoom) {
         zoom = z
-        VlcThread.run { player.videoScale = z.scale }
+        engine.setZoom(z)
         Settings.playerZoom = z.name
     }
 
-    // Track lists are read when a menu opens; while a source is opening they'd wait for it, so they're empty then.
-    fun audioTracks(): List<MediaPlayer.TrackDescription> = if (opening) emptyList() else player.audioTracks?.toList().orEmpty()
-    fun audioTrack(): Int = if (opening) -1 else player.audioTrack
-    fun setAudio(id: Int) { VlcThread.run { player.setAudioTrack(id) } }
+    // Track lists are read when a menu opens; while a source is opening they're empty.
+    fun audioTracks(): List<TrackInfo> = engine.audioTracks()
+    fun audioTrack(): Int = engine.audioTrack()
+    fun setAudio(id: Int) = engine.setAudio(id)
 
     /** Embedded subtitle tracks (id -1 = off) plus the extension's subtitle files. */
-    fun spuTracks(): List<MediaPlayer.TrackDescription> = if (opening) emptyList() else player.spuTracks?.toList().orEmpty()
-    fun spuTrack(): Int = if (opening) -1 else player.spuTrack
-    fun setSpu(id: Int) { selectedSubtitle = null; VlcThread.run { player.setSpuTrack(id) } }
+    fun spuTracks(): List<TrackInfo> = engine.subtitleTracks()
+    fun spuTrack(): Int = engine.subtitleTrack()
+    fun setSpu(id: Int) { selectedSubtitle = null; engine.setSubtitle(id) }
 
     fun addSubtitle(s: SubtitleFile) {
         selectedSubtitle = s.url
         showSubtitle(s.url, s.headers)
     }
 
-    private var layout: VLCVideoLayout? = null
+    /** The view the picture is on (made by the engine; a new engine needs a new view, see PlayerScreen). */
+    private var videoView: android.view.View? = null
 
-    /** Detaches whichever view the video is on. */
-    private fun detachAll() {
-        if (layout != null) { player.detachViews(); layout = null }
-    }
-
-    /** True while the video is on a SurfaceView (HDR output) rather than a TextureView. */
+    /** True while the video is on a SurfaceView (HDR output) rather than a TextureView (VLC). */
     var hdrSurface by mutableStateOf(false)
         private set
-    private val screenHdr by lazy { io.github.sherazi5110.cloudstream.Picture.screenHdrTypes(layoutActivity()).isNotEmpty() }
+    private val screenHdr by lazy { io.github.sherazi5110.cloudstream.Picture.screenHdrTypes(viewActivity()).isNotEmpty() }
 
-    private fun layoutActivity(): android.app.Activity? {
-        var ctx = layout?.context
+    private fun viewActivity(): android.app.Activity? {
+        var ctx = videoView?.context
         while (ctx is android.content.ContextWrapper) { if (ctx is android.app.Activity) return ctx; ctx = ctx.baseContext }
         return null
     }
 
-    fun attach(layout: VLCVideoLayout) {
-        detachAll()
-        this.layout = layout
-        hdrSurface = io.github.sherazi5110.cloudstream.Picture.useHdrSurface(current, screenHdr)
-        // TextureView, so pinch-to-zoom (a view transform) also scales the picture; SurfaceView for HDR.
-        player.attachViews(layout, null, true, !hdrSurface)
-        val scale = zoom.scale
-        VlcThread.run { player.videoScale = scale }
+    fun createView(context: android.content.Context): android.view.View = engine.createView(context)
+
+    fun attach(view: android.view.View) {
+        videoView?.takeIf { it !== view }?.let { engine.detach(it) }
+        videoView = view
+        hdrSurface = engine.kind != EngineKind.VLC || io.github.sherazi5110.cloudstream.Picture.useHdrSurface(current, screenHdr)
+        engine.attach(view, hdrSurface)
     }
 
-    /** A new source may need the other kind of surface (HDR or not): re-attach before it plays. */
+    /** A new source may need the other kind of surface (HDR or not, VLC): re-attach before it plays. */
     private fun matchSurface(link: ExtractorLink) {
+        if (engine.kind != EngineKind.VLC) return
         val want = io.github.sherazi5110.cloudstream.Picture.useHdrSurface(link, screenHdr)
         if (want == hdrSurface) return
-        val l = layout ?: run { hdrSurface = want; return }
-        player.detachViews()
+        val v = videoView ?: run { hdrSurface = want; return }
+        engine.detach(v)
         hdrSurface = want
-        player.attachViews(l, null, true, !want)
-        val scale = zoom.scale
-        VlcThread.run { player.videoScale = scale }
+        engine.attach(v, want)
     }
 
     /** A view leaving the screen: detach only if the video is still on it (the next view may already have taken over). */
-    fun detach(view: Any) { if (view === layout) detachAll() }
+    fun detach(view: Any) { if (view === videoView) { (view as? android.view.View)?.let { engine.detach(it) }; videoView = null } }
+
+    // ---------- engines ----------
+
+    /** Set while failing over to another engine for the same source. */
+    private var forcedEngine: EngineKind? = null
+
+    /**
+     * The engine for a source: the one picked in the player, else Settings; Auto = ExoPlayer (what extensions are
+     * made for) except Live TV, torrents and files, which VLC plays best.
+     */
+    private fun engineFor(link: ExtractorLink, source: String): EngineKind {
+        forcedEngine?.let { return it }
+        pinnedEngine?.let { return it }
+        runCatching { EngineKind.valueOf(Settings.playerEngine) }.getOrNull()?.let { return it }
+        val vlcBest = api is io.github.sherazi5110.cloudstream.LiveApi || io.github.sherazi5110.cloudstream.Torrents.isTorrent(link) ||
+            source.startsWith("file:") || source.startsWith("/") || api is io.github.sherazi5110.cloudstream.OfflineApi
+        return if (vlcBest) EngineKind.VLC else EngineKind.EXO
+    }
+
+    /** The order engines are tried in for one source. */
+    private fun fallbackOrder(): List<EngineKind> = listOf(EngineKind.EXO, EngineKind.VLC, EngineKind.MPV)
+        .let { all -> val first = enginesTried[current?.url].orEmpty().firstOrNull(); if (first == EngineKind.VLC) listOf(EngineKind.VLC, EngineKind.EXO, EngineKind.MPV) else all }
+
+    /** Replaces the engine; the screen makes a view for the new one (it watches [engine]). */
+    private fun switchTo(kind: EngineKind) {
+        val old = engine
+        videoView?.let { old.detach(it) }
+        videoView = null
+        old.release()
+        engine = runCatching {
+            when (kind) {
+                EngineKind.EXO -> ExoEngine(App.context)
+                EngineKind.MPV -> if (android.os.Build.VERSION.SDK_INT >= 26) MpvEngine(App.context) else error("mpv needs Android 8")
+                EngineKind.VLC -> VlcEngine()
+            }
+        }.getOrElse {
+            android.util.Log.w("player", "Couldn't start ${kind.label}", it)
+            App.toast("${kind.label} isn't available on this device: using VLC")
+            VlcEngine()
+        }
+        listen()
+    }
+
+    /** The player menu's engine choice: plays the current source again on [kind] where it was. */
+    fun useEngine(kind: EngineKind?) {
+        pinnedEngine = kind
+        forcedEngine = null
+        current?.let { link -> enginesTried.remove(link.url); play(link, lastVariantUrl) }
+    }
 
     /** Records progress for Continue Watching and the episode list. */
     /** WeTrakr sync for this playback (movies and episodes; not Live TV). */
@@ -890,13 +927,23 @@ class PlayerController(
         closeTorrent()
         scope.cancel()
         main.removeCallbacksAndMessages(null)
-        player.setEventListener(null)
-        detachAll()
-        // Stopping waits for the network reads to end (seconds on a slow host): off the main thread, after
-        // everything queued before it. Like VLC for Android: views detached here, the player released there.
-        val p = player
-        VlcThread.run { p.stop(); p.release() }
+        videoView?.let { engine.detach(it) }
+        videoView = null
+        engine.release()
     }
+}
+
+/** The engine a playback starts with (the one Auto or Settings will most likely use, so it isn't replaced at once). */
+private fun firstEngine(api: MainAPI): PlaybackEngine {
+    val setting = runCatching { EngineKind.valueOf(Settings.playerEngine) }.getOrNull()
+    val kind = setting ?: if (api is io.github.sherazi5110.cloudstream.LiveApi || api is io.github.sherazi5110.cloudstream.OfflineApi) EngineKind.VLC else EngineKind.EXO
+    return runCatching {
+        when (kind) {
+            EngineKind.EXO -> ExoEngine(App.context)
+            EngineKind.MPV -> if (android.os.Build.VERSION.SDK_INT >= 26) MpvEngine(App.context) else error("mpv needs Android 8")
+            EngineKind.VLC -> VlcEngine()
+        }
+    }.getOrElse { VlcEngine() }
 }
 
 /**

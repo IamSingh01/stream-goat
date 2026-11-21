@@ -280,6 +280,18 @@ private fun PlayerSection() {
     ChoiceChips(listOf(true, false), { if (it) "Start the best source automatically" else "Let me choose the source" }, { it == autoPlay }) {
         autoPlay = it; Settings.autoPlay = it
     }
+    Heading("Player engine")
+    var eng by remember { mutableStateOf(Settings.playerEngine) }
+    ChoiceChips(listOf("AUTO", "EXO", "MPV", "VLC"), { when (it) { "AUTO" -> "Automatic"; "EXO" -> "ExoPlayer"; "MPV" -> "mpv"; else -> "VLC" } }, { it == eng }) {
+        eng = it; Settings.playerEngine = it
+    }
+    Hint(when (eng) {
+        "EXO" -> "ExoPlayer for everything: the official CloudStream app's player, which extensions are made for (NetMirror and the like play best on it)."
+        "MPV" -> "mpv for everything: FFmpeg-based, strong with files and unusual formats."
+        "VLC" -> "VLC for everything: plays almost anything; best for Live TV, torrents and files."
+        else -> "Automatic: ExoPlayer for extension streams (like the official app), VLC for Live TV, torrents and downloaded files. " +
+            "If one engine can't play a source, the next is tried before moving on to another source."
+    } + " You can also switch engines while watching (the player's engine button).")
     Heading("Buffering")
     var start by remember { mutableStateOf(Settings.startBufferMs) }
     Text("Load before playing (and after a jump)", style = MaterialTheme.typography.bodyMedium)
