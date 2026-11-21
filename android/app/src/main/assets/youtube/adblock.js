@@ -3,6 +3,15 @@
 // so no ad is ever requested or shown. Runs before YouTube's own scripts.
 (function () {
   if (window.__sgAdblock) return; window.__sgAdblock = true;
+  // Use the whole screen: the TV app sizes itself 16:9 and leaves bars on phones and tablets.
+  try {
+    var st = document.createElement('style');
+    st.textContent = 'html,body{margin:0!important;padding:0!important;width:100%!important;height:100%!important;overflow:hidden!important}' +
+      '#container{top:0!important;left:0!important;width:100vw!important;height:100vh!important}';
+    (document.head || document.documentElement).appendChild(st);
+  } catch (e) {}
+  // "Exit YouTube?" → Exit: close Stream Goat's YouTube screen.
+  try { window.close = function () { if (window.StreamGoatYouTube) window.StreamGoatYouTube.exit(); }; } catch (e) {}
   var parse = JSON.parse;
   function clean(o) {
     if (!o || typeof o !== 'object') return o;
