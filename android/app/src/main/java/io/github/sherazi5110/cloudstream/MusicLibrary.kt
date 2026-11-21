@@ -4,6 +4,9 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -78,20 +81,7 @@ object MusicLibrary {
                 // M4A (AAC) plays everywhere; from YouTube, or a Piped server when YouTube blocks this connection.
                 val audio = Music.audioUrl(t.url, m4a = true)
                 val tmp = File(dir, fileOf(t.url).name + ".part")
-                val req = okhttp3.Request.Builder().url(audio).header("User-Agent", "Mozilla/5.0").build()
-                com.lagradost.cloudstream3.app.baseClient.newCall(req).execute().use { r ->
-                    if (!r.isSuccessful) error("HTTP ${r.code}")
-                    val total = r.body.contentLength()
-                    tmp.outputStream().use { out ->
-                        r.body.byteStream().use { input ->
-                            val buf = ByteArray(64 * 1024); var done = 0L; var n: Int
-                            while (input.read(buf).also { n = it } > 0) {
-                                out.write(buf, 0, n); done += n
-                                if (total > 0) withContext(Dispatchers.Main) { downloading[t.url] = (done * 100 / total).toInt() }
-                            }
-                        }
-                    }
-                }
+                fetchFast(audio, tmp) { pct -> withContext(Dispatchers.Main) { downloading[t.url] = pct } }
                 if (!tmp.renameTo(fileOf(t.url))) error("Couldn't save it")
             }
             withContext(Dispatchers.Main) {
@@ -99,6 +89,65 @@ object MusicLibrary {
                 ok.onSuccess { downloads.add(t.entry()); App.toast("Downloaded \"${t.title}\"") }
                     .onFailure { App.toast("Couldn't download \"${t.title}\": ${it.message}") }
             }
+        }
+    }
+
+    /**
+     * Downloads [url] into [out] at full speed. YouTube slows a single long request for a whole file down to about
+     * playback speed; short pieces (each asked for with "range", as YouTube's own apps do) aren't slowed, so the
+     * file comes in 1 MB pieces, 4 at a time.
+     */
+    private suspend fun fetchFast(url: String, out: File, progress: suspend (Int) -> Unit) = kotlinx.coroutines.coroutineScope {
+        val client = com.lagradost.cloudstream3.app.baseClient
+        val chunk = 1L shl 20
+        fun request(from: Long, to: Long): okhttp3.Request {
+            val ranged = if ("googlevideo" in url || "/videoplayback" in url) url + (if ('?' in url) "&" else "?") + "range=$from-$to" else url
+            return okhttp3.Request.Builder().url(ranged).header("User-Agent", "Mozilla/5.0").header("Range", "bytes=$from-$to").build()
+        }
+        // The size: in YouTube's address (clen), else from the first piece's answer.
+        var total = Regex("[?&]clen=(\\d+)").find(url)?.groupValues?.get(1)?.toLongOrNull() ?: -1L
+        if (total <= 0) {
+            client.newCall(request(0, chunk - 1)).execute().use { r ->
+                if (!r.isSuccessful) error("HTTP ${r.code}")
+                total = r.header("Content-Range")?.substringAfter('/')?.toLongOrNull() ?: -1L
+                if (r.code != 206 || total <= 0) {
+                    // The server doesn't do pieces: one request, as it comes.
+                    val len = r.body.contentLength()
+                    out.outputStream().use { o -> r.body.byteStream().use { i ->
+                        val buf = ByteArray(64 * 1024); var done = 0L; var n: Int
+                        while (i.read(buf).also { n = it } > 0) { o.write(buf, 0, n); done += n; if (len > 0) progress((done * 100 / len).toInt()) }
+                    } }
+                    return@coroutineScope
+                }
+            }
+        }
+        val pieces = (0 until total step chunk).map { it to minOf(it + chunk, total) - 1 }
+        val done = java.util.concurrent.atomic.AtomicLong()
+        val gate = kotlinx.coroutines.sync.Semaphore(4)
+        java.io.RandomAccessFile(out, "rw").use { raf ->
+            raf.setLength(total)
+            pieces.map { (from, to) ->
+                async(Dispatchers.IO) {
+                    gate.withPermit {
+                        var tries = 0
+                        while (true) {
+                            val bytes = runCatching {
+                                client.newCall(request(from, to)).execute().use { r ->
+                                    if (!r.isSuccessful) error("HTTP ${r.code}")
+                                    r.body.bytes().also { if (it.size.toLong() != to - from + 1) error("Short piece") }
+                                }
+                            }
+                            if (bytes.isSuccess) {
+                                synchronized(raf) { raf.seek(from); raf.write(bytes.getOrThrow()) }
+                                progress((done.addAndGet(to - from + 1) * 100 / total).toInt())
+                                break
+                            }
+                            if (++tries >= 4) throw bytes.exceptionOrNull()!!
+                            kotlinx.coroutines.delay(500L * tries)
+                        }
+                    }
+                }
+            }.awaitAll()
         }
     }
 
