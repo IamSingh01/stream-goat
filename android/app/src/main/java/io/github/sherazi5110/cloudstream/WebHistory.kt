@@ -5,8 +5,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * A small history kept on the device (newest first, capped): sites visited in the Browse tab, songs played in Music,
- * and bookmarked sites. Each list has its own prefs file, so it's in backups and survives restarts.
+ * A small history kept on the device (newest first, capped): songs played in Music. Each list has its own prefs file, so it's in backups and survives restarts.
  */
 class HistoryStore(private val file: String, private val cap: Int) {
     data class Entry(val id: String, val title: String, val subtitle: String = "", val image: String? = null, val at: Long = System.currentTimeMillis())
@@ -40,9 +39,5 @@ class HistoryStore(private val file: String, private val cap: Int) {
 }
 
 object WebHistory {
-    val sites = HistoryStore("browse_history", 300)
-    val bookmarks = HistoryStore("browse_bookmarks", 100)
     val songs = HistoryStore("music_history", 300)
-    /** Pages where a video played, for "Continue on the web" on Home. */
-    val watching = HistoryStore("web_watching", 12)
 }

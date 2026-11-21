@@ -51,7 +51,6 @@ object App {
         runCatching { org.schabi.newpipe.extractor.NewPipe.init(com.lagradost.cloudstream3.DownloaderTestImpl.getInstance()) }
         io.github.sherazi5110.cloudstream.ui.ThemeState.load()
         Images.install()
-        AdBlock.start()
         WeTrakrSync.start()
         ContentFilter.syncAdult()
         // A profile switch changes the look, the library and which extensions show.

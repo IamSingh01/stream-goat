@@ -121,7 +121,6 @@ private fun PhoneHome(state: HomeState) {
         if (state.continueWatching.isNotEmpty()) item(key = "continue") {
             ContinueRow(state.continueWatching, cardWidth = 200.dp)
         }
-        item(key = "web") { WebContinueRow(16.dp) }
         uniqueItems(state.sections, key = { "${it.api.name}|${it.order}" }) { section ->
             CatalogRow(section, posterWidth = 112.dp)
         }
@@ -320,7 +319,6 @@ internal fun WideHome(state: HomeState) {
             if (state.continueWatching.isNotEmpty()) item(key = "continue") {
                 ContinueRow(state.continueWatching, 280.dp)
             }
-            item(key = "web") { WebContinueRow(40.dp) }
             uniqueItems(state.sections, key = { "${it.api.name}|${it.order}" }) { section ->
                 CatalogRow(section, 140.dp, onFocus = if (isTv) { item -> focused = item } else null)
             }
