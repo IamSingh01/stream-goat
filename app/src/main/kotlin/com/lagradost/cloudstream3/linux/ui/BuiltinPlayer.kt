@@ -326,6 +326,11 @@ class BuiltinPlayer(
             add(":network-caching=${if (Settings.batterySaver) 3000 else 1500}")
             link.audioTracks.forEach { add(":input-slave=${it.url}") }
         }
+        // A playlist given inline (data: address, NetMirror): VLC can't open those; the proxy serves it.
+        if (url.startsWith("data:", true)) {
+            val all = buildMap { putAll(other); put("User-Agent", ua); referer?.let { put("Referer", it) } }
+            StreamProxy.wrapData(url, all)?.let { return it to options }
+        }
         val isHttp = url.startsWith("http://") || url.startsWith("https://")
         // A Live TV server with an expired (but genuine) certificate: through the local proxy, which accepts it.
         val expiredOk = link.name == com.lagradost.cloudstream3.linux.LiveApi.EXPIRED

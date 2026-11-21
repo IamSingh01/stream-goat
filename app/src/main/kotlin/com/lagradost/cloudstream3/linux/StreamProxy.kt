@@ -24,7 +24,7 @@ import java.util.concurrent.Executors
  * segment and key also goes through the proxy with the same headers.
  */
 object StreamProxy {
-    private data class Target(val url: String, val headers: Map<String, String>, val expiredOk: Boolean = false)
+    private data class Target(val url: String, val headers: Map<String, String>, val expiredOk: Boolean = false, val inline: String? = null)
 
     private val targets = ConcurrentHashMap<String, Target>()
     @Volatile private var server: HttpServer? = null
@@ -69,6 +69,7 @@ object StreamProxy {
 
     /** Returns a loopback URL that fetches [url] with [headers]. */
     fun wrap(url: String, headers: Map<String, String>, expiredOk: Boolean = false): String {
+        if (url.startsWith("data:", true)) wrapData(url, headers)?.let { return it }
         val s = start()
         val id = id(url + if (expiredOk) "#expired-ok" else "", headers)
         targets[id] = Target(url, headers, expiredOk)
@@ -88,6 +89,11 @@ object StreamProxy {
         exchange.use {
             val id = exchange.requestURI.path.removePrefix("/s/").substringBefore('/')
             val target = targets[id] ?: return exchange.sendResponseHeaders(404, -1)
+            target.inline?.let { text ->
+                val bytes = text.toByteArray()
+                exchange.responseHeaders.add("Content-Type", "application/vnd.apple.mpegurl")
+                exchange.sendResponseHeaders(200, bytes.size.toLong()); exchange.responseBody.write(bytes); return
+            }
             val headers = target.headers.toMutableMap()
             exchange.requestHeaders.getFirst("Range")?.let { headers["Range"] = it }
             val request = Request.Builder().url(target.url).headers(headers.toHeaders())
@@ -158,6 +164,16 @@ object StreamProxy {
     private val uriAttribute = Regex("URI=\"([^\"]+)\"")
 
     /** Points every URI in an HLS playlist (segments, variants, keys, maps) back at the proxy. */
+    /** A playlist given as a data: address (NetMirror): served from here, its segments fetched with [headers]. */
+    fun wrapData(url: String, headers: Map<String, String>): String? {
+        val text = DataUrl.decode(url)?.takeIf { it.trimStart('\uFEFF', ' ', '\r', '\n').startsWith("#EXTM3U") } ?: return null
+        val s = start()
+        val id = id(url, headers)
+        val base = headers.entries.firstOrNull { it.key.equals("Referer", true) }?.value ?: "https://localhost/"
+        targets[id] = Target(url, headers, inline = rewrite(text, base, headers))
+        return "http://127.0.0.1:${s.address.port}/s/$id/playlist.m3u8"
+    }
+
     fun rewrite(playlist: String, baseUrl: String, headers: Map<String, String>, expiredOk: Boolean = false): String {
         val base = URI(baseUrl)
         fun proxied(ref: String) = wrap(base.resolve(ref.trim().replace(" ", "%20")).toString(), headers, expiredOk)
@@ -178,6 +194,20 @@ private fun startsWithPlaylist(input: java.io.BufferedInputStream): Boolean {
     while (n < head.size) { val r = input.read(head, n, head.size - n); if (r <= 0) break; n += r }
     input.reset()
     return String(head, 0, n, Charsets.UTF_8).trimStart('\uFEFF', ' ', '\r', '\n', '\t').startsWith("#EXTM3U")
+}
+
+/** data: addresses (RFC 2397): some extensions (NetMirror) hand the player its playlist inline. */
+object DataUrl {
+    fun decode(url: String): String? {
+        if (!url.startsWith("data:", true)) return null
+        val comma = url.indexOf(',').takeIf { it > 0 } ?: return null
+        val meta = url.substring(5, comma)
+        val body = url.substring(comma + 1)
+        return runCatching {
+            if (meta.endsWith(";base64", true)) String(java.util.Base64.getMimeDecoder().decode(body), Charsets.UTF_8)
+            else java.net.URLDecoder.decode(body.replace("+", "%2B"), "UTF-8")
+        }.getOrNull()
+    }
 }
 
 /** Video segments disguised as pictures (a fake image header in front of MPEG-TS). Same as the Android app's. */

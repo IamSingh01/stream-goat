@@ -267,7 +267,7 @@ object Downloads {
         // The chosen quality for a single-file source: the best one at or under it.
         val capped = if (item.maxHeight > 0) usable.filter { it.quality in 1..item.maxHeight }.ifEmpty { null } else null
         val link = chosen ?: capped?.firstOrNull() ?: usable.firstOrNull() ?: throw IOException(if (links.isEmpty()) "No sources found" else "No source can be downloaded (only streams like DASH or torrents)")
-        val hls = link.type == ExtractorLinkType.M3U8 || link.url.substringBefore('?').endsWith(".m3u8")
+        val hls = link.type == ExtractorLinkType.M3U8 || link.url.substringBefore('?').endsWith(".m3u8") || link.url.startsWith("data:", true)
         val base = baseName(item)
         val ext = if (hls) "ts" else link.url.substringBefore('?').substringAfterLast('.', "mp4").lowercase().takeIf { it in setOf("mp4", "mkv", "webm", "avi", "mov", "m4v", "ts") } ?: "mp4"
         val headers = link.getAllHeaders().toMutableMap().apply { if (keys.none { it.equals("user-agent", true) }) put("User-Agent", USER_AGENT) }
@@ -475,12 +475,12 @@ object Downloads {
 
     private fun resolveUrl(base: String, ref: String): String = base.toHttpUrlOrNull()?.resolve(ref)?.toString() ?: ref
 
-    private fun text(url: String, headers: Map<String, String>): String =
+    private fun text(url: String, headers: Map<String, String>): String = DataUrl.decode(url) ?:   // inline playlists (NetMirror)
         get(url, headers).use { r -> if (!r.isSuccessful) throw IOException("HTTP ${r.code} for playlist"); r.body.string() }
 
     /** The qualities inside a stream source (its HLS master playlist's heights, best first); empty for a single file. */
     suspend fun qualities(link: ExtractorLink): List<Int> = kotlinx.coroutines.withContext(Dispatchers.IO) {
-        val hls = link.type == ExtractorLinkType.M3U8 || link.url.substringBefore('?').endsWith(".m3u8")
+        val hls = link.type == ExtractorLinkType.M3U8 || link.url.substringBefore('?').endsWith(".m3u8") || link.url.startsWith("data:", true)
         if (!hls) return@withContext emptyList()
         val headers = link.getAllHeaders().toMutableMap().apply { if (keys.none { it.equals("user-agent", true) }) put("User-Agent", USER_AGENT) }
         val master = runCatching { text(link.url, headers) }.getOrNull() ?: return@withContext emptyList()

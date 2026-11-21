@@ -23,7 +23,8 @@ import java.util.concurrent.Executors
  * rewrites HLS playlists so every variant playlist, segment and key goes through it too.
  */
 object StreamProxy {
-    private data class Target(val url: String, val headers: Map<String, String>, val expiredOk: Boolean = false)
+    private data class Target(val url: String, val headers: Map<String, String>, val expiredOk: Boolean = false,
+        /** A playlist given inline (a data: address), served as is. */ val inline: String? = null)
 
     private val targets = ConcurrentHashMap<String, Target>()
     @Volatile private var server: ServerSocket? = null
@@ -44,6 +45,7 @@ object StreamProxy {
 
     /** Returns a loopback URL that fetches [url] with [headers]. */
     fun wrap(url: String, headers: Map<String, String>, expiredOk: Boolean = false): String {
+        if (url.startsWith("data:", true)) wrapData(url, headers)?.let { return it }
         val s = start()
         val id = id(url + if (expiredOk) "#expired-ok" else "", headers)
         targets[id] = Target(url, headers, expiredOk)
@@ -81,6 +83,7 @@ object StreamProxy {
         }
         val id = path.removePrefix("/s/").substringBefore('/')
         val target = targets[id] ?: return respond(out, 404, emptyList(), null)
+        target.inline?.let { text -> return respond(out, 200, listOf("Content-Type" to "application/vnd.apple.mpegurl"), text.toByteArray()) }
         val headers = target.headers.toMutableMap()
         range?.let { headers["Range"] = it }
         val request = Request.Builder().url(target.url).headers(headers.toHeaders())
@@ -158,6 +161,20 @@ object StreamProxy {
 
     private val uriAttribute = Regex("URI=\"([^\"]+)\"")
 
+    /**
+     * A playlist given as a data: address: served from here, with every segment, key and variant in it fetched
+     * through the proxy with [headers] (libVLC can't open data: addresses; ExoPlayer, in the official app, can).
+     */
+    fun wrapData(url: String, headers: Map<String, String>): String? {
+        val text = DataUrl.decode(url)?.takeIf { it.trimStart('\uFEFF', ' ', '\r', '\n').startsWith("#EXTM3U") } ?: return null
+        val s = start()
+        val id = id(url, headers)
+        // Addresses in it are absolute (there's no page to be relative to); the base only matters for odd ones.
+        val base = headers.entries.firstOrNull { it.key.equals("Referer", true) }?.value ?: "https://localhost/"
+        targets[id] = Target(url, headers, inline = rewrite(text, base, headers))
+        return "http://127.0.0.1:${s.localPort}/s/$id/playlist.m3u8"
+    }
+
     /** Points every URI in an HLS playlist (segments, variants, keys, maps) back at the proxy. */
     fun rewrite(playlist: String, baseUrl: String, headers: Map<String, String>, expiredOk: Boolean = false): String {
         val base = URI(baseUrl)
@@ -169,6 +186,21 @@ object StreamProxy {
                 else -> proxied(line)
             }
         }
+    }
+}
+
+/** data: addresses (RFC 2397): some extensions (NetMirror) hand the player its playlist inline, base64 or plain. */
+object DataUrl {
+    /** The text of a data: address, or null when it isn't one. */
+    fun decode(url: String): String? {
+        if (!url.startsWith("data:", true)) return null
+        val comma = url.indexOf(',').takeIf { it > 0 } ?: return null
+        val meta = url.substring(5, comma)
+        val body = url.substring(comma + 1)
+        return runCatching {
+            if (meta.endsWith(";base64", true)) String(java.util.Base64.getMimeDecoder().decode(body), Charsets.UTF_8)
+            else java.net.URLDecoder.decode(body.replace("+", "%2B"), "UTF-8")
+        }.getOrNull()
     }
 }
 

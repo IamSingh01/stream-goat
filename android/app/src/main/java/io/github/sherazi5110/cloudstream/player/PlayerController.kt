@@ -379,9 +379,12 @@ class PlayerController(
     private fun loadVariants(link: ExtractorLink) {
         mastersJob?.cancel()
         master = null; variants = emptyList(); variant = null
-        if (!(link.isM3u8 || link.url.substringBefore('?').endsWith(".m3u8"))) return
+        if (!(link.isM3u8 || link.url.substringBefore('?').endsWith(".m3u8") || link.url.startsWith("data:", true))) return
         mastersJob = scope.launch {
             val m = withContext(Dispatchers.IO) {
+                io.github.sherazi5110.cloudstream.DataUrl.decode(link.url)?.let { text ->
+                    return@withContext runCatching { HlsVariants.parse(text, link.referer.ifBlank { "https://localhost/" }) }.getOrNull()
+                }
                 runCatching {
                     val request = okhttp3.Request.Builder().url(link.url).apply {
                         headersOf(link).forEach { (k, v) -> header(k, v) }
@@ -442,7 +445,9 @@ class PlayerController(
         // while OkHttp retries and reuses connections; the proxy also fixes disguised video segments.
         val hls = api !is io.github.sherazi5110.cloudstream.LiveApi && !source.startsWith("file:") &&
             (link.isM3u8 || source.substringBefore('?').endsWith(".m3u8", true))
-        val headersNeedProxy = headers.keys.any { !it.equals("Referer", true) && !it.equals("User-Agent", true) }
+        // A playlist given inline (data: address, e.g. NetMirror): only the proxy can serve it to libVLC.
+        val inline = source.startsWith("data:", true)
+        val headersNeedProxy = inline || headers.keys.any { !it.equals("Referer", true) && !it.equals("User-Agent", true) }
         // A source that failed through the proxy is tried once directly (as before), in case the server objects to it.
         val viaProxyForHls = hls && !headersNeedProxy && link.url !in directTried
         proxiedOnlyForHls = viaProxyForHls
