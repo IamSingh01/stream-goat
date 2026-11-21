@@ -130,6 +130,8 @@ class PlayerController(
         private set
     private val tried = mutableSetOf<String>()
     private var startAt: Long = 0
+    /** The last position that played, kept when a source fails or is switched. */
+    private var lastGoodTime: Long = 0
     private var grace: Job? = null
     private var watchdog: Job? = null
     private var saver: Job? = null
@@ -185,13 +187,21 @@ class PlayerController(
                     playing = true; buffering = false; started = true; error = null; watchdog?.cancel()
                     // The real picture size (extensions sometimes label a 4K file as 1080p): shown in the player and
                     // remembered for the source list.
-                    main.postDelayed({
+                    // Read on the player's own thread: asking libVLC from the main thread while it's busy froze the
+                    // app ("isn't responding").
+                    main.postDelayed({ VlcThread.run {
                         runCatching {
                             val t = player.currentVideoTrack ?: return@runCatching
                             measured = if (t.width > 0 && t.height > 0) "${t.width}×${t.height}" else null
-                            current?.let { io.github.sherazi5110.cloudstream.MeasuredQuality.remember(it.url, t.width, t.height) }
+                            // With several qualities, Auto starts low: what plays now isn't what the source offers.
+                            // The best quality in its playlist is (and is what the source list shows).
+                            val best = variants.mapNotNull { it.height }.maxOrNull()
+                            current?.let { l ->
+                                if (best != null) io.github.sherazi5110.cloudstream.MeasuredQuality.remember(l.url, best * 16 / 9, best)
+                                else io.github.sherazi5110.cloudstream.MeasuredQuality.remember(l.url, t.width, t.height)
+                            }
                         }
-                    }, 1500)
+                    } }, 1500)
                     channelKey?.let { io.github.sherazi5110.cloudstream.LiveTv.markWorking(it) }
                     trakr?.playing(percent())
                     if (!languagesApplied) { languagesApplied = true; main.postDelayed({ applyLanguages() }, 1500) }
@@ -203,7 +213,7 @@ class PlayerController(
                 }
                 MediaPlayer.Event.Paused -> { playing = false; trakr?.paused(percent()) }
                 MediaPlayer.Event.Buffering -> buffering = e.buffering < 100f
-                MediaPlayer.Event.TimeChanged -> { time = e.timeChanged; if (buffering && playing) buffering = false; updateSkip(e.timeChanged) }
+                MediaPlayer.Event.TimeChanged -> { time = e.timeChanged; if (e.timeChanged > 0) lastGoodTime = e.timeChanged; if (buffering && playing) buffering = false; updateSkip(e.timeChanged) }
                 MediaPlayer.Event.LengthChanged -> { length = e.lengthChanged; loadSegments() }
                 MediaPlayer.Event.EndReached -> main.post { onEndReached() }
                 MediaPlayer.Event.EncounteredError -> main.post { failover() }
@@ -407,7 +417,8 @@ class PlayerController(
         grace?.cancel()
         lastVariantUrl = variantUrl
         playCalledAt = android.os.SystemClock.elapsedRealtime()
-        val keep = if (started) time.takeIf { it > 0 } ?: startAt else startAt
+        // Switching or reloading a source goes on from where it was, even after it failed (the clock then reads 0).
+        val keep = lastGoodTime.takeIf { it > 0 } ?: startAt
         if (variantUrl == null && (current?.url != link.url || variant != null)) loadVariants(link.also { current = it })
         current = link
         matchSurface(link)
@@ -702,7 +713,7 @@ class PlayerController(
     fun seekBy(ms: Long) = seekTo((time + ms).coerceIn(0, length.takeIf { it > 0 } ?: Long.MAX_VALUE))
 
     fun seekTo(ms: Long) {
-        time = ms
+        time = ms; lastGoodTime = ms
         VlcThread.run { player.setTime(ms) }
     }
 

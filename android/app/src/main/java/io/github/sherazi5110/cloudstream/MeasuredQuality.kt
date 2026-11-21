@@ -15,7 +15,9 @@ object MeasuredQuality {
         if (width <= 0 || height <= 0) return
         // A 3840×1600 (wide film) picture is 4K too: go by the larger side.
         val h = when { width >= 3200 || height >= 2000 -> 2160; width >= 2400 || height >= 1400 -> 1440
-            width >= 1700 || height >= 1000 -> 1080; width >= 1200 || height >= 700 -> 720; else -> height }
+            width >= 1700 || height >= 1000 -> 1080; width >= 1200 || height >= 700 -> 720
+            // A 960×400 wide film is 480p, not "400p".
+            width >= 800 || height >= 450 -> 480; width >= 560 || height >= 320 -> 360; else -> height }
         runCatching {
             val p = prefs
             if (p.all.size > 800) p.edit().clear().apply()
