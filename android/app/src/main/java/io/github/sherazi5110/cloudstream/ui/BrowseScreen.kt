@@ -53,6 +53,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
@@ -173,9 +174,11 @@ fun BrowseScreen() {
                     modifier = Modifier.padding(start = 4.dp))
             }
         }
-        if (Browser.progress < 100) LinearProgressIndicator(progress = { Browser.progress / 100f }, modifier = Modifier.fillMaxWidth().height(2.dp))
-
         Box(Modifier.weight(1f).fillMaxWidth()) {
+            // The loading bar sits over the page: in the column it moved the page down and up as it came and went,
+            // and each resize repainted the page blank for a moment (sites that load in steps flashed).
+            if (Browser.progress < 100) LinearProgressIndicator(progress = { Browser.progress / 100f },
+                modifier = Modifier.fillMaxWidth().height(2.dp).align(Alignment.TopCenter).zIndex(1f))
             // The web view only exists while a page is open: an empty one painted the whole screen black.
             if (!home) AndroidView(
                 factory = { ctx -> Browser.view?.apply { onResume(); invalidate() } ?: newWebView(ctx) { address = it }.also { Browser.view = it; if (Browser.url.isNotBlank()) it.loadUrl(Browser.url) } },

@@ -580,6 +580,9 @@ object Downloads {
                             val iv = s.iv ?: ByteArray(16).also { b -> var v = s.sequence; for (k in 15 downTo 8) { b[k] = (v and 0xff).toByte(); v = v shr 8 } }
                             bytes = Cipher.getInstance("AES/CBC/PKCS5Padding").apply { init(Cipher.DECRYPT_MODE, SecretKeySpec(key, "AES"), IvParameterSpec(iv)) }.doFinal(bytes)
                         }
+                        // Stopped or deleted while this piece was downloading: don't write into a removed folder.
+                        ensureActive()
+                        dir.mkdirs()
                         val tmp = File(dir, "%05d.tmp".format(i))
                         tmp.writeBytes(bytes)
                         if (!tmp.renameTo(piece(i))) throw IOException("Can't save a piece in ${dir.path}")

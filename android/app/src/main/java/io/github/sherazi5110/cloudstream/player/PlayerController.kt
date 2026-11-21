@@ -442,7 +442,11 @@ class PlayerController(
         // while OkHttp retries and reuses connections; the proxy also fixes disguised video segments.
         val hls = api !is io.github.sherazi5110.cloudstream.LiveApi && !source.startsWith("file:") &&
             (link.isM3u8 || source.substringBefore('?').endsWith(".m3u8", true))
-        val needsProxy = hls || headers.keys.any { !it.equals("Referer", true) && !it.equals("User-Agent", true) }
+        val headersNeedProxy = headers.keys.any { !it.equals("Referer", true) && !it.equals("User-Agent", true) }
+        // A source that failed through the proxy is tried once directly (as before), in case the server objects to it.
+        val viaProxyForHls = hls && !headersNeedProxy && link.url !in directTried
+        proxiedOnlyForHls = viaProxyForHls
+        val needsProxy = viaProxyForHls || headersNeedProxy
         // A Live TV server with an expired (but genuine) certificate: through the local proxy, which accepts it.
         val expiredOk = link.name == io.github.sherazi5110.cloudstream.LiveApi.EXPIRED
         val url = if (source.startsWith("file:")) source else if (needsProxy || expiredOk) StreamProxy.wrap(source, headers, expiredOk) else source
@@ -565,6 +569,12 @@ class PlayerController(
 
     /** A source failed: try the next untried one, like the Linux player. */
     private fun failover() {
+        val cur = current
+        if (cur != null && proxiedOnlyForHls && directTried.add(cur.url)) {
+            android.util.Log.w("player", "${cur.name}: failed through the proxy, trying it directly")
+            play(cur, lastVariantUrl)
+            return
+        }
         val next = ranked().firstOrNull { it.url !in tried }
         if (next != null) {
             App.toast("${current?.name ?: "Source"} failed, trying ${next.name}")
@@ -759,6 +769,9 @@ class PlayerController(
     }
     private var slowWarningShown = false
     private var lastSeekAt = 0L
+    /** Sources already tried without the proxy, and whether the current one went through it only because it's HLS. */
+    private val directTried = mutableSetOf<String>()
+    private var proxiedOnlyForHls = false
 
     fun changeBoost(percent: Int) {
         boost = percent.coerceIn(100, 200)
