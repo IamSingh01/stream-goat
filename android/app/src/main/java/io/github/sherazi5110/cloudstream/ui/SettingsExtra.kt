@@ -198,7 +198,11 @@ internal fun BackupSection() {
 
     Heading("App updates")
     var check by remember { mutableStateOf(Settings.checkUpdates) }
-    SwitchRow("Check for updates", "Once a day, from this project's GitHub releases.", check) { check = it; Settings.checkUpdates = it }
+    SwitchRow("Check for updates", "Once a day, from this project's GitHub releases. Updates download and install inside the app.", check) { check = it; Settings.checkUpdates = it }
+    var testChannel by remember { mutableStateOf(Updates.channel == "test") }
+    SwitchRow("Test builds", "Get the newest test builds instead of the published versions (may have bugs).", testChannel) {
+        testChannel = it; Updates.channel = if (it) "test" else "release"
+    }
     var checking by remember { mutableStateOf(false) }
     PillButton(if (checking) "Checking…" else "Check now (version $versionName)", Icons.Filled.SystemUpdate, primary = false, compact = true,
         modifier = Modifier.padding(top = 6.dp)) {
@@ -264,11 +268,40 @@ object UpdateState {
 fun UpdateDialog() {
     val rel = UpdateState.available ?: return
     val context = LocalContext.current
-    SimpleDialog("Version ${rel.version} is available", { UpdateState.available = null }, confirm = "Download", onConfirm = {
-        UpdateState.available = null
-        com.lagradost.cloudstream3.CloudStreamApp.openBrowser(rel.url, context.findActivity())
-    }) {
-        Hint("The release page opens; download the .apk for your device and install it over this one. Your data is kept.")
+    val scope = rememberCoroutineScope()
+    val progress = Updates.progress
+    val busy = progress != null
+    // Coming back from Android's "Install unknown apps" switch: check again.
+    var needPermission by remember { mutableStateOf(false) }
+    androidx.lifecycle.compose.LifecycleResumeEffect(Unit) {
+        if (needPermission && Updates.canInstall()) needPermission = false
+        onPauseOrDispose { }
+    }
+    fun start() {
+        if (rel.apk == null) { UpdateState.available = null; com.lagradost.cloudstream3.CloudStreamApp.openBrowser(rel.url, context.findActivity()); return }
+        if (!Updates.canInstall()) { needPermission = true; Updates.askInstallPermission(context); return }
+        scope.launch {
+            runCatching { Updates.downloadAndInstall(rel) }
+                .onSuccess { UpdateState.available = null }
+                .onFailure { App.toast("Couldn't update: ${it.message}") }
+        }
+    }
+    val title = if (rel.test) "A new test build is available" else "Version ${rel.version} is available"
+    SimpleDialog(title, { if (!busy) UpdateState.available = null },
+        confirm = when { busy -> null; needPermission -> "Allow and install"; else -> "Update now" }, onConfirm = { start() },
+        extra = if (rel.apk != null && !busy) ({
+            androidx.compose.material3.TextButton(onClick = { com.lagradost.cloudstream3.CloudStreamApp.openBrowser(rel.url, context.findActivity()) }) { Text("Release page") }
+        }) else null) {
+        when {
+            busy -> {
+                Hint("Downloading… ${progress}%")
+                LinearProgressIndicator(progress = { (progress ?: 0) / 100f }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
+            }
+            needPermission -> Hint("Android needs your OK once: turn on \"Allow from this source\" for Stream Goat, come back, then tap \"Allow and install\".")
+            rel.apk != null -> Hint((if (rel.test) rel.version.replaceFirstChar { it.uppercase() } + ". " else "") +
+                "It downloads here and installs over this version: your extensions, settings, history and downloads are kept.")
+            else -> Hint("There's no download for this device in this release; the release page opens.")
+        }
     }
 }
 

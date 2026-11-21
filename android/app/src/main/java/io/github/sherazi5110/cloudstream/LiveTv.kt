@@ -80,7 +80,26 @@ object LiveTv {
         Source("stremio:" + a.manifest.id, Kind.STREMIO, a.manifest.name, a.url, enabled = a.enabled)
     }
 
+    /**
+     * Playlists a new install starts with (only when no Live TV source was ever set up): public lists that are kept
+     * up to date on GitHub. iptv-org for this device's country and the whole world (updated daily), and Free-TV's
+     * hand-checked list of free channels. They can be removed in Settings → Live TV like any other.
+     */
+    private fun seedDefaults() {
+        if (prefs.contains("sources")) return
+        val country = java.util.Locale.getDefault().country.takeIf { it.length == 2 }?.lowercase()
+        val list = buildList {
+            if (country != null) add(Source(newId(), Kind.M3U, "${java.util.Locale("", country).displayCountry} (iptv-org)", iptvOrgCountryUrl(country), null, null, null, true))
+            add(Source(newId(), Kind.M3U, "All countries (iptv-org)", "https://iptv-org.github.io/iptv/index.m3u", null, null, null, true))
+            add(Source(newId(), Kind.M3U, "Free-TV", "https://raw.githubusercontent.com/Free-TV/IPTV/master/playlist.m3u8", null, null, null, true))
+        }
+        save(list)
+    }
+
+    private fun newId() = java.util.UUID.randomUUID().toString().replace("-", "").take(12)
+
     fun saved(): List<Source> {
+        seedDefaults()
         val arr = runCatching { JSONArray(prefs.getString("sources", "[]")) }.getOrDefault(JSONArray())
         return (0 until arr.length()).mapNotNull { arr.optJSONObject(it) }.mapNotNull { o ->
             runCatching {
