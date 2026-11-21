@@ -97,8 +97,10 @@ object StreamProxy {
                 (if (target.expiredOk) ExpiredCertTrust.client(app.baseClient) else app.baseClient).newCall(request).execute().use { response ->
                     val body = response.body
                     val type = response.header("Content-Type").orEmpty()
-                    if (exchange.requestMethod != "HEAD" && isPlaylist(target.url, type)) {
-                        val text = body.string()
+                    val stream = java.io.BufferedInputStream(body.byteStream(), 64 * 1024)
+                    // A playlist served from a .php address as text/plain is recognised by its first line too.
+                    if (exchange.requestMethod != "HEAD" && (isPlaylist(target.url, type) || startsWithPlaylist(stream))) {
+                        val text = stream.readBytes().toString(Charsets.UTF_8)
                         if (text.trimStart().startsWith("#EXTM3U")) {
                             val bytes = rewrite(text, response.request.url.toString(), target.headers, target.expiredOk).toByteArray()
                             exchange.responseHeaders.add("Content-Type", "application/vnd.apple.mpegurl")
@@ -121,7 +123,7 @@ object StreamProxy {
                     }
                     // Video segments hidden behind a fake picture header (only the sound played): skip to the real
                     // MPEG-TS and say it's video.
-                    val input = java.io.BufferedInputStream(body.byteStream(), 64 * 1024)
+                    val input = stream
                     var sendLength = length
                     if (exchange.requestHeaders.getFirst("Range") == null && response.code == 200) {
                         val skip = Disguise.junkBefore(input)
@@ -167,6 +169,15 @@ object StreamProxy {
             }
         }
     }
+}
+
+private fun startsWithPlaylist(input: java.io.BufferedInputStream): Boolean {
+    input.mark(64)
+    val head = ByteArray(64)
+    var n = 0
+    while (n < head.size) { val r = input.read(head, n, head.size - n); if (r <= 0) break; n += r }
+    input.reset()
+    return String(head, 0, n, Charsets.UTF_8).trimStart('\uFEFF', ' ', '\r', '\n', '\t').startsWith("#EXTM3U")
 }
 
 /** Video segments disguised as pictures (a fake image header in front of MPEG-TS). Same as the Android app's. */

@@ -90,8 +90,11 @@ object StreamProxy {
             (if (target.expiredOk) ExpiredCertTrust.client(app.baseClient) else app.baseClient).newCall(request).execute().use { response ->
                 val type = response.header("Content-Type").orEmpty()
                 val copied = response.headers.filter { (n, _) -> n.lowercase() !in skipResponse }
-                if (method != "HEAD" && isPlaylist(target.url, type)) {
-                    val text = response.body.string()
+                val stream = if (method != "HEAD") BufferedInputStream(response.body.byteStream(), 64 * 1024) else null
+                // A playlist is recognised by its first line too: many extensions serve it from a .php address as
+                // text/plain, and unrewritten its segments pointed at the proxy itself (nothing played).
+                if (stream != null && (isPlaylist(target.url, type) || startsWithPlaylist(stream))) {
+                    val text = stream.readBytes().toString(Charsets.UTF_8)
                     if (text.trimStart().startsWith("#EXTM3U")) {
                         val bytes = rewrite(text, response.request.url.toString(), target.headers, target.expiredOk).toByteArray()
                         respond(out, response.code, listOf("Content-Type" to "application/vnd.apple.mpegurl"), bytes)
@@ -99,7 +102,7 @@ object StreamProxy {
                     return
                 }
                 var length = response.header("Content-Length")?.toLongOrNull()
-                var body = if (method != "HEAD") BufferedInputStream(response.body.byteStream(), 64 * 1024) else null
+                var body = stream
                 var headersOut = copied
                 // Some sites hide video segments behind a fake picture header (they're served as .jpg/.png with an
                 // image type): the player then treats the video as a broken image and only the sound plays. The real
@@ -142,6 +145,15 @@ object StreamProxy {
     private fun isPlaylist(url: String, contentType: String): Boolean {
         val type = contentType.lowercase()
         return "mpegurl" in type || runCatching { URI(url).path.lowercase().endsWith(".m3u8") }.getOrDefault(false)
+    }
+
+    private fun startsWithPlaylist(input: BufferedInputStream): Boolean {
+        input.mark(64)
+        val head = ByteArray(64)
+        var n = 0
+        while (n < head.size) { val r = input.read(head, n, head.size - n); if (r <= 0) break; n += r }
+        input.reset()
+        return String(head, 0, n, Charsets.UTF_8).trimStart('\uFEFF', ' ', '\r', '\n', '\t').startsWith("#EXTM3U")
     }
 
     private val uriAttribute = Regex("URI=\"([^\"]+)\"")
