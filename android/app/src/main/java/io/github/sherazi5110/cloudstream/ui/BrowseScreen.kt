@@ -99,6 +99,10 @@ object Browser {
         sitesOff = if (off) sitesOff + host(url) else sitesOff - host(url)
         offPrefs.edit().putStringSet("hosts", sitesOff).apply()
     }
+    /** A "new tab" the page opened, shown over the page. */
+    var popup by mutableStateOf<WebView?>(null)
+    var popupUrl by mutableStateOf("")
+    fun closePopup() { popup?.let { p -> popup = null; p.stopLoading(); p.post { p.destroy() } } }
     /** A page player that went full screen (the page hands us its video view). */
     var full by mutableStateOf<android.view.View?>(null)
     var fullDone: WebChromeClient.CustomViewCallback? = null
@@ -174,7 +178,7 @@ fun BrowseScreen() {
         Box(Modifier.weight(1f).fillMaxWidth()) {
             // The web view only exists while a page is open: an empty one painted the whole screen black.
             if (!home) AndroidView(
-                factory = { ctx -> Browser.view ?: newWebView(ctx) { address = it }.also { Browser.view = it; if (Browser.url.isNotBlank()) it.loadUrl(Browser.url) } },
+                factory = { ctx -> Browser.view?.apply { onResume(); invalidate() } ?: newWebView(ctx) { address = it }.also { Browser.view = it; if (Browser.url.isNotBlank()) it.loadUrl(Browser.url) } },
                 modifier = Modifier.fillMaxSize(),
                 onRelease = { (it.parent as? android.view.ViewGroup)?.removeView(it) },
             )
@@ -187,6 +191,23 @@ fun BrowseScreen() {
                 }
             }
             if (home) BrowseHome { Browser.open(it); address = it }
+        }
+    }
+    Browser.popup?.let { pop ->
+        BackHandler { if (pop.canGoBack()) pop.goBack() else Browser.closePopup() }
+        Column(Modifier.fillMaxSize().statusBarsPadding().background(Palette.background)) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("New tab", style = MaterialTheme.typography.labelLarge)
+                    Text(host(Browser.popupUrl).ifBlank { "Loading…" }, style = MaterialTheme.typography.bodySmall, color = Palette.muted, maxLines = 1)
+                }
+                PillButton("Open in page", null, primary = false, compact = true) {
+                    val u = Browser.popupUrl; Browser.closePopup(); if (u.startsWith("http")) Browser.view?.loadUrl(u)
+                }
+                IconAction(Icons.Filled.Close, "Close tab") { Browser.closePopup() }
+            }
+            AndroidView({ (pop.parent as? android.view.ViewGroup)?.removeView(pop); pop }, Modifier.fillMaxSize(),
+                onRelease = { (it.parent as? android.view.ViewGroup)?.removeView(it) })
         }
     }
     Browser.full?.let { v ->
@@ -209,6 +230,31 @@ private fun saveIcon(url: String, icon: Bitmap) = runCatching {
     }
 }
 fun siteIcon(url: String): String? = iconFile(url).takeIf { it.isFile && it.length() > 0 }?.let { "file://" + it.path }
+
+/** The "new tab" view: same blocking as the page, no pop-ups of its own. */
+@SuppressLint("SetJavaScriptEnabled")
+private fun newPopup(ctx: android.content.Context): WebView = WebView(ctx).apply {
+    setBackgroundColor(android.graphics.Color.rgb(14, 14, 18))
+    settings.javaScriptEnabled = true
+    settings.domStorageEnabled = true
+    settings.mediaPlaybackRequiresUserGesture = false
+    settings.setSupportMultipleWindows(false)
+    CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
+    webViewClient = object : WebViewClient() {
+        override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
+            if (!Browser.isSiteOff(Browser.url) && AdBlock.blocks(request.url.host)) {
+                AdBlock.blockedCount.incrementAndGet(); view.post { Browser.blockedHere++ }
+                return WebResourceResponse("text/plain", "utf-8", java.io.ByteArrayInputStream(ByteArray(0)))
+            }
+            return null
+        }
+        override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+            val scheme = request.url.scheme.orEmpty()
+            return scheme != "http" && scheme != "https" || (!Browser.isSiteOff(Browser.url) && AdBlock.blocks(request.url.host))
+        }
+        override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) { if (url != "about:blank") Browser.popupUrl = url }
+    }
+}
 
 internal fun host(url: String) = runCatching { java.net.URI(url).host.removePrefix("www.") }.getOrDefault(url)
 
@@ -240,29 +286,20 @@ private fun newWebView(ctx: android.content.Context, onUrl: (String) -> Unit): W
         override fun onShowCustomView(v: android.view.View, callback: CustomViewCallback) { Browser.full = v; Browser.fullDone = callback }
         override fun onHideCustomView() { Browser.full = null; Browser.fullDone = null }
         /**
-         * A link that opens a "new tab": there are no tabs, so it opens right here (Back returns to the page before).
-         * Pop-ups the page opens by itself, without a tap, are refused, and so are taps that lead to an ad server.
+         * A link that opens a "new tab" opens in a layer over the page (the page stays as it was): these sites open
+         * ads that way on the first tap, so the ad can be closed with one tap, and a real link can be opened in the
+         * page. Pop-ups the page opens by itself, without a tap, are refused.
          */
         override fun onCreateWindow(view: WebView, isDialog: Boolean, isUserGesture: Boolean, resultMsg: Message?): Boolean {
-            if (!isUserGesture || resultMsg == null) { if (AdBlock.enabled) AdBlock.blockedCount.incrementAndGet(); return false }
-            val catcher = WebView(view.context)
-            catcher.webViewClient = object : WebViewClient() {
-                private var done = false
-                fun take(url: String?) {
-                    if (done || url.isNullOrBlank() || url == "about:blank") return
-                    done = true
-                    val host = runCatching { android.net.Uri.parse(url).host }.getOrNull()
-                    if (url.startsWith("http") && !(!Browser.isSiteOff(Browser.url) && AdBlock.blocks(host))) view.loadUrl(url)
-                    else if (AdBlock.enabled) { AdBlock.blockedCount.incrementAndGet(); Browser.blockedHere++ }
-                    catcher.post { catcher.stopLoading(); catcher.destroy() }
-                }
-                override fun shouldOverrideUrlLoading(v: WebView, request: WebResourceRequest): Boolean { take(request.url.toString()); return true }
-                override fun onPageStarted(v: WebView, url: String?, favicon: Bitmap?) { take(url) }
-            }
-            (resultMsg.obj as WebView.WebViewTransport).webView = catcher
+            if (!isUserGesture || resultMsg == null || Browser.popup != null) { if (AdBlock.enabled) { AdBlock.blockedCount.incrementAndGet(); Browser.blockedHere++ }; return false }
+            val pop = newPopup(view.context)
+            Browser.popupUrl = ""
+            Browser.popup = pop
+            (resultMsg.obj as WebView.WebViewTransport).webView = pop
             resultMsg.sendToTarget()
             return true
         }
+        override fun onCloseWindow(window: WebView) { if (window === Browser.popup) Browser.closePopup() }
     }
     webViewClient = object : WebViewClient() {
         override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
