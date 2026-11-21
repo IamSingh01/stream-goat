@@ -231,7 +231,6 @@ private fun BannerCard(m: Sports.Match) {
                 }
             }
         }
-        Spacer(Modifier.weight(1f, fill = false))
         m.location?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.65f), modifier = Modifier.padding(top = 10.dp), maxLines = 1) }
     }
 }

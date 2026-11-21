@@ -81,12 +81,19 @@ class MpvEngine(context: Context) : PlaybackEngine {
             override fun event(eventId: Int) {
                 main.post {
                     when (eventId) {
-                        EVENT_FILE_LOADED -> { opening = false; loaded = true }
+                        EVENT_FILE_LOADED -> {
+                            opening = false; loaded = true
+                            // mpv takes subtitle files only once the video is loaded.
+                            pendingSubs.forEach { cmd("sub-add", it, "select") }; pendingSubs.clear()
+                        }
                         // The file ended before it ever loaded: mpv couldn't open it.
                         EVENT_END_FILE -> when {
                             // Loading a new source first ends the one before: that end isn't a failure.
                             skipEnd > 0 -> skipEnd--
-                            !loaded && opening -> { opening = false; listener?.onError("mpv couldn't open this source") }
+                            else -> {
+                                fileActive = false
+                                if (!loaded && opening) { opening = false; listener?.onError("mpv couldn't open this source") }
+                            }
                         }
                         EVENT_PLAYBACK_RESTART -> { opening = false; listener?.onBuffering(false); if (!paused) listener?.onPlaying() }
                     }
@@ -103,7 +110,9 @@ class MpvEngine(context: Context) : PlaybackEngine {
     }
 
     private var loaded = false
-    private var hadFile = false
+    /** A file is loaded or loading (replacing it ends it first: that end is skipped). */
+    private var fileActive = false
+    private val pendingSubs = mutableListOf<String>()
     private var skipEnd = 0
     private var lastW = 0
     private var lastH = 0
@@ -130,8 +139,9 @@ class MpvEngine(context: Context) : PlaybackEngine {
             } else mpv.setPropertyString("http-header-fields", "")
         }
         setZoom(r.zoom)
-        if (hadFile) skipEnd++
-        hadFile = true
+        if (fileActive) skipEnd++
+        fileActive = true
+        pendingSubs.clear()
         cmd("loadfile", r.url, "replace")
         r.subtitles.forEach { addSubtitle(it) }
         mpv.setPropertyBoolean("pause", false)
@@ -172,7 +182,10 @@ class MpvEngine(context: Context) : PlaybackEngine {
     override fun subtitleTracks() = if (opening) emptyList() else listOf(TrackInfo(-1, "Off")) + tracks("sub")
     override fun subtitleTrack() = selected("sid")
     override fun setSubtitle(id: Int) { runCatching { mpv.setPropertyString("sid", if (id < 0) "no" else id.toString()) } }
-    override fun addSubtitle(uri: Uri) { cmd("sub-add", if (uri.scheme == "file") uri.path ?: uri.toString() else uri.toString(), "select") }
+    override fun addSubtitle(uri: Uri) {
+        val path = if (uri.scheme == "file") uri.path ?: uri.toString() else uri.toString()
+        if (loaded) cmd("sub-add", path, "select") else pendingSubs += path
+    }
 
     override fun reallyEnded() = ended
 

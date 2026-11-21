@@ -47,6 +47,7 @@ class ExoEngine(context: Context) : PlaybackEngine {
     private var request: OpenRequest? = null
     private val extraSubs = mutableListOf<Uri>()
     private var loudness: android.media.audiofx.LoudnessEnhancer? = null
+    private var loudnessSession = C.AUDIO_SESSION_ID_UNSET
     private var volumePercent = 100
 
     private val player: ExoPlayer = run {
@@ -135,6 +136,12 @@ class ExoEngine(context: Context) : PlaybackEngine {
     }
 
     override fun open(r: OpenRequest) {
+        // Subtitle files added to the previous source don't belong to this one.
+        if (r.original != request?.original) extraSubs.clear()
+        openSource(r)
+    }
+
+    private fun openSource(r: OpenRequest) {
         request = r
         ended = false
         opening = true
@@ -162,7 +169,9 @@ class ExoEngine(context: Context) : PlaybackEngine {
         runCatching {
             if (boostMb == 0) { loudness?.enabled = false; return }
             val session = player.audioSessionId.takeIf { it != C.AUDIO_SESSION_ID_UNSET } ?: return
-            val l = loudness ?: android.media.audiofx.LoudnessEnhancer(session).also { loudness = it }
+            // A new audio session (another output, a new source) needs its own enhancer.
+            if (loudness != null && loudnessSession != session) { loudness?.release(); loudness = null }
+            val l = loudness ?: android.media.audiofx.LoudnessEnhancer(session).also { loudness = it; loudnessSession = session }
             l.setTargetGain(boostMb)
             l.enabled = true
         }
@@ -217,7 +226,7 @@ class ExoEngine(context: Context) : PlaybackEngine {
         extraSubs += uri
         val pos = player.currentPosition
         val playing = player.playWhenReady
-        open(r.copy(startMs = pos))
+        openSource(r.copy(startMs = pos))
         player.playWhenReady = playing
         player.trackSelectionParameters = player.trackSelectionParameters.buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false).build()
     }

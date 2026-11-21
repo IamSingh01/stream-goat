@@ -152,7 +152,7 @@ object Sports {
                 java.time.ZonedDateTime.parse(tag("pubDate"), java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME).toInstant().toEpochMilli()
             }.getOrDefault(0L)
             News(title, source, link, time)
-        }.distinctBy { it.title }.take(40)
+        }.distinctBy { it.title }.distinctBy { it.link }.take(40)
     }
 
     private fun unescape(s: String) = s.replace("<![CDATA[", "").replace("]]>", "")

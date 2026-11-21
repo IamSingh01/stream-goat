@@ -51,7 +51,17 @@ class HomeState {
  * One Home for the app's whole run: opening a title and coming back shows Home as it was (same catalogs, same
  * place) instead of loading everything again and starting at the top.
  */
-private val sharedHome by lazy { HomeState() }
+private val sharedHome by lazy {
+    HomeState().also { state ->
+        // Listened to for the app's whole run (not only while Home is on screen), so a profile switch or a catalog
+        // edit made elsewhere still reloads Home.
+        io.github.sherazi5110.cloudstream.Catalogs.onChange { state.catalogVersion++ }
+        io.github.sherazi5110.cloudstream.Profiles.onChange {
+            state.continueWatching = Library.continueWatching()
+            state.catalogVersion++
+        }
+    }
+}
 
 @Composable
 fun rememberHomeState(): HomeState {
@@ -62,11 +72,6 @@ fun rememberHomeState(): HomeState {
         state.providers = list
         val keep = state.api?.name ?: Settings.lastHomeProvider
         state.api = list.firstOrNull { it.name == keep } ?: list.firstOrNull()
-    }
-    // Reload when the chosen extension changes (not on every extension that finishes loading).
-    DisposableEffect(Unit) {
-        val off = io.github.sherazi5110.cloudstream.Catalogs.onChange { state.catalogVersion++ }
-        onDispose { off() }
     }
     LaunchedEffect(state.api, state.catalogVersion) {
         val api = state.api ?: run { state.sections.clear(); return@LaunchedEffect }
@@ -90,12 +95,7 @@ fun rememberHomeState(): HomeState {
     DisposableEffect(Unit) {
         state.continueWatching = Library.continueWatching()
         val off = Library.onChange { state.continueWatching = Library.continueWatching() }
-        // Another profile: its own history and catalog layout.
-        val offProfile = io.github.sherazi5110.cloudstream.Profiles.onChange {
-            state.continueWatching = Library.continueWatching()
-            state.catalogVersion++
-        }
-        onDispose { off(); offProfile() }
+        onDispose { off() }
     }
     return state
 }

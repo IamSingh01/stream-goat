@@ -117,7 +117,12 @@ class YouTubeActivity : Activity() {
     }
 
     /** Back inside YouTube: closes the full-screen video, else YouTube's own back (Escape, as on a TV). */
+    private var lastBack = 0L
     private fun youTubeBack() {
+        // A remote's Back can arrive both as a key and as Android's back event: one press, one step back.
+        val now = android.os.SystemClock.uptimeMillis()
+        if (now - lastBack < 350) return
+        lastBack = now
         if (customView != null) { customCallback?.onCustomViewHidden(); return }
         web.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ESCAPE))
         web.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ESCAPE))
