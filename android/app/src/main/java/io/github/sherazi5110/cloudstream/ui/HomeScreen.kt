@@ -116,7 +116,7 @@ private fun NoExtensions() {
 
 @Composable
 private fun PhoneHome(state: HomeState) {
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp + LocalBottomInset.current)) {
+    LazyColumn(Modifier.fillMaxSize(), state = state.phoneList, contentPadding = PaddingValues(bottom = 24.dp + LocalBottomInset.current)) {
         item(key = "hero") { PhoneHero(state) }
         if (state.continueWatching.isNotEmpty()) item(key = "continue") {
             ContinueRow(state.continueWatching, cardWidth = 200.dp)
@@ -300,7 +300,7 @@ fun CatalogRow(
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 internal fun WideHome(state: HomeState) {
     var focused by remember { mutableStateOf<SearchResponse?>(null) }
-    val list = rememberLazyListState()
+    val list = state.wideList
     // Liquid glass: what scrolls under the top bar is blurred and fades out, with no hard edge (Apple's scroll edge).
     val topHaze = dev.chrisbanes.haze.rememberHazeState()
     BoxWithConstraints(Modifier.fillMaxSize()) {

@@ -32,6 +32,11 @@ class HomeState {
     /** Bumped when the user edits catalogs, so Home reloads. */
     var catalogVersion by mutableStateOf(0)
     var editing by mutableStateOf(false)
+    /** Home's scroll position (phone and wide layouts), kept while a title's page is open. */
+    val phoneList = androidx.compose.foundation.lazy.LazyListState()
+    val wideList = androidx.compose.foundation.lazy.LazyListState()
+    /** What the catalogs on screen were loaded for: coming back to Home with the same doesn't load them again. */
+    internal var loadedFor: Any? = null
 
     /** Banner titles: the first few of the first row. */
     val featured: List<SearchResponse> get() = sections.firstOrNull()?.list?.list.orEmpty().filterNot { io.github.sherazi5110.cloudstream.Hidden.isHidden(it.url) }.take(6)
@@ -42,9 +47,15 @@ class HomeState {
     }
 }
 
+/**
+ * One Home for the app's whole run: opening a title and coming back shows Home as it was (same catalogs, same
+ * place) instead of loading everything again and starting at the top.
+ */
+private val sharedHome by lazy { HomeState() }
+
 @Composable
 fun rememberHomeState(): HomeState {
-    val state = remember { HomeState() }
+    val state = remember { sharedHome }
     val version by PluginManager.version.collectAsState()
     LaunchedEffect(version) {
         val list = Engine.providers().filter { it.hasMainPage }
@@ -58,8 +69,11 @@ fun rememberHomeState(): HomeState {
         onDispose { off() }
     }
     LaunchedEffect(state.api, state.catalogVersion) {
+        val api = state.api ?: run { state.sections.clear(); return@LaunchedEffect }
+        val key = listOf(api.name, System.identityHashCode(api), state.catalogVersion)
+        if (state.loadedFor == key && state.sections.isNotEmpty()) return@LaunchedEffect
+        state.loadedFor = null
         state.sections.clear()
-        val api = state.api ?: return@LaunchedEffect
         Nav.homeProvider = api.name
         // Next start, this extension loads before the others so Home shows sooner (as in the official app).
         api.sourcePlugin?.let { if (it != Settings.homePluginFile) Settings.homePluginFile = it }
@@ -71,6 +85,7 @@ fun rememberHomeState(): HomeState {
         }
         state.loading = false
         state.offline = state.sections.isEmpty() && !io.github.sherazi5110.cloudstream.App.online()
+        if (state.sections.isNotEmpty()) state.loadedFor = key
     }
     DisposableEffect(Unit) {
         state.continueWatching = Library.continueWatching()
