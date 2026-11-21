@@ -35,7 +35,12 @@ object Music {
     var length by mutableLongStateOf(0L)
         private set
     var error by mutableStateOf<String?>(null)
-    private var queue: List<Track> = emptyList()
+    /** What plays, in order (the current song is in it). Shown as "Up next" in the player. */
+    var queue by mutableStateOf<List<Track>>(emptyList())
+        private set
+    var shuffle by mutableStateOf(false)
+    /** 0 = off, 1 = repeat the list, 2 = repeat this song. */
+    var repeat by mutableStateOf(0)
     /** YouTube's trending music. */
     var popular by mutableStateOf<List<Track>>(emptyList())
         private set
@@ -144,9 +149,30 @@ object Music {
     fun toggle() { if (player.isPlaying) player.pause() else if (current != null) player.play() }
     fun seekTo(ms: Long) { player.time = ms }
     /** The next song in the list; at the end, carries on with a suggestion (like YouTube Music's autoplay). */
+    /** Songs after the current one. */
+    val upNext: List<Track> get() = queue.drop(queue.indexOf(current) + 1)
+
+    fun addToQueue(track: Track) {
+        if (current == null) { play(track); return }
+        queue = queue.filterNot { it.url == track.url || false } .let { q -> if (current in q) q + track else listOfNotNull(current) + q + track }
+        App.toast("Added to queue")
+    }
+
+    /** Plays [track], then songs like it (YouTube's mix for it). */
+    fun startMix(track: Track) {
+        play(track)
+        App.scope.launch {
+            runCatching { loadSuggestions(track) }
+            if (current?.url == track.url) queue = listOf(track) + suggestions.filter { it.url != track.url }
+        }
+    }
+
     fun next() {
+        if (repeat == 2 && current != null) { seekTo(0); if (!player.isPlaying) player.play(); return }
         val i = queue.indexOf(current)
+        if (shuffle && queue.size > 1) { queue.filter { it != current }.randomOrNull()?.let { play(it, queue); return } }
         queue.getOrNull(i + 1)?.let { play(it, queue); return }
+        if (repeat == 1 && queue.isNotEmpty()) { play(queue.first(), queue); return }
         val more = suggestions.filter { s -> queue.none { it.url == s.url } }
         more.firstOrNull()?.let { play(it, queue + more) } ?: run { playing = false }
     }

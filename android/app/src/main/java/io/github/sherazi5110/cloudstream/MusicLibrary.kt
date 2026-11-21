@@ -58,6 +58,7 @@ object MusicLibrary {
         savePlaylists(); App.toast("Added to $n")
     }
 
+    fun createPlaylist(name: String) { val n = name.trim().ifBlank { return }; if (n !in playlists) { playlists[n] = emptyList(); savePlaylists() } }
     fun removeFromPlaylist(name: String, t: Music.Track) { playlists[name] = playlists[name].orEmpty().filterNot { it.url == t.url }; savePlaylists() }
     fun deletePlaylist(name: String) { playlists.remove(name); savePlaylists() }
 
