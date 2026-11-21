@@ -54,6 +54,9 @@ private object MusicSearch {
     var results by mutableStateOf<List<Music.Track>>(emptyList())
     var searching by mutableStateOf(false)
     var error by mutableStateOf<String?>(null)
+    /** What shows when there's no search: For you, Popular or Recently played. */
+    var view by mutableStateOf("foryou")
+    var loading by mutableStateOf(false)
 }
 
 /** The Music tab: search YouTube songs and play them (audio only), with recently played. */
@@ -71,6 +74,15 @@ fun MusicScreen() {
             MusicSearch.searching = false
         }
     }
+    // Popular and suggestions load when the tab opens (once; suggestions follow the last song played).
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        MusicSearch.loading = true
+        runCatching { if (Music.popular.isEmpty()) Music.loadPopular() }
+        (Music.current ?: WebHistory.songs.items.firstOrNull()?.let { Music.Track(it.id, it.title, it.subtitle, it.image, 0) })
+            ?.let { runCatching { Music.loadSuggestions(it) } }
+        MusicSearch.loading = false
+        if (Music.suggestions.isEmpty() && MusicSearch.view == "foryou") MusicSearch.view = "popular"
+    }
     LazyColumn(Modifier.fillMaxSize().statusBarsPadding().padding(horizontal = 16.dp),
         contentPadding = PaddingValues(bottom = 96.dp + LocalBottomInset.current)) {
         item {
@@ -86,11 +98,30 @@ fun MusicScreen() {
         if (results.isNotEmpty()) {
             item { SectionTitle("Results", Modifier.padding(top = 12.dp)) }
             items(results, key = { "r" + it.url }) { t -> TrackRow(t.title, t.artist, t.thumbnail, Music.current?.url == t.url) { Music.play(t, results) } }
-        } else if (WebHistory.songs.items.isNotEmpty()) {
-            item { SectionTitle("Recently played", Modifier.padding(top = 12.dp), action = "Clear") { WebHistory.songs.clear() } }
-            val recent = WebHistory.songs.items.take(80).map { e -> Music.Track(e.id, e.title, e.subtitle, e.image, 0) }
-            items(recent, key = { "h" + it.url }) { t -> TrackRow(t.title, t.artist, t.thumbnail, Music.current?.url == t.url) { Music.play(t, recent) } }
-        } else item { Hint("Search for a song or an artist. Music plays from YouTube, audio only, without ads, and keeps playing while you use the rest of the app.") }
+        } else {
+            item {
+                androidx.compose.foundation.layout.FlowRow(Modifier.padding(top = 12.dp), horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)) {
+                    listOf("foryou" to "For you", "popular" to "Popular", "recent" to "Recently played").forEach { (id, label) ->
+                        androidx.compose.material3.FilterChip(MusicSearch.view == id, { MusicSearch.view = id }, { Text(label) })
+                    }
+                }
+                if (MusicSearch.loading) LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 8.dp))
+            }
+            val list = when (MusicSearch.view) {
+                "foryou" -> Music.suggestions
+                "popular" -> Music.popular
+                else -> WebHistory.songs.items.take(80).map { e -> Music.Track(e.id, e.title, e.subtitle, e.image, 0) }
+            }
+            if (list.isEmpty() && !MusicSearch.loading) item {
+                Hint(when (MusicSearch.view) {
+                    "foryou" -> "Play a song and suggestions like it show up here."
+                    "popular" -> "Couldn't load popular music right now."
+                    else -> "Songs you play show up here."
+                })
+            }
+            if (MusicSearch.view == "recent" && list.isNotEmpty()) item { SectionTitle("", Modifier, action = "Clear") { WebHistory.songs.clear() } }
+            items(list, key = { MusicSearch.view + it.url }) { t -> TrackRow(t.title, t.artist, t.thumbnail, Music.current?.url == t.url) { Music.play(t, list) } }
+        }
     }
 }
 

@@ -36,6 +36,38 @@ object Music {
         private set
     var error by mutableStateOf<String?>(null)
     private var queue: List<Track> = emptyList()
+    /** YouTube's trending music. */
+    var popular by mutableStateOf<List<Track>>(emptyList())
+        private set
+    /** Songs like the one playing (or the last one played): YouTube's related videos. */
+    var suggestions by mutableStateOf<List<Track>>(emptyList())
+        private set
+    private var suggestionsFor: String? = null
+
+    private fun StreamInfoItem.track() = Track(url, name, uploaderName.orEmpty().removeSuffix(" - Topic"),
+        thumbnails.maxByOrNull { it.width }?.url, duration)
+
+    /** Trending music on YouTube (its "Music" chart; the general trending list when there isn't one). */
+    suspend fun loadPopular(): List<Track> = withContext(Dispatchers.IO) {
+        val yt = ServiceList.YouTube
+        val kiosks = yt.kioskList
+        val id = kiosks.availableKiosks.firstOrNull { it.contains("music", true) } ?: kiosks.defaultKioskId
+        val url = kiosks.getListLinkHandlerFactoryByType(id).fromId(id).url
+        org.schabi.newpipe.extractor.kiosk.KioskInfo.getInfo(yt, url).relatedItems.filterIsInstance<StreamInfoItem>()
+            .map { it.track() }.also { popular = it }
+    }
+
+    /** Suggestions from [track] (the last played song when the tab opens). */
+    suspend fun loadSuggestions(track: Track) = withContext(Dispatchers.IO) {
+        if (suggestionsFor == track.url && suggestions.isNotEmpty()) return@withContext
+        val info = StreamInfo.getInfo(ServiceList.YouTube, track.url)
+        setSuggestions(track.url, info)
+    }
+
+    private fun setSuggestions(from: String, info: StreamInfo) {
+        val related = info.relatedItems.filterIsInstance<StreamInfoItem>().filter { it.url != from && it.duration in 60..900 }
+        if (related.isNotEmpty()) { suggestions = related.map { it.track() }; suggestionsFor = from }
+    }
 
     private val player: MediaPlayer by lazy {
         MediaPlayer(Vlc.lib).apply {
@@ -73,7 +105,8 @@ object Music {
         App.scope.launch {
             val audio = runCatching {
                 withContext(Dispatchers.IO) {
-                    StreamInfo.getInfo(ServiceList.YouTube, track.url).audioStreams.maxByOrNull { it.averageBitrate }?.content
+                    StreamInfo.getInfo(ServiceList.YouTube, track.url).also { runCatching { setSuggestions(track.url, it) } }
+                        .audioStreams.maxByOrNull { it.averageBitrate }?.content
                 }
             }.getOrNull()
             if (current != track) return@launch
@@ -92,7 +125,13 @@ object Music {
 
     fun toggle() { if (player.isPlaying) player.pause() else if (current != null) player.play() }
     fun seekTo(ms: Long) { player.time = ms }
-    fun next() { val i = queue.indexOf(current); queue.getOrNull(i + 1)?.let { play(it, queue) } ?: run { playing = false } }
+    /** The next song in the list; at the end, carries on with a suggestion (like YouTube Music's autoplay). */
+    fun next() {
+        val i = queue.indexOf(current)
+        queue.getOrNull(i + 1)?.let { play(it, queue); return }
+        val more = suggestions.filter { s -> queue.none { it.url == s.url } }
+        more.firstOrNull()?.let { play(it, queue + more) } ?: run { playing = false }
+    }
     fun previous() { val i = queue.indexOf(current); if (position > 3000 || i <= 0) seekTo(0) else play(queue[i - 1], queue) }
     fun stop() { player.stop(); current = null; playing = false }
     /** Videos take over the sound: music pauses when a video starts. */

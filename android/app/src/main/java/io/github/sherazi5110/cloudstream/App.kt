@@ -51,6 +51,14 @@ object App {
         runCatching { org.schabi.newpipe.extractor.NewPipe.init(com.lagradost.cloudstream3.DownloaderTestImpl.getInstance()) }
         io.github.sherazi5110.cloudstream.ui.ThemeState.load()
         Images.install()
+        // The Browse tab was removed: its history, saved sites, logos and ad-block lists go too (once).
+        scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching {
+                listOf("browse_history", "browse_bookmarks", "web_watching", "adblock_sites_off").forEach { context.deleteSharedPreferences(it) }
+                java.io.File(context.filesDir, "adblock").deleteRecursively()
+                java.io.File(context.filesDir, "site_icons").deleteRecursively()
+            }
+        }
         WeTrakrSync.start()
         ContentFilter.syncAdult()
         // A profile switch changes the look, the library and which extensions show.
