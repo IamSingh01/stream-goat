@@ -60,6 +60,7 @@ data class SearchBatch(val api: MainAPI, val results: List<SearchResponse>, val 
  * UI as each provider, section or extractor finishes, and slow ones never block fast ones.
  */
 object Engine {
+    init { ContentFilter.syncAdult() }
     private val threads = AtomicInteger()
 
     /** Extension code runs on its own pool so a misbehaving extension cannot starve the UI or IO. */

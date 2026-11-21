@@ -58,7 +58,7 @@ object Profiles {
         return { listeners -= listener }
     }
 
-    private fun changed() = listeners.forEach { it() }
+    private fun changed() { ContentFilter.syncAdult(); listeners.forEach { it() } }
 
     fun all(): List<Profile> {
         val saved = prefs.getString("list", null)?.let { runCatching { mapper.readValue<List<Profile>>(it) }.getOrNull() }
@@ -160,6 +160,14 @@ object ContentFilter {
 
     /** Adult content is shown only to grown-up profiles that turned it on (Settings → Profiles). */
     val nsfwAllowed get() = !Profiles.isKids && Settings.showNsfw
+
+    /**
+     * Tells the extensions too, as the official app does (MainAPI.settingsForProvider.enableAdult): some (MovieBox,
+     * anime sites…) only return their adult titles when it's on. Called at start, on profile switch and on the switch.
+     */
+    fun syncAdult() {
+        runCatching { com.lagradost.cloudstream3.MainAPI.settingsForProvider.enableAdult = nsfwAllowed }
+    }
 
     fun allows(api: MainAPI): Boolean {
         if (TvType.NSFW in api.supportedTypes && !nsfwAllowed) return false

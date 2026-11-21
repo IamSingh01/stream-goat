@@ -233,7 +233,7 @@ object Settings {
      */
     var showNsfw: Boolean
         get() = string("show_nsfw", "false") == "true"
-        set(v) = put("show_nsfw", v)
+        set(v) { put("show_nsfw", v); ContentFilter.syncAdult() }
 
     /** "auto" (detect Android TV), "phone" or "tv": for TV boxes that report themselves wrongly. App-wide. */
     var layout: String
