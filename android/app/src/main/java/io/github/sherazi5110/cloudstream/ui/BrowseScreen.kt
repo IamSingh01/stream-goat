@@ -257,6 +257,7 @@ fun siteIcon(url: String): String? = iconFile(url).takeIf { it.isFile && it.leng
 @SuppressLint("SetJavaScriptEnabled")
 private fun newPopup(ctx: android.content.Context): WebView = WebView(ctx).apply {
     setBackgroundColor(android.graphics.Color.rgb(14, 14, 18))
+    setLayerType(android.view.View.LAYER_TYPE_HARDWARE, null)
     settings.javaScriptEnabled = true
     settings.domStorageEnabled = true
     settings.mediaPlaybackRequiresUserGesture = false
@@ -283,6 +284,9 @@ internal fun host(url: String) = runCatching { java.net.URI(url).host.removePref
 @SuppressLint("SetJavaScriptEnabled")
 private fun newWebView(ctx: android.content.Context, onUrl: (String) -> Unit): WebView = WebView(ctx).apply {
     setBackgroundColor(android.graphics.Color.rgb(14, 14, 18))
+    // Videos: the web view can show a video on a separate surface under the app's own drawing, and inside the app's
+    // screen that surface stayed hidden (sound, black picture). Drawing the page in its own layer keeps videos in it.
+    setLayerType(android.view.View.LAYER_TYPE_HARDWARE, null)
     settings.javaScriptEnabled = true
     settings.domStorageEnabled = true
     settings.mediaPlaybackRequiresUserGesture = false
