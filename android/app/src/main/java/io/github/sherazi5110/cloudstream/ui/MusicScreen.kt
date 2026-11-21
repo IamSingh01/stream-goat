@@ -1,6 +1,8 @@
 package io.github.sherazi5110.cloudstream.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
@@ -10,6 +12,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -97,11 +100,12 @@ fun MusicScreen() {
         val results = MusicSearch.results
         if (results.isNotEmpty()) {
             item { SectionTitle("Results", Modifier.padding(top = 12.dp)) }
-            items(results, key = { "r" + it.url }) { t -> TrackRow(t.title, t.artist, t.thumbnail, Music.current?.url == t.url) { Music.play(t, results) } }
+            items(results, key = { "r" + it.url }) { t -> TrackRow(t, results) }
         } else {
             item {
                 androidx.compose.foundation.layout.FlowRow(Modifier.padding(top = 12.dp), horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)) {
-                    listOf("foryou" to "For you", "popular" to "Popular", "recent" to "Recently played").forEach { (id, label) ->
+                    (listOf("foryou" to "For you", "popular" to "Popular", "recent" to "Recently played", "fav" to "Favourites", "dl" to "Downloaded") +
+                        io.github.sherazi5110.cloudstream.MusicLibrary.playlists.keys.sorted().map { "pl:$it" to it }).forEach { (id, label) ->
                         androidx.compose.material3.FilterChip(MusicSearch.view == id, { MusicSearch.view = id }, { Text(label) })
                     }
                 }
@@ -110,30 +114,72 @@ fun MusicScreen() {
             val list = when (MusicSearch.view) {
                 "foryou" -> Music.suggestions
                 "popular" -> Music.popular
-                else -> WebHistory.songs.items.take(80).map { e -> Music.Track(e.id, e.title, e.subtitle, e.image, 0) }
+                "fav" -> io.github.sherazi5110.cloudstream.MusicLibrary.favourites.items.map { e -> Music.Track(e.id, e.title, e.subtitle, e.image, 0) }
+                "dl" -> io.github.sherazi5110.cloudstream.MusicLibrary.downloads.items.map { e -> Music.Track(e.id, e.title, e.subtitle, e.image, 0) }
+                else -> if (MusicSearch.view.startsWith("pl:")) io.github.sherazi5110.cloudstream.MusicLibrary.playlists[MusicSearch.view.removePrefix("pl:")].orEmpty()
+                    else WebHistory.songs.items.take(80).map { e -> Music.Track(e.id, e.title, e.subtitle, e.image, 0) }
             }
             if (list.isEmpty() && !MusicSearch.loading) item {
                 Hint(when (MusicSearch.view) {
                     "foryou" -> "Play a song and suggestions like it show up here."
                     "popular" -> "Couldn't load popular music right now."
+                    "fav" -> "Long-press a song and choose Add to favourites."
+                    "dl" -> "Long-press a song and choose Download: it plays here without internet (kept inside the app)."
                     else -> "Songs you play show up here."
                 })
             }
+            if (MusicSearch.view.startsWith("pl:")) item {
+                SectionTitle(MusicSearch.view.removePrefix("pl:"), Modifier, action = "Delete playlist") {
+                    io.github.sherazi5110.cloudstream.MusicLibrary.deletePlaylist(MusicSearch.view.removePrefix("pl:")); MusicSearch.view = "foryou"
+                }
+            }
             if (MusicSearch.view == "recent" && list.isNotEmpty()) item { SectionTitle("", Modifier, action = "Clear") { WebHistory.songs.clear() } }
-            items(list, key = { MusicSearch.view + it.url }) { t -> TrackRow(t.title, t.artist, t.thumbnail, Music.current?.url == t.url) { Music.play(t, list) } }
+            items(list, key = { MusicSearch.view + it.url }) { t -> TrackRow(t, list, playlist = MusicSearch.view.removePrefix("pl:").takeIf { MusicSearch.view.startsWith("pl:") }) }
         }
     }
 }
 
+/** A song. Tap plays it (the list after it plays next); long-press (or hold OK) for download, favourites and playlists. */
 @Composable
-private fun TrackRow(title: String, artist: String, image: String?, now: Boolean, onClick: () -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(vertical = 3.dp).card(RoundedCornerShape(10.dp), focusScale = 1.02f) { onClick() }
-        .background(if (now) Palette.accent.copy(alpha = 0.25f) else Palette.surface, RoundedCornerShape(10.dp)).padding(8.dp),
-        verticalAlignment = Alignment.CenterVertically) {
-        NetImage(image, Modifier.size(48.dp).clip(RoundedCornerShape(6.dp)))
-        Column(Modifier.weight(1f).padding(start = 12.dp)) {
-            Text(title, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(artist, style = MaterialTheme.typography.bodySmall, maxLines = 1)
+private fun TrackRow(t: Music.Track, list: List<Music.Track>, playlist: String? = null) {
+    val lib = io.github.sherazi5110.cloudstream.MusicLibrary
+    var menu by remember { mutableStateOf(false) }
+    var pickPlaylist by remember { mutableStateOf(false) }
+    val now = Music.current?.url == t.url
+    Box {
+        Row(Modifier.fillMaxWidth().padding(vertical = 3.dp).card(RoundedCornerShape(10.dp), focusScale = 1.02f, onLongClick = { menu = true }) { Music.play(t, list) }
+            .background(if (now) Palette.accent.copy(alpha = 0.25f) else Palette.surface, RoundedCornerShape(10.dp)).padding(8.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            NetImage(t.thumbnail, Modifier.size(48.dp).clip(RoundedCornerShape(6.dp)))
+            Column(Modifier.weight(1f).padding(start = 12.dp)) {
+                Text(t.title, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                val dl = lib.downloading[t.url]
+                Text(listOfNotNull(t.artist.ifBlank { null }, dl?.let { "Downloading $it%" } ?: if (lib.isDownloaded(t)) "Downloaded" else null,
+                    if (lib.isFavourite(t)) "♥" else null).joinToString(" · "), style = MaterialTheme.typography.bodySmall, maxLines = 1)
+            }
+            IconAction(Icons.Filled.MoreVert, "More") { menu = true }
+        }
+        androidx.compose.material3.DropdownMenu(menu, { menu = false }) {
+            val item = @Composable { label: String, action: () -> Unit -> androidx.compose.material3.DropdownMenuItem({ Text(label) }, { menu = false; action() }) }
+            item("Play next") { Music.playNext(t) }
+            if (lib.isDownloaded(t)) item("Remove download") { lib.deleteDownload(t) }
+            else if (t.url !in lib.downloading) item("Download") { lib.download(t) }
+            item(if (lib.isFavourite(t)) "Remove from favourites" else "Add to favourites") { lib.toggleFavourite(t) }
+            item("Add to playlist…") { pickPlaylist = true }
+            if (playlist != null) item("Remove from this playlist") { lib.removeFromPlaylist(playlist, t) }
+        }
+    }
+    if (pickPlaylist) {
+        var name by remember { mutableStateOf("") }
+        SimpleDialog("Add to playlist", { pickPlaylist = false }) {
+            lib.playlists.keys.sorted().forEach { p ->
+                Text(p, modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp).card(RoundedCornerShape(10.dp)) { lib.addToPlaylist(p, t); pickPlaylist = false }
+                    .background(Palette.surface, RoundedCornerShape(10.dp)).padding(12.dp))
+            }
+            OutlinedTextField(name, { name = it }, singleLine = true, placeholder = { Text("New playlist name") }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
+            PillButton("Create and add", null, compact = true, modifier = Modifier.padding(top = 8.dp)) {
+                if (name.isNotBlank()) { lib.addToPlaylist(name, t); pickPlaylist = false }
+            }
         }
     }
 }
@@ -159,6 +205,20 @@ fun MiniPlayer(modifier: Modifier = Modifier) {
                     Text(clock(Music.position), style = MaterialTheme.typography.labelSmall)
                     Spacer(Modifier.weight(1f))
                     Text(clock(Music.length), style = MaterialTheme.typography.labelSmall)
+                }
+            }
+            // Similar songs (YouTube's suggestions for this one): tap to play.
+            val similar = Music.suggestions.filter { it.url != t.url }.take(8)
+            if (similar.isNotEmpty()) {
+                Text("Similar songs", style = MaterialTheme.typography.titleSmall, modifier = Modifier.fillMaxWidth().padding(top = 10.dp))
+                androidx.compose.foundation.lazy.LazyRow(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(10.dp)) {
+                    items(similar, key = { "s" + it.url }) { s ->
+                        Column(Modifier.width(132.dp).card(RoundedCornerShape(10.dp)) { Music.play(s, listOf(s) + Music.suggestions.filter { it.url != s.url }) }) {
+                            NetImage(s.thumbnail, Modifier.fillMaxWidth().height(74.dp).clip(RoundedCornerShape(8.dp)))
+                            Text(s.title, style = MaterialTheme.typography.labelMedium, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp))
+                            Text(s.artist, style = MaterialTheme.typography.bodySmall, color = Palette.muted, maxLines = 1)
+                        }
+                    }
                 }
             }
         }

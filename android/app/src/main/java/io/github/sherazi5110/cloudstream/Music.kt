@@ -73,8 +73,8 @@ object Music {
         MediaPlayer(Vlc.lib).apply {
             setEventListener { e ->
                 when (e.type) {
-                    MediaPlayer.Event.Playing -> { playing = true; loading = false }
-                    MediaPlayer.Event.Paused, MediaPlayer.Event.Stopped -> playing = false
+                    MediaPlayer.Event.Playing -> { playing = true; loading = false; MusicService.update() }
+                    MediaPlayer.Event.Paused, MediaPlayer.Event.Stopped -> { playing = false; if (current != null) MusicService.update() }
                     MediaPlayer.Event.TimeChanged -> Music.position = e.timeChanged
                     MediaPlayer.Event.LengthChanged -> Music.length = e.lengthChanged
                     MediaPlayer.Event.EndReached -> App.scope.launch(Dispatchers.Main) { next() }
@@ -102,6 +102,16 @@ object Music {
         queue = list
         current = track; loading = true; error = null; position = 0; length = track.seconds * 1000
         WebHistory.songs.add(HistoryStore.Entry(track.url, track.title, track.artist, track.thumbnail))
+        // A downloaded song plays from the app's storage (no internet needed).
+        MusicLibrary.localFile(track.url)?.let { f ->
+            runCatching {
+                player.stop()
+                val m = Media(Vlc.lib, Uri.fromFile(f)).apply { addOption(":no-video") }
+                player.media = m; m.release(); player.play()
+            }.onFailure { loading = false; error = "Couldn't play \"${track.title}\"" }
+            App.scope.launch { runCatching { withContext(Dispatchers.IO) { StreamInfo.getInfo(ServiceList.YouTube, track.url) }.let { setSuggestions(track.url, it) } } }
+            return
+        }
         App.scope.launch {
             val audio = runCatching {
                 withContext(Dispatchers.IO) {
@@ -123,6 +133,14 @@ object Music {
         }
     }
 
+    /** Puts [track] right after the current song. */
+    fun playNext(track: Track) {
+        if (current == null) { play(track); return }
+        val i = queue.indexOf(current)
+        queue = queue.filterNot { it.url == track.url }.toMutableList().apply { add((queue.indexOf(current) + 1).coerceIn(0, size), track) }
+        App.toast("Plays next: ${track.title}")
+    }
+
     fun toggle() { if (player.isPlaying) player.pause() else if (current != null) player.play() }
     fun seekTo(ms: Long) { player.time = ms }
     /** The next song in the list; at the end, carries on with a suggestion (like YouTube Music's autoplay). */
@@ -133,7 +151,7 @@ object Music {
         more.firstOrNull()?.let { play(it, queue + more) } ?: run { playing = false }
     }
     fun previous() { val i = queue.indexOf(current); if (position > 3000 || i <= 0) seekTo(0) else play(queue[i - 1], queue) }
-    fun stop() { player.stop(); current = null; playing = false }
+    fun stop() { player.stop(); current = null; playing = false; MusicService.update() }
     /** Videos take over the sound: music pauses when a video starts. */
     fun pauseForVideo() { if (playing) player.pause() }
 }
