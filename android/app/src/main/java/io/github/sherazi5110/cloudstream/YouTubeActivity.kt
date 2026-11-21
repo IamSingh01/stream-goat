@@ -33,8 +33,11 @@ class YouTubeActivity : Activity() {
 
     companion object {
         const val URL = "https://www.youtube.com/tv"
-        /** YouTube serves its TV app to TV browsers: this is Cobalt's (the browser YouTube's TV app is made for). */
-        const val TV_AGENT = "Mozilla/5.0 (Linux armeabi-v7a; Android 12) Cobalt/25.lts.30.1034943-gold (unlike Gecko) v8/8.8.278.17-jit gles Starboard/15, StreamGoat_Android_TV/1.0 (Unknown, Unknown) com.google.android.youtube.tv/5.10.1"
+        /**
+         * YouTube serves its TV app to TV browsers. This is a Samsung (Tizen) TV's, as TizenTube uses: with Cobalt's
+         * (YouTube's own TV browser) YouTube expects Cobalt-only features and says "not supported on this device".
+         */
+        const val TV_AGENT = "Mozilla/5.0 (SMART-TV; Linux; Tizen 6.0) AppleWebKit/537.36 (KHTML, like Gecko) 85.0.4183.93/6.0 TV Safari/537.36"
         /** Ad and tracking servers the TV app would otherwise contact. */
         private val blockedHosts = setOf("googleads.g.doubleclick.net", "pagead2.googlesyndication.com", "static.doubleclick.net",
             "www.googleadservices.com", "ad.doubleclick.net", "securepubads.g.doubleclick.net", "imasdk.googleapis.com")
