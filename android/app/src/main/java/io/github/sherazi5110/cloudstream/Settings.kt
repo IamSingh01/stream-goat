@@ -212,6 +212,31 @@ object Settings {
         get() = string("player_orientation", "LANDSCAPE")
         set(v) = put("player_orientation", v)
 
+    /** Lower-resolution posters and pictures (null = automatic: on for old or low-memory devices). */
+    var lowResImages: Boolean?
+        get() = string("low_res_images", "").toBooleanStrictOrNull()
+        set(v) = put("low_res_images", v?.toString() ?: "")
+
+    /** How much storage the picture cache may use, in MB (0 = no cache on storage). Applies after a restart. */
+    var imageCacheMb: Int
+        get() = string("image_cache_mb", "250").toIntOrNull() ?: 250
+        set(v) = put("image_cache_mb", v.toString())
+
+    /** How far ahead the player loads, in seconds (HLS streams). More = fewer pauses on slow internet, more memory. */
+    var bufferAheadSec: Int
+        get() = string("buffer_ahead_s", "60").toIntOrNull()?.coerceIn(10, 600) ?: 60
+        set(v) = put("buffer_ahead_s", v.toString())
+
+    /** Most memory the player's download buffer may use, in MB (single-file videos). 0 = automatic. */
+    var bufferMemoryMb: Int
+        get() = string("buffer_memory_mb", "0").toIntOrNull()?.coerceIn(0, 1024) ?: 0
+        set(v) = put("buffer_memory_mb", v.toString())
+
+    /** How much to load before a video starts or resumes after a jump, in milliseconds. */
+    var startBufferMs: Int
+        get() = string("start_buffer_ms", "1500").toIntOrNull()?.coerceIn(300, 20_000) ?: 1500
+        set(v) = put("start_buffer_ms", v.toString())
+
     /** Volume boost in percent (100 = normal, up to 200): for quiet streams and weak speakers. */
     var volumeBoost: Int
         get() = string("volume_boost", "100").toIntOrNull()?.coerceIn(100, 200) ?: 100

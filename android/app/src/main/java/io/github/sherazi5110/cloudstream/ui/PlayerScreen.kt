@@ -43,6 +43,7 @@ import androidx.compose.material.icons.filled.AspectRatio
 import androidx.compose.material.icons.filled.Brightness6
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.ClosedCaption
 import androidx.compose.material.icons.filled.Forward10
 import androidx.compose.material.icons.filled.PictureInPictureAlt
@@ -250,6 +251,17 @@ fun PlayerScreen(screen: Screen.Player) {
             // TV with a mouse: a click on the picture shows the controls (and settings buttons), another hides them.
             else Box(Modifier.fillMaxSize().pointerInput(Unit) { detectTapGestures { controls = !controls; poke++ } })
             if (c.buffering && c.error == null) Spinner(Modifier.fillMaxSize())
+            if (c.slowWarning && c.error == null) {
+                Row(Modifier.align(Alignment.TopCenter).padding(top = 72.dp).widthIn(max = 640.dp)
+                    .background(Color.Black.copy(alpha = 0.8f), RoundedCornerShape(12.dp)).padding(horizontal = 14.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Your internet seems too slow for this video. A lower quality or another source will play smoother.",
+                        style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                    if (c.variants.size > 1) PillButton("Lower quality", null, primary = false, compact = true) { c.slowWarning = false; sheet = Sheet.QUALITY }
+                    PillButton("Sources", null, primary = false, compact = true) { c.slowWarning = false; sheet = Sheet.SOURCES }
+                    IconAction(androidx.compose.material.icons.Icons.Filled.Clear, "Dismiss") { c.slowWarning = false }
+                }
+            }
             c.error?.let {
                 Column(Modifier.align(Alignment.Center).widthIn(max = 560.dp).background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(10.dp)).padding(16.dp),
                     horizontalAlignment = Alignment.CenterHorizontally) {

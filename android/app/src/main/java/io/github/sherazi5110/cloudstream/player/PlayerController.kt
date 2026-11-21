@@ -212,7 +212,12 @@ class PlayerController(
                     }
                 }
                 MediaPlayer.Event.Paused -> { playing = false; trakr?.paused(percent()) }
-                MediaPlayer.Event.Buffering -> buffering = e.buffering < 100f
+                MediaPlayer.Event.Buffering -> {
+                    val now = e.buffering < 100f
+                    // A pause to load in the middle of playing (not the start, not right after a jump).
+                    if (now && !buffering && started && android.os.SystemClock.elapsedRealtime() - lastSeekAt > 4000) stalled()
+                    buffering = now
+                }
                 MediaPlayer.Event.TimeChanged -> { time = e.timeChanged; if (e.timeChanged > 0) lastGoodTime = e.timeChanged; if (buffering && playing) buffering = false; updateSkip(e.timeChanged) }
                 MediaPlayer.Event.LengthChanged -> { length = e.lengthChanged; loadSegments() }
                 MediaPlayer.Event.EndReached -> main.post { onEndReached() }
@@ -448,6 +453,7 @@ class PlayerController(
                 headers.entries.firstOrNull { it.key.equals("Referer", true) }?.let { addOption(":http-referrer=${it.value}") }
             }
             if (keep > 0) addOption(":start-time=${keep / 1000.0}")
+            bufferOptions(variantUrl).forEach { addOption(it) }
             // Even out loud and quiet sounds: a gentle compressor with make-up gain (voices up, peaks down).
             if (io.github.sherazi5110.cloudstream.Settings.levelAudio) {
                 addOption(":audio-filter=compressor")
@@ -719,9 +725,40 @@ class PlayerController(
     fun seekBy(ms: Long) = seekTo((time + ms).coerceIn(0, length.takeIf { it > 0 } ?: Long.MAX_VALUE))
 
     fun seekTo(ms: Long) {
-        time = ms; lastGoodTime = ms
+        time = ms; lastGoodTime = ms; lastSeekAt = android.os.SystemClock.elapsedRealtime()
         VlcThread.run { player.setTime(ms) }
     }
+
+    /**
+     * Settings → Player → Buffering: how much loads before starting (and after a jump), how far ahead it keeps
+     * loading, and the most memory that may take. The time ahead is cut to what fits in that memory at the stream's
+     * bitrate (3 minutes of a 25 Mbit/s 4K stream would be over 500 MB).
+     */
+    private fun bufferOptions(variantUrl: String?): List<String> {
+        val memMb = Settings.bufferMemoryMb.takeIf { it > 0 } ?: if (io.github.sherazi5110.cloudstream.Images.lowMemoryDevice) 48 else 160
+        val bitrate = (variants.firstOrNull { it.url == variantUrl } ?: variants.maxByOrNull { it.bandwidth ?: 0 })?.bandwidth
+        val fits = bitrate?.takeIf { it > 0 }?.let { (memMb * 8L * 1024 * 1024 / it).toInt() } ?: Int.MAX_VALUE
+        val aheadSec = minOf(Settings.bufferAheadSec, fits).coerceAtLeast(10)
+        return listOf(
+            ":network-caching=${Settings.startBufferMs}",
+            ":adaptive-maxbuffer=${aheadSec * 1000}",
+            ":prefetch-buffer-size=${memMb * 1024}",
+        )
+    }
+
+    /** Set when the video keeps stopping to load: the player suggests a lower quality or another source. */
+    var slowWarning by mutableStateOf(false)
+    private val stalls = ArrayDeque<Long>()
+
+    /** Counts a pause to load mid-video; three within two minutes means the connection can't keep up. */
+    private fun stalled() {
+        val now = android.os.SystemClock.elapsedRealtime()
+        stalls.addLast(now)
+        while (stalls.isNotEmpty() && now - stalls.first() > 120_000) stalls.removeFirst()
+        if (stalls.size >= 3 && !slowWarningShown) { slowWarning = true; slowWarningShown = true }
+    }
+    private var slowWarningShown = false
+    private var lastSeekAt = 0L
 
     fun changeBoost(percent: Int) {
         boost = percent.coerceIn(100, 200)

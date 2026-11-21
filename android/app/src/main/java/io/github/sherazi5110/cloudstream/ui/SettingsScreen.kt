@@ -260,6 +260,19 @@ private fun AppearanceSection() {
     SwitchRow("Banner slides through the top titles", null, slider) { slider = it; Settings.heroSlider = it }
     var spoiler by remember { mutableStateOf(Settings.antiSpoiler) }
     SwitchRow("Anti-spoiler", "Hide pictures and descriptions of episodes you haven't watched.", spoiler) { spoiler = it; Settings.antiSpoiler = it }
+    Heading("Pictures")
+    var lowRes by remember { mutableStateOf(Settings.lowResImages) }
+    ChoiceChips(listOf<Boolean?>(null, true, false), { when (it) { null -> "Automatic"; true -> "Low resolution"; false -> "Full resolution" } }, { it == lowRes }) {
+        lowRes = it; Settings.lowResImages = it; io.github.sherazi5110.cloudstream.Images.clearCache()
+    }
+    Hint("Low resolution loads smaller posters and backdrops and keeps them in less memory: smoother on old or low-memory phones and TVs, and less data." +
+        if (io.github.sherazi5110.cloudstream.Images.lowMemoryDevice) " Automatic uses it on this device." else " Automatic uses it only on low-memory devices.")
+    var cacheMb by remember { mutableStateOf(Settings.imageCacheMb) }
+    Text("Picture cache on storage", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 8.dp))
+    ChoiceChips(listOf(0, 100, 250, 500, 1000), { if (it == 0) "None" else if (it >= 1000) "1 GB" else "$it MB" }, { it == cacheMb }) {
+        cacheMb = it; Settings.imageCacheMb = it; App.toast("Applies when the app restarts")
+    }
+    PillButton("Clear picture cache", null, primary = false, compact = true) { io.github.sherazi5110.cloudstream.Images.clearCache(); App.toast("Picture cache cleared") }
 }
 
 @Composable
@@ -269,6 +282,25 @@ private fun PlayerSection() {
     ChoiceChips(listOf(true, false), { if (it) "Start the best source automatically" else "Let me choose the source" }, { it == autoPlay }) {
         autoPlay = it; Settings.autoPlay = it
     }
+    Heading("Buffering")
+    var start by remember { mutableStateOf(Settings.startBufferMs) }
+    Text("Load before playing (and after a jump)", style = MaterialTheme.typography.bodyMedium)
+    ChoiceChips(listOf(1000, 1500, 3000, 5000, 10000), { if (it < 1500) "1 s (fastest start)" else "${it / 1000.0}".removeSuffix(".0") + " s" }, { it == start }) {
+        start = it; Settings.startBufferMs = it
+    }
+    var ahead by remember { mutableStateOf(Settings.bufferAheadSec) }
+    Text("Keep loading ahead", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 8.dp))
+    ChoiceChips(listOf(30, 60, 180, 300, 600), { if (it < 60) "$it s" else "${it / 60} min" }, { it == ahead }) {
+        ahead = it; Settings.bufferAheadSec = it
+    }
+    var mem by remember { mutableStateOf(Settings.bufferMemoryMb) }
+    Text("Most memory for the buffer", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 8.dp))
+    ChoiceChips(listOf(0, 32, 64, 128, 256, 512), { if (it == 0) "Automatic" else "$it MB" }, { it == mem }) {
+        mem = it; Settings.bufferMemoryMb = it
+    }
+    Hint("On slow internet, load more ahead (3 or 5 minutes) and start a little later: the video pauses less. On an old or " +
+        "low-memory device keep the memory small; the time ahead is cut to what fits (a 4K stream takes about 3 MB a second). " +
+        "If a video keeps stopping to load, the player suggests a lower quality or another source.")
     Hint(if (autoPlay) "The best source (closest to your preferred quality) starts by itself; Sources in the player lists the others."
         else "The sources list opens, with a search box and language and quality filters: pick the one you want.")
     Heading("Playback")
