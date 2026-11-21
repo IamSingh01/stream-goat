@@ -29,6 +29,14 @@
             android:exported="false"
             android:foregroundServiceType="dataSync" />
 
+        <!-- YouTube (its TV app, ads removed): its own full-screen window. -->
+        <activity
+            android:name="io.github.sherazi5110.cloudstream.YouTubeActivity"
+            android:exported="false"
+            android:theme="@android:style/Theme.NoTitleBar.Fullscreen"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode|density"
+            android:hardwareAccelerated="true" />
+
         <activity
             android:name="io.github.sherazi5110.cloudstream.MainActivity"
             android:exported="true"

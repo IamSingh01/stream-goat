@@ -2,6 +2,7 @@ package io.github.sherazi5110.cloudstream.ui
 
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.SmartDisplay
 import dev.chrisbanes.haze.hazeSource
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
@@ -60,6 +61,7 @@ private fun Tab.icon(): ImageVector = when (this) {
     Tab.LIVE -> Icons.Filled.LiveTv
     Tab.SEARCH -> Icons.Filled.Search
     Tab.LIBRARY -> Icons.Filled.VideoLibrary
+    Tab.YOUTUBE -> Icons.Filled.SmartDisplay
     Tab.MUSIC -> Icons.Filled.MusicNote
     Tab.EXTENSIONS -> Icons.Filled.Extension
     Tab.MORE -> Icons.Filled.MoreHoriz
@@ -123,6 +125,7 @@ private fun Content(top: Screen?) {
                 Tab.SEARCH -> SearchScreen()
                 Tab.LIBRARY -> LibraryScreen()
                 Tab.MUSIC -> MusicScreen()
+                Tab.YOUTUBE -> YouTubeScreen()
                 Tab.EXTENSIONS -> ExtensionsScreen()
                 Tab.MORE -> SettingsScreen()
             }
@@ -181,7 +184,7 @@ private fun BottomBar() {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(2.dp),
         ) {
-            visibleTabs(listOf(Tab.HOME, Tab.LIVE, Tab.SEARCH, Tab.MUSIC, Tab.LIBRARY)).forEach { tab -> PillItem(tab, tab.icon(), vertical = false) }
+            visibleTabs(listOf(Tab.HOME, Tab.LIVE, Tab.SEARCH, Tab.MUSIC, Tab.YOUTUBE, Tab.LIBRARY)).forEach { tab -> PillItem(tab, tab.icon(), vertical = false) }
             Box(Modifier.padding(horizontal = 6.dp).width(1.dp).height(22.dp).background(Color.White.copy(alpha = 0.18f)))
             PillItem(Tab.MORE, Icons.Filled.Settings, vertical = false)
         }
@@ -203,7 +206,7 @@ private fun Rail() {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            visibleTabs(listOf(Tab.HOME, Tab.LIVE, Tab.SEARCH, Tab.MUSIC, Tab.LIBRARY, Tab.EXTENSIONS)).forEach { PillItem(it, it.icon(), vertical = true) }
+            visibleTabs(listOf(Tab.HOME, Tab.LIVE, Tab.SEARCH, Tab.MUSIC, Tab.YOUTUBE, Tab.LIBRARY, Tab.EXTENSIONS)).forEach { PillItem(it, it.icon(), vertical = true) }
             if (!ProfileUi.current.kids) {
                 Box(Modifier.padding(vertical = 2.dp).height(1.dp).width(22.dp).background(Color.White.copy(alpha = 0.18f)))
                 PillItem(Tab.MORE, Icons.Filled.Settings, vertical = true)
@@ -241,7 +244,7 @@ private fun PillItem(tab: Tab, icon: ImageVector, vertical: Boolean) {
 private fun visibleTabs(tabs: List<Tab>): List<Tab> = tabs.filter { t ->
     when (t) {
         Tab.LIVE -> io.github.sherazi5110.cloudstream.LiveTv.availableToProfile
-        Tab.EXTENSIONS -> !ProfileUi.current.kids
+        Tab.EXTENSIONS, Tab.YOUTUBE -> !ProfileUi.current.kids
         else -> true
     }
 }
