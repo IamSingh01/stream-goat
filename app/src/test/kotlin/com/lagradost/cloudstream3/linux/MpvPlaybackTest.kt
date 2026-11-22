@@ -43,8 +43,8 @@ class MpvPlaybackTest {
             val (type, body) = when {
                 path == "/master.php" -> "text/plain" to ("#EXTM3U\n#EXT-X-VERSION:3\n" +
                     "#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID=\"subs\",NAME=\"Hindi [CC]\",LANGUAGE=\"hi.[CC]\",URI=\"$base/subs/hi.[CC].m3u8\"\n" +
-                    "#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"aac\",LANGUAGE=\"eng\",NAME=\"1. English\",DEFAULT=YES,URI=\"$base/a/play.php\"\n" +
-                    "#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"aac\",LANGUAGE=\"hin\",NAME=\"2. Hindi\",DEFAULT=NO,URI=\"$base/a/play.php\"\n" +
+                    "#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"aac\",LANGUAGE=\"eng\",NAME=\"1. English\",DEFAULT=YES,URI=\"$base/a/play.php?lang=0\"\n" +
+                    "#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"aac\",LANGUAGE=\"hin\",NAME=\"2. Hindi\",DEFAULT=NO,URI=\"$base/a/play.php?lang=1\"\n" +
                     "#EXT-X-STREAM-INF:BANDWIDTH=600000,AUDIO=\"aac\",RESOLUTION=160x90,SUBTITLES=\"subs\"\n$base/v/play.php\n").toByteArray()
                 path.endsWith("/play.php") -> "text/plain" to File(dir, path.split('/')[1] + "/index.m3u8").readText()
                     .replace("#EXT-X-ENDLIST", "").replace("#EXT-X-PLAYLIST-TYPE:VOD\n", "").replace(Regex("(s\\d+)\\.ts"), "$1.jpg").toByteArray()
