@@ -97,11 +97,16 @@ class PlaybackFeaturesTest {
 
     @Test
     fun `playlist rewriting resolves relative URIs and key attributes`() {
+        // AES-128 is decrypted by the proxy: the key line goes, the segments carry the key (a different address each).
         val text = "#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI=\"key.bin\"\n#EXTINF:4,\nseg 1.ts\n#EXTINF:4,\n/abs/seg2.ts\n"
         val out = StreamProxy.rewrite(text, "https://cdn.example/path/index.m3u8", token).lines()
-        assertTrue(out[1].startsWith("#EXT-X-KEY:METHOD=AES-128,URI=\"http://127.0.0.1:"))
-        assertTrue(out[3].startsWith("http://127.0.0.1:") && out[3].endsWith("/seg%201.ts"), out[3])
-        assertTrue(out[5].endsWith("/seg2.ts"))
+        assertTrue(out.none { it.startsWith("#EXT-X-KEY") }, out.toString())
+        assertTrue(out[2].startsWith("http://127.0.0.1:") && out[2].endsWith("/seg%201.ts"), out[2])
+        assertTrue(out[4].endsWith("/seg2.ts"))
+        assertTrue(StreamProxy.rewrite(text.replace("#EXT-X-KEY:METHOD=AES-128,URI=\"key.bin\"\n", ""), "https://cdn.example/path/index.m3u8", token).lines()[2] != out[2])
+        // Other methods (SAMPLE-AES) stay for the player, their key through the proxy.
+        val sample = StreamProxy.rewrite(text.replace("AES-128", "SAMPLE-AES"), "https://cdn.example/path/index.m3u8", token).lines()
+        assertTrue(sample[1].startsWith("#EXT-X-KEY:METHOD=SAMPLE-AES,URI=\"http://127.0.0.1:"))
     }
 
     @Test

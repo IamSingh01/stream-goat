@@ -24,7 +24,15 @@ import java.util.concurrent.Executors
  * segment and key also goes through the proxy with the same headers.
  */
 object StreamProxy {
-    private data class Target(val url: String, val headers: Map<String, String>, val expiredOk: Boolean = false, val inline: String? = null)
+    private data class Target(val url: String, val headers: Map<String, String>, val expiredOk: Boolean = false, val inline: String? = null,
+                              val key: Aes? = null)
+
+    /** An AES-128 encrypted segment: the proxy decrypts it, so every player (the Stream Goat player can't) gets plain video. */
+    internal class Aes(val keyUrl: String, val iv: ByteArray) {
+        override fun toString() = keyUrl + "#" + iv.joinToString("") { "%02x".format(it) }
+    }
+
+    private val keys = ConcurrentHashMap<String, ByteArray>()
 
     private val targets = ConcurrentHashMap<String, Target>()
     @Volatile private var server: HttpServer? = null
@@ -68,11 +76,13 @@ object StreamProxy {
     }
 
     /** Returns a loopback URL that fetches [url] with [headers]. */
-    fun wrap(url: String, headers: Map<String, String>, expiredOk: Boolean = false): String {
-        if (url.startsWith("data:", true)) wrapData(url, headers)?.let { return it }
+    fun wrap(url: String, headers: Map<String, String>, expiredOk: Boolean = false): String = wrap(url, headers, expiredOk, null)
+
+    private fun wrap(url: String, headers: Map<String, String>, expiredOk: Boolean, key: Aes?): String {
+        if (key == null && url.startsWith("data:", true)) wrapData(url, headers)?.let { return it }
         val s = start()
-        val id = id(url + if (expiredOk) "#expired-ok" else "", headers)
-        targets[id] = Target(url, headers, expiredOk)
+        val id = id(url + (if (expiredOk) "#expired-ok" else "") + (key?.let { "#aes=$it" } ?: ""), headers)
+        targets[id] = Target(url, headers, expiredOk, key = key)
         // Keep the original file name/extension: players use it to guess the format.
         val name = runCatching { URI(url).path.substringAfterLast('/') }.getOrNull().orEmpty()
             .ifBlank { "stream" }.let { URLEncoder.encode(it, "UTF-8").replace("+", "%20") }
@@ -95,7 +105,7 @@ object StreamProxy {
                 exchange.sendResponseHeaders(200, bytes.size.toLong()); exchange.responseBody.write(bytes); return
             }
             val headers = target.headers.toMutableMap()
-            exchange.requestHeaders.getFirst("Range")?.let { headers["Range"] = it }
+            if (target.key == null) exchange.requestHeaders.getFirst("Range")?.let { headers["Range"] = it }
             val request = Request.Builder().url(target.url).headers(headers.toHeaders())
                 .apply { if (exchange.requestMethod == "HEAD") head() }
                 .build()
@@ -126,6 +136,15 @@ object StreamProxy {
                     if (exchange.requestMethod == "HEAD") {
                         length?.let { exchange.responseHeaders.add("Content-Length", it.toString()) }
                         exchange.sendResponseHeaders(response.code, -1)
+                        return
+                    }
+                    target.key?.let { key ->
+                        val plain = decrypt(stream.readBytes(), key, target)
+                        val skip = Disguise.junkBefore(java.io.BufferedInputStream(plain.inputStream()))
+                        exchange.responseHeaders.set("Content-Type", "video/mp2t")
+                        exchange.responseHeaders.remove("Content-Range")
+                        exchange.sendResponseHeaders(200, (plain.size - skip).toLong())
+                        exchange.responseBody.write(plain, skip, plain.size - skip)
                         return
                     }
                     // Video segments hidden behind a fake picture header (only the sound played): skip to the real
@@ -177,14 +196,51 @@ object StreamProxy {
 
     fun rewrite(playlist: String, baseUrl: String, headers: Map<String, String>, expiredOk: Boolean = false): String {
         val base = URI(baseUrl)
-        fun proxied(ref: String) = wrap(base.resolve(ref.trim().replace(" ", "%20")).toString(), headers, expiredOk)
-        return vodEnd(playlist.lineSequence().joinToString("\n") { line ->
+        fun resolve(ref: String) = base.resolve(ref.trim().replace(" ", "%20")).toString()
+        fun proxied(ref: String, key: Aes? = null) = wrap(resolve(ref), headers, expiredOk, key)
+        var sequence = mediaSequence.find(playlist)?.groupValues?.get(1)?.toLongOrNull() ?: 0L
+        var key: Pair<String, ByteArray?>? = null
+        val out = StringBuilder()
+        for (line in playlist.lineSequence()) {
             when {
-                line.isBlank() -> line
-                line.startsWith("#") -> uriAttribute.replace(line) { m -> "URI=\"${proxied(m.groupValues[1])}\"" }
-                else -> proxied(line)
+                line.isBlank() -> out.append(line)
+                line.startsWith("#EXT-X-KEY", true) && "METHOD=AES-128" in line -> {
+                    // Decrypted here (see Aes): the line goes, its key is applied to the segments that follow.
+                    val uri = uriAttribute.find(line)?.groupValues?.get(1)
+                    val iv = ivAttribute.find(line)?.groupValues?.get(1)?.let { hex(it) }
+                    key = uri?.let { resolve(it) to iv }
+                    if (uri == null) out.append(line) else continue
+                }
+                line.startsWith("#EXT-X-KEY", true) -> { key = null; out.append(uriAttribute.replace(line) { m -> "URI=\"${proxied(m.groupValues[1])}\"" }) }
+                line.startsWith("#") -> out.append(uriAttribute.replace(line) { m -> "URI=\"${proxied(m.groupValues[1])}\"" })
+                else -> {
+                    val aes = key?.let { (url, iv) -> Aes(url, iv ?: java.nio.ByteBuffer.allocate(16).putLong(8, sequence).array()) }
+                    out.append(proxied(line, aes))
+                    sequence++
+                }
             }
-        })
+            out.append('\n')
+        }
+        return vodEnd(out.toString().removeSuffix("\n"))
+    }
+
+    private val ivAttribute = Regex("IV=0[xX]([0-9a-fA-F]+)")
+    private fun hex(s: String): ByteArray = s.padStart(32, '0').takeLast(32).chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+
+    private fun decrypt(data: ByteArray, key: Aes, target: Target): ByteArray {
+        val k = keys.getOrPut(key.keyUrl) {
+            val request = Request.Builder().url(key.keyUrl).headers(target.headers.toHeaders()).build()
+            (if (target.expiredOk) ExpiredCertTrust.client(app.baseClient) else app.baseClient).newCall(request).execute().use { it.body.bytes() }
+        }.also { if (keys.size > 64) keys.clear() }
+        val cipher = javax.crypto.Cipher.getInstance("AES/CBC/PKCS5Padding")
+        cipher.init(javax.crypto.Cipher.DECRYPT_MODE, javax.crypto.spec.SecretKeySpec(k.copyOf(16), "AES"), javax.crypto.spec.IvParameterSpec(key.iv))
+        return runCatching { cipher.doFinal(data) }.getOrElse {
+            // Some hosts pad oddly: decrypt without removing padding.
+            javax.crypto.Cipher.getInstance("AES/CBC/NoPadding").run {
+                init(javax.crypto.Cipher.DECRYPT_MODE, javax.crypto.spec.SecretKeySpec(k.copyOf(16), "AES"), javax.crypto.spec.IvParameterSpec(key.iv))
+                doFinal(data.copyOf(data.size / 16 * 16))
+            }
+        }
     }
 
     private val logged = ConcurrentHashMap.newKeySet<String>()

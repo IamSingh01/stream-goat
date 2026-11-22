@@ -171,11 +171,29 @@ class StreamEngine(private val video: VideoView, private val events: EngineEvent
         video.heightProperty().addListener { _, _, h -> subtitle.style = subtitle.style.replace(Regex("-fx-font-size: [0-9.]+px"), "-fx-font-size: ${(h.toDouble() / 24).coerceIn(14.0, 46.0).toInt()}px") }
     }
 
+    private var opening = 0
+
     override fun open(url: String, options: List<String>, startAt: Long?): Boolean {
         release(keepView = true)
         ended = false; seekable = false; lastTime = -1
+        val ticket = ++opening
+        // First a look at the stream (off the UI thread): what JavaFX can't play goes straight to VLC.
+        Thread({
+            val problem = runCatching { FxSupport.problem(url) }.getOrNull()
+            Platform.runLater {
+                if (ticket != opening) return@runLater
+                if (problem != null) {
+                    android.util.Log.i("player", "Stream Goat player can't play this stream ($problem): VLC plays it")
+                    events.error()
+                } else if (!start(url, startAt)) events.error()
+            }
+        }, "stream-check").apply { isDaemon = true }.start()
+        return true
+    }
+
+    private fun start(url: String, startAt: Long?): Boolean {
         val media = runCatching { Media(url) }.getOrElse { android.util.Log.w("player", "Stream Goat player can't open it: $it"); return false }
-        val player = runCatching { FxMediaPlayer(media) }.getOrElse { return false }
+        val player = runCatching { FxMediaPlayer(media) }.getOrElse { android.util.Log.w("player", "Stream Goat player: $it"); return false }
         mp = player
         media.setOnError { events.error() }
         player.setOnError { android.util.Log.w("player", "Stream Goat player: ${player.error?.message}"); events.error() }
@@ -221,6 +239,7 @@ class StreamEngine(private val video: VideoView, private val events: EngineEvent
     override fun release() = release(keepView = false)
 
     private fun release(keepView: Boolean) {
+        opening++
         val old = mp ?: return run { if (!keepView) video.showMedia(null, null) }
         mp = null
         view.mediaPlayer = null
@@ -295,5 +314,74 @@ class StreamEngine(private val video: VideoView, private val events: EngineEvent
                 val body = lines.drop(at + 1).joinToString("\n").replace(tags, "").trim()
                 if (body.isEmpty()) null else Cue(ms(g[1].ifEmpty { null }, g[2], g[3], g[4]), ms(g[5].ifEmpty { null }, g[6], g[7], g[8]), body)
             }.sortedBy { it.start }
+    }
+}
+
+/**
+ * What JavaFX's HLS player can't play, found before trying (it fails with "Could not create player!" or plays
+ * without sound): H.265/AV1/Dolby Vision video, Dolby (AC-3/E-AC-3) sound, a separate audio track, SAMPLE-AES.
+ * AES-128 is fine: the proxy decrypts it. Returns the reason, or null when it should play.
+ */
+object FxSupport {
+    private val badCodec = Regex("CODECS=\"[^\"]*(hvc1|hev1|dvh1|dvhe|av01|ac-3|ec-3)", RegexOption.IGNORE_CASE)
+    private val client = java.net.http.HttpClient.newBuilder().proxy(java.net.ProxySelector.of(null))
+        .connectTimeout(java.time.Duration.ofSeconds(10)).build()
+
+    private fun get(url: String, range: Boolean = false): ByteArray? {
+        val request = java.net.http.HttpRequest.newBuilder(java.net.URI(url)).timeout(java.time.Duration.ofSeconds(20))
+            .apply { if (range) header("Range", "bytes=0-${188 * 1500}") }.build()
+        val response = client.send(request, java.net.http.HttpResponse.BodyHandlers.ofByteArray())
+        return response.body().takeIf { response.statusCode() in 200..299 }
+    }
+
+    fun problem(url: String): String? {
+        if (!url.startsWith("http://127.0.0.1:")) return null
+        var text = get(url)?.toString(Charsets.UTF_8) ?: return null
+        if (!text.trimStart().startsWith("#EXTM3U")) return null
+        badCodec.find(text)?.let { return "${it.groupValues[1]} codec" }
+        if (Regex("#EXT-X-MEDIA:[^\n]*TYPE=AUDIO[^\n]*URI=").containsMatchIn(text)) return "separate audio track"
+        if ("#EXT-X-STREAM-INF" in text) {
+            // JavaFX picks a variant by bandwidth; the first one is representative enough.
+            val variant = text.lineSequence().dropWhile { !it.startsWith("#EXT-X-STREAM-INF") }.drop(1)
+                .firstOrNull { it.isNotBlank() && !it.startsWith("#") } ?: return null
+            text = get(variant.trim())?.toString(Charsets.UTF_8) ?: return null
+        }
+        if ("METHOD=SAMPLE-AES" in text) return "SAMPLE-AES encryption"
+        val segment = text.lineSequence().firstOrNull { it.isNotBlank() && !it.startsWith("#") }?.trim() ?: return null
+        return tsProblem(get(segment, range = true) ?: return null)
+    }
+
+    /** Reads the MPEG-TS program table of a segment's start: which video and sound it carries. */
+    internal fun tsProblem(data: ByteArray): String? {
+        var start = (0 until minOf(data.size, 188 * 4)).firstOrNull { i ->
+            data[i] == 0x47.toByte() && (i + 188 >= data.size || data[i + 188] == 0x47.toByte())
+        } ?: return null
+        var pmtPid = -1
+        while (start + 188 <= data.size) {
+            val b = data
+            val pid = ((b[start + 1].toInt() and 0x1f) shl 8) or (b[start + 2].toInt() and 0xff)
+            val unitStart = b[start + 1].toInt() and 0x40 != 0
+            val afc = (b[start + 3].toInt() shr 4) and 3
+            var off = start + 4 + if (afc and 2 != 0) 1 + (b[start + 4].toInt() and 0xff) else 0
+            if (unitStart && afc and 1 != 0 && off < start + 188) {
+                off += 1 + (b[off].toInt() and 0xff)
+                if (pid == 0 && off + 12 <= start + 188) {
+                    pmtPid = ((b[off + 10].toInt() and 0x1f) shl 8) or (b[off + 11].toInt() and 0xff)
+                } else if (pid == pmtPid && off + 12 <= start + 188) {
+                    val sectionEnd = minOf(start + 188, off + 3 + (((b[off + 1].toInt() and 0x0f) shl 8) or (b[off + 2].toInt() and 0xff)) - 4)
+                    var i = off + 12 + (((b[off + 10].toInt() and 0x0f) shl 8) or (b[off + 11].toInt() and 0xff))
+                    while (i + 5 <= sectionEnd) {
+                        when (b[i].toInt() and 0xff) {
+                            0x24 -> return "H.265 video"
+                            0x81, 0x87 -> return "Dolby sound"
+                        }
+                        i += 5 + (((b[i + 3].toInt() and 0x0f) shl 8) or (b[i + 4].toInt() and 0xff))
+                    }
+                    return null
+                }
+            }
+            start += 188
+        }
+        return null
     }
 }
