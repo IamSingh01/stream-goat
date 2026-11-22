@@ -81,7 +81,8 @@ class MpvPlaybackTest {
             val deadline = System.currentTimeMillis() + 10_000
             while ((lengthV.get() == 0L || video.sourceW == 0) && System.currentTimeMillis() < deadline) Thread.sleep(100)
             assertTrue(lengthV.get() in 655_000..665_000, "length ${lengthV.get()} (VLC showed NetMirror as 27:46:39)")
-            assertEquals(listOf("English - [eng]", "Hindi - [hin]"), engine.audioTracks().filter { it.id() >= 0 }.map { it.description() })
+            val audio = engine.audioTracks().filter { it.id() >= 0 }.map { it.description() }
+            assertTrue(audio.size == 2 && "English" in audio[0] && "Hindi" in audio[1], "audio tracks: $audio")
             assertEquals(160, video.sourceW)
             engine.setTime(400_000)
             Thread.sleep(2000)

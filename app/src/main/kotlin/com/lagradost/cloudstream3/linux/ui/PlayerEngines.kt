@@ -222,7 +222,7 @@ class MpvEngine(private val video: VideoView, private val events: EngineEvents) 
                 }
                 8 -> events.streamAdded(false) // file loaded
             }
-            if (released && ev.getInt(0) == 0) return
+            if (released) return
         }
     }
 
@@ -295,8 +295,11 @@ class MpvEngine(private val video: VideoView, private val events: EngineEvents) 
     override fun release() {
         if (released) return
         released = true
+        // Both threads stop before mpv is freed: one still waiting on it afterwards crashed the app (Mac).
         wake.release()
-        runCatching { renderThread.join(2000) }
+        runCatching { renderThread.join(3000) }
+        lib.mpv_wakeup(ctx)
+        runCatching { eventThread.join(3000) }
         render?.let { lib.mpv_render_context_set_update_callback(it, null, null); lib.mpv_render_context_free(it) }
         render = null
         lib.mpv_terminate_destroy(ctx)

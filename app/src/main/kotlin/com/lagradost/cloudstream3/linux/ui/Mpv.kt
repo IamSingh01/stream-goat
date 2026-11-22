@@ -66,11 +66,9 @@ object Mpv {
             }
         }
         for (name in candidates) {
-            val loaded = runCatching { Native.load(name, Lib::class.java) }.getOrNull()
-            if (loaded != null) {
-                android.util.Log.i("mpv", "using $name")
-                return@lazy loaded
-            }
+            runCatching { Native.load(name, Lib::class.java) }
+                .onSuccess { android.util.Log.i("mpv", "using $name"); return@lazy it }
+                .onFailure { if (File(name).isAbsolute) android.util.Log.w("mpv", "can't load $name: ${it.message}") }
         }
         android.util.Log.i("mpv", "libmpv not found: VLC plays everything")
         null

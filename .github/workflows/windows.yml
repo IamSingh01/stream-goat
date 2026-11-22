@@ -71,6 +71,11 @@ jobs:
           7z e -y -ompv mpv-dev.7z libmpv-2.dll > /dev/null
           ls -la mpv
           [ -f mpv/libmpv-2.dll ] || { echo "::error::libmpv-2.dll missing from $url"; exit 1; }
+          # libmpv needs the Vulkan loader (vulkan-1.dll), which PCs without up-to-date graphics drivers (and GitHub's
+          # build machines) don't have: Khronos' redistributable one, from LunarG, goes beside it.
+          curl -fsSL --retry 3 -o vulkan-rt.zip "https://sdk.lunarg.com/sdk/download/latest/windows/vulkan-runtime-components.zip?u="
+          7z e -y -ompv vulkan-rt.zip "*/x64/vulkan-1.dll" -r > /dev/null
+          [ -f mpv/vulkan-1.dll ] || { 7z l vulkan-rt.zip | grep -i vulkan-1; echo "::error::vulkan-1.dll missing"; exit 1; }
           echo "MPV_DIR=$(cygpath -w "$PWD/mpv")" >> "$GITHUB_ENV"
 
       - name: Update signing certificate
