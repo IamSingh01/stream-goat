@@ -61,9 +61,18 @@ object CrashReport {
         return "https://github.com/sherazi5110/stream-goat/issues/new?title=${enc(title)}&body=${enc(body)}"
     }
 
-    fun playing(what: String?) {
-        prefs.edit().apply { if (what == null) remove("playing") else putString("playing", what) }.apply()
+    fun playing(what: String?, url: String? = null, engine: String? = null) {
+        prefs.edit().apply {
+            if (what == null) { remove("playing"); remove("playingUrl"); remove("playingEngine") }
+            else { putString("playing", what); putString("playingUrl", url); putString("playingEngine", engine) }
+        }.apply()
     }
+
+    /**
+     * The engine that crashed the app (inside its native code) on this source last time, if it did: the player
+     * then opens that source with another engine instead of crashing again.
+     */
+    fun crashedEngine(url: String): String? = prefs.getString("nativeCrashUrl", null)?.takeIf { it == url }?.let { prefs.getString("nativeCrashEngine", null) }
 
     fun dismiss() {
         pending = null
@@ -74,7 +83,10 @@ object CrashReport {
         val java = file.takeIf { it.exists() }?.readText()
         val native = if (java == null) nativeExit() else null
         val playing = prefs.getString("playing", null)
-        prefs.edit().remove("playing").apply()
+        // A native crash while playing: remember the source and its engine, so it isn't played with that engine again.
+        if (native != null && playing != null && native.contains("native code"))
+            prefs.edit().putString("nativeCrashUrl", prefs.getString("playingUrl", null)).putString("nativeCrashEngine", prefs.getString("playingEngine", null)).apply()
+        prefs.edit().remove("playing").remove("playingUrl").remove("playingEngine").apply()
         return java ?: native?.let { it + (playing?.let { p -> "\nWas playing: $p\n" } ?: "") }
     }
 

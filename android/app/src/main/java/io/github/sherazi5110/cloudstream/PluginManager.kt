@@ -40,7 +40,7 @@ class LoadedPlugin(
     val instance: BasePlugin,
     val loader: ClassLoader,
 ) {
-    val providers: List<MainAPI> get() = APIHolder.allProviders.filter { it.sourcePlugin == instance.filename }
+    val providers: List<MainAPI> get() = Engine.loadedExtensions().filter { it.sourcePlugin == instance.filename }
     val extractorCount: Int get() = extractorApis.count { it.sourcePlugin == instance.filename }
 }
 

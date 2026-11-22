@@ -81,9 +81,30 @@ object Engine {
     fun providers(): List<MainAPI> = allProviders().filter { ContentFilter.allows(it) }
 
     /** Every loaded extension and add-on, whatever the profile. */
-    fun allProviders(): List<MainAPI> = (APIHolder.allProviders.withLock { APIHolder.allProviders.toList() } + StremioAddons.apis())
+    fun allProviders(): List<MainAPI> = (loadedExtensions() + StremioAddons.apis())
         .onEach { SiteOverrides.apply(it) }
         .sortedBy { it.name.lowercase() }
+
+    /**
+     * A copy of the loaded extensions. Extensions register themselves from their own threads while others read the
+     * list (Home, Search), and not every writer takes the list's lock: copying it all at once then crashed with
+     * ConcurrentModificationException. This copies item by item and never throws.
+     */
+    fun loadedExtensions(): List<MainAPI> {
+        val list = APIHolder.allProviders
+        repeat(3) {
+            runCatching { return list.withLock { ArrayList(list) } }
+            Thread.yield()
+        }
+        val out = ArrayList<MainAPI>(list.size + 8)
+        var i = 0
+        while (true) {
+            val item = runCatching { list.getOrNull(i) }.getOrNull() ?: if (i >= runCatching { list.size }.getOrDefault(0)) break else null
+            if (item != null) out += item
+            i++
+        }
+        return out.distinct()
+    }
 
     fun provider(name: String): MainAPI? = providers().firstOrNull { it.name.equals(name, ignoreCase = true) }
 

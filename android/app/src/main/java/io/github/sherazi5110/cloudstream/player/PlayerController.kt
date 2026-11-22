@@ -462,7 +462,7 @@ class PlayerController(
         // Building the proxied playlist (and its addresses) isn't for the main thread: it froze the app for over a minute.
         val dash = link.type == ExtractorLinkType.DASH || source.substringBefore('?').endsWith(".mpd", true)
         io.github.sherazi5110.cloudstream.CrashReport.playing("${api.name}: ${response.name} (${playable.label}); source ${link.name} [${link.type}] from " +
-            "${runCatching { Uri.parse(link.url).host }.getOrNull() ?: "?"} · ${kind.label}")
+            "${runCatching { Uri.parse(link.url).host }.getOrNull() ?: "?"} · ${kind.label}", link.url, kind.name)
         io.github.sherazi5110.cloudstream.GlitchReport.step("Playing source ${link.name} [${link.type}] from ${runCatching { Uri.parse(link.url).host }.getOrNull() ?: "?"}" +
             (variant?.let { " at ${it.label}" } ?: "") + " with ${kind.label}")
         if (inline) io.github.sherazi5110.cloudstream.DataUrl.decode(source)?.let { t ->
@@ -865,7 +865,15 @@ class PlayerController(
     private fun engineFor(link: ExtractorLink, source: String): EngineKind {
         forcedEngine?.let { return it }
         pinnedEngine?.let { return it }
-        return runCatching { EngineKind.valueOf(Settings.engineFor(sourceKind(link, source).key)) }.getOrDefault(EngineKind.EXO)
+        val kind = runCatching { EngineKind.valueOf(Settings.engineFor(sourceKind(link, source).key)) }.getOrDefault(EngineKind.EXO)
+        // This source crashed the app with this engine last time: another engine this time.
+        val crashed = io.github.sherazi5110.cloudstream.CrashReport.crashedEngine(link.url)
+        if (crashed == kind.name) {
+            val other = if (kind == EngineKind.EXO) EngineKind.VLC else EngineKind.EXO
+            App.toast("${kind.label} closed the app on this source last time: playing it with ${other.label}")
+            return other
+        }
+        return kind
     }
 
     /** What kind of source this is, for its default engine. */
