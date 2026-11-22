@@ -118,12 +118,29 @@
     .hero { padding-top: 40px; }
     section { padding: 40px 0; }
   }
+  .rate-top { margin: 22px auto 0; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 4px 10px; }
+  .rate-top[hidden] { display: none; }
+  .rate-top .rate-label { color: var(--muted); font-weight: 600; }
+  .rate-top .stars button { font-size: 32px; }
+  .rate-top .rate-msg { flex-basis: 100%; margin: 0; font-size: 14px; }
   .stars { display: inline-flex; gap: 6px; margin: 6px 0 4px; }
-  .stars button { font-size: 44px; line-height: 1; background: none; border: 0; cursor: pointer; color: var(--line); padding: 2px 4px; transition: color .12s, transform .12s; }
+  .stars button { font-size: 44px; line-height: 1; background: none; border: 0; cursor: pointer; color: #4a5370; padding: 2px 4px; transition: color .12s, transform .12s; }
   .stars button.on { color: #ffc24b; }
   .stars button:hover { transform: scale(1.12); }
   .stars.done button { cursor: default; transform: none; }
   .rate-msg { color: var(--muted); min-height: 1.4em; }
+  .rate-pop { position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center; padding: 20px;
+    background: rgba(4,5,10,.62); backdrop-filter: blur(4px); animation: rate-fade .25s ease; }
+  .rate-pop[hidden] { display: none; }
+  .rate-card { position: relative; width: min(420px, 100%); background: var(--card); border: 1px solid var(--line); border-radius: 22px;
+    padding: 28px 24px 18px; text-align: center; box-shadow: 0 24px 80px rgba(0,0,0,.55); animation: rate-up .3s ease; }
+  .rate-card h3 { margin: 10px 0 4px; font-size: 22px; }
+  .rate-card p { margin: 0 0 6px; color: var(--muted); }
+  .rate-card img { border-radius: 14px; }
+  .rate-close { position: absolute; top: 10px; right: 14px; background: none; border: 0; color: var(--muted); font-size: 28px; cursor: pointer; line-height: 1; }
+  .rate-later { background: none; border: 0; color: var(--muted); font: inherit; font-size: 14px; cursor: pointer; padding: 8px 12px; text-decoration: underline; }
+  @keyframes rate-fade { from { opacity: 0; } }
+  @keyframes rate-up { from { transform: translateY(18px); opacity: 0; } }
 </style>
 </head>
 <body>
@@ -155,6 +172,13 @@
     <div class="buttons">
       <a class="btn primary" id="hero-download" href="#download">Download</a>
       <a class="btn" href="app/">Open in your browser</a>
+    </div>
+    <div id="rate" class="rate-top" hidden>
+      <span class="rate-label">Rate Stream Goat:</span>
+      <div class="stars" role="radiogroup" aria-label="Rating out of 5">
+        <button type="button" data-stars="1" aria-label="1 star">★</button><button type="button" data-stars="2" aria-label="2 stars">★</button><button type="button" data-stars="3" aria-label="3 stars">★</button><button type="button" data-stars="4" aria-label="4 stars">★</button><button type="button" data-stars="5" aria-label="5 stars">★</button>
+      </div>
+      <p class="rate-msg" aria-live="polite"></p>
     </div>
     <div class="shot"><img src="screenshots/home.jpg" alt="Stream Goat's home screen" width="1400" height="933"></div>
   </div>
@@ -305,17 +329,6 @@
   </div>
 </section>
 
-<section id="rate" hidden>
-  <div class="wrap" style="text-align:center">
-    <h2>Rate Stream Goat</h2>
-    <p class="sub">How do you like the app? One tap, no sign-in.</p>
-    <div class="stars" role="radiogroup" aria-label="Rating out of 5">
-      <button type="button" data-stars="1" aria-label="1 star">★</button><button type="button" data-stars="2" aria-label="2 stars">★</button><button type="button" data-stars="3" aria-label="3 stars">★</button><button type="button" data-stars="4" aria-label="4 stars">★</button><button type="button" data-stars="5" aria-label="5 stars">★</button>
-    </div>
-    <p class="rate-msg" aria-live="polite"></p>
-  </div>
-</section>
-
 <footer>
   <div class="wrap">
     <img src="logo.svg" alt=""><br>
@@ -347,31 +360,62 @@
   }));
   zoom.addEventListener("click", () => zoom.close());
 </script>
+<div id="rate-pop" class="rate-pop" hidden role="dialog" aria-modal="true" aria-labelledby="rate-pop-title">
+  <div class="rate-card">
+    <button type="button" class="rate-close" aria-label="Close">×</button>
+    <img src="logo.svg" alt="" width="56" height="56">
+    <h3 id="rate-pop-title">Enjoying Stream Goat?</h3>
+    <p>Rate the app out of 5. One tap, no sign-in.</p>
+    <div class="stars" role="radiogroup" aria-label="Rating out of 5">
+      <button type="button" data-stars="1" aria-label="1 star">★</button><button type="button" data-stars="2" aria-label="2 stars">★</button><button type="button" data-stars="3" aria-label="3 stars">★</button><button type="button" data-stars="4" aria-label="4 stars">★</button><button type="button" data-stars="5" aria-label="5 stars">★</button>
+    </div>
+    <p class="rate-msg" aria-live="polite"></p>
+    <button type="button" class="rate-later">Not now</button>
+  </div>
+</div>
 <script src="rating-config.js"></script>
 <script>
 // Rate the app: 1 to 5 stars, sent to the counter (packaging/rating-worker); hidden until it's set up.
+// A pop-up asks a few seconds after the page opens, on every visit, until this device has rated.
 (function () {
   var url = window.STREAMGOAT_RATING_URL;
-  var section = document.getElementById("rate");
+  var section = document.getElementById("rate"), pop = document.getElementById("rate-pop");
   if (!url || !section) return;
   section.hidden = false;
-  var box = section.querySelector(".stars"), msg = section.querySelector(".rate-msg");
-  var buttons = [].slice.call(box.querySelectorAll("button"));
-  function show(n) { buttons.forEach(function (b, i) { b.classList.toggle("on", i < n); }); }
+  var boxes = [].slice.call(document.querySelectorAll("#rate .stars, #rate-pop .stars"));
+  function show(box, n) { [].slice.call(box.querySelectorAll("button")).forEach(function (b, i) { b.classList.toggle("on", i < n); }); }
+  function msgOf(box) { return box.parentNode.querySelector(".rate-msg"); }
+  function done(n) {
+    boxes.forEach(function (box) { box.classList.add("done"); show(box, n); msgOf(box).textContent = "Thanks for rating Stream Goat " + n + " out of 5!"; });
+  }
+  function close() { if (pop) pop.hidden = true; }
   var given = Number(localStorage.getItem("sg-rating") || 0);
-  if (given) { show(given); box.classList.add("done"); msg.textContent = "Thanks for rating Stream Goat " + given + " out of 5!"; return; }
-  buttons.forEach(function (b) {
-    var n = Number(b.dataset.stars);
-    b.addEventListener("mouseenter", function () { if (!box.classList.contains("done")) show(n); });
-    b.addEventListener("click", function () {
-      if (box.classList.contains("done")) return;
-      box.classList.add("done"); show(n); msg.textContent = "Sending…";
-      fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ stars: n }) })
-        .then(function (r) { if (!r.ok) throw r; localStorage.setItem("sg-rating", n); msg.textContent = "Thanks for rating Stream Goat " + n + " out of 5!"; })
-        .catch(function () { box.classList.remove("done"); show(0); msg.textContent = "Couldn't send it. Please try again later."; });
+  if (given) { done(given); return; }
+  boxes.forEach(function (box) {
+    var buttons = [].slice.call(box.querySelectorAll("button"));
+    buttons.forEach(function (b) {
+      var n = Number(b.dataset.stars);
+      b.addEventListener("mouseenter", function () { if (!box.classList.contains("done")) show(box, n); });
+      b.addEventListener("click", function () {
+        if (box.classList.contains("done")) return;
+        boxes.forEach(function (x) { x.classList.add("done"); show(x, n); });
+        msgOf(box).textContent = "Sending…";
+        fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ stars: n }) })
+          .then(function (r) { if (!r.ok) throw r; localStorage.setItem("sg-rating", n); done(n); setTimeout(close, 1600); })
+          .catch(function () {
+            boxes.forEach(function (x) { x.classList.remove("done"); show(x, 0); });
+            msgOf(box).textContent = "Couldn't send it. Please try again later.";
+          });
+      });
     });
+    box.addEventListener("mouseleave", function () { if (!box.classList.contains("done")) show(box, 0); });
   });
-  box.addEventListener("mouseleave", function () { if (!box.classList.contains("done")) show(0); });
+  if (!pop) return;
+  pop.querySelector(".rate-close").addEventListener("click", close);
+  pop.querySelector(".rate-later").addEventListener("click", close);
+  pop.addEventListener("click", function (e) { if (e.target === pop) close(); });
+  document.addEventListener("keydown", function (e) { if (e.key === "Escape") close(); });
+  setTimeout(function () { if (!localStorage.getItem("sg-rating")) pop.hidden = false; }, 4000);
 })();
 </script>
 </body>
