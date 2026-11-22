@@ -197,32 +197,41 @@ private fun BottomBar() {
 /** Wide (tablet, TV, landscape): a vertical pill beside the page, the logo above it and the profile below. */
 @Composable
 private fun Rail() {
-    Column(
-        Modifier.fillMaxHeight().width(84.dp).systemBarsPadding().padding(vertical = 14.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Logo(42.dp)
-        Spacer(Modifier.weight(1f))
-        Column(
-            (if (Palette.isGlass) Modifier.glassPanel(RoundedCornerShape(50), blur = false) else Modifier.shadow(12.dp, RoundedCornerShape(50))
-                .background(pillColor, RoundedCornerShape(50)).border(1.dp, pillEdge, RoundedCornerShape(50))).padding(6.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            visibleTabs(listOf(Tab.HOME, Tab.LIVE, Tab.SPORTS, Tab.SEARCH, Tab.MUSIC, Tab.YOUTUBE, Tab.LIBRARY, Tab.EXTENSIONS)).forEach { PillItem(it, it.icon(), vertical = true) }
-            if (!ProfileUi.current.kids) {
-                Box(Modifier.padding(vertical = 2.dp).height(1.dp).width(22.dp).background(Color.White.copy(alpha = 0.18f)))
-                PillItem(Tab.MORE, Icons.Filled.Settings, vertical = true)
+    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxHeight().width(84.dp).systemBarsPadding().padding(vertical = 14.dp)) {
+        val tabs = visibleTabs(listOf(Tab.HOME, Tab.LIVE, Tab.SPORTS, Tab.SEARCH, Tab.MUSIC, Tab.YOUTUBE, Tab.LIBRARY, Tab.EXTENSIONS))
+        val settings = !ProfileUi.current.kids
+        val count = tabs.size + if (settings) 1 else 0
+        // Everything has to fit the screen's height: a TV is only 540 units tall to the app, where 48-unit buttons
+        // pushed Settings and the profile off the bottom. The buttons (and the gaps) shrink to fit, down to 34.
+        val logo = if (maxHeight < 600.dp) 34.dp else 42.dp
+        val avatar = if (maxHeight < 600.dp) 30.dp else 36.dp
+        val free = maxHeight - logo - avatar - 16.dp /* breathing room */ - 12.dp /* pill padding */ - (if (settings) 7.dp else 0.dp)
+        val gap = if (free / count >= 54.dp) 6.dp else 3.dp
+        val item = ((free - gap * (count - 1)) / count).coerceIn(34.dp, 48.dp)
+        Column(Modifier.fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally) {
+            Logo(logo)
+            Spacer(Modifier.weight(1f))
+            Column(
+                (if (Palette.isGlass) Modifier.glassPanel(RoundedCornerShape(50), blur = false) else Modifier.shadow(12.dp, RoundedCornerShape(50))
+                    .background(pillColor, RoundedCornerShape(50)).border(1.dp, pillEdge, RoundedCornerShape(50))).padding(6.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(gap),
+            ) {
+                tabs.forEach { PillItem(it, it.icon(), vertical = true, size = item) }
+                if (settings) {
+                    Box(Modifier.padding(vertical = 2.dp).height(1.dp).width(22.dp).background(Color.White.copy(alpha = 0.18f)))
+                    PillItem(Tab.MORE, Icons.Filled.Settings, vertical = true, size = item)
+                }
             }
+            Spacer(Modifier.weight(1f))
+            ProfileButton(avatar)
         }
-        Spacer(Modifier.weight(1f))
-        ProfileButton(36.dp)
     }
 }
 
 /** One tab in a pill bar: chosen = a lighter inner pill (with its name in the bottom bar). */
 @Composable
-private fun PillItem(tab: Tab, icon: ImageVector, vertical: Boolean) {
+private fun PillItem(tab: Tab, icon: ImageVector, vertical: Boolean, size: androidx.compose.ui.unit.Dp = 48.dp) {
     val selected = (Nav.tab == tab || (tab == Tab.MORE && Nav.tab == Tab.EXTENSIONS && !vertical)) && (Nav.stack.isEmpty() || !vertical)
     val shape = RoundedCornerShape(50)
     val tint = if (selected) Color.White else Palette.muted
@@ -231,11 +240,11 @@ private fun PillItem(tab: Tab, icon: ImageVector, vertical: Boolean) {
             .background(if (selected) chosenColor else Color.Transparent, shape)
             .then(if (selected && !vertical) Modifier.border(1.dp, Color.White.copy(alpha = 0.12f), shape) else Modifier)
             .animateContentSize()
-            .then(if (vertical) Modifier.size(48.dp) else Modifier.height(44.dp).padding(horizontal = if (selected) 16.dp else 13.dp)),
+            .then(if (vertical) Modifier.size(size) else Modifier.height(44.dp).padding(horizontal = if (selected) 16.dp else 13.dp)),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center,
     ) {
-        Icon(icon, tab.label, tint = if (selected && vertical) Palette.accent else tint, modifier = Modifier.size(if (vertical) 24.dp else 22.dp))
+        Icon(icon, tab.label, tint = if (selected && vertical) Palette.accent else tint, modifier = Modifier.size(if (vertical) (size * 0.5f).coerceIn(20.dp, 24.dp) else 22.dp))
         if (selected && !vertical) {
             Spacer(Modifier.width(8.dp))
             Text(tab.label, style = MaterialTheme.typography.labelLarge, color = tint, maxLines = 1)
