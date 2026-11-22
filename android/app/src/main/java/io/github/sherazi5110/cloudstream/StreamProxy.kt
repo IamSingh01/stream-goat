@@ -178,7 +178,7 @@ object StreamProxy {
     /** Points every URI in an HLS playlist (segments, variants, keys, maps) back at the proxy. */
     fun rewrite(playlist: String, baseUrl: String, headers: Map<String, String>, expiredOk: Boolean = false): String {
         val base = URI(baseUrl)
-        fun proxied(ref: String) = wrap(base.resolve(ref.trim().replace(" ", "%20")).toString(), headers, expiredOk)
+        fun proxied(ref: String) = resolveLoose(base, ref)?.let { wrap(it, headers, expiredOk) } ?: ref
         return vodEnd(playlist.lineSequence().joinToString("\n") { line ->
             when {
                 line.isBlank() -> line
@@ -250,3 +250,18 @@ object Disguise {
         return 0
     }
 }
+
+/**
+ * [ref] resolved against [base], with what java.net.URI refuses percent-encoded first: spaces, and the square
+ * brackets NetMirror puts in subtitle addresses (hi.[CC].m3u8), which made the whole playlist fail (a 502 for the
+ * player). Null when it still can't be read; the caller then leaves that line as it was.
+ */
+internal fun resolveLoose(base: java.net.URI, ref: String): String? = runCatching {
+    val safe = buildString {
+        for (b in ref.trim().toByteArray(Charsets.UTF_8)) {
+            val c = b.toInt() and 0xff
+            if (c in 0x21..0x7e && c.toChar() !in "[]{}|\\^`\"<>") append(c.toChar()) else append("%%%02X".format(c))
+        }
+    }
+    base.resolve(safe).toString()
+}.getOrNull()

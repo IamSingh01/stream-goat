@@ -196,8 +196,8 @@ object StreamProxy {
 
     fun rewrite(playlist: String, baseUrl: String, headers: Map<String, String>, expiredOk: Boolean = false): String {
         val base = URI(baseUrl)
-        fun resolve(ref: String) = base.resolve(ref.trim().replace(" ", "%20")).toString()
-        fun proxied(ref: String, key: Aes? = null) = wrap(resolve(ref), headers, expiredOk, key)
+        fun resolve(ref: String) = resolveLoose(base, ref) ?: ref
+        fun proxied(ref: String, key: Aes? = null) = resolveLoose(base, ref)?.let { wrap(it, headers, expiredOk, key) } ?: ref
         var sequence = mediaSequence.find(playlist)?.groupValues?.get(1)?.toLongOrNull() ?: 0L
         var key: Pair<String, ByteArray?>? = null
         val out = StringBuilder()
@@ -320,3 +320,18 @@ object Disguise {
         return 0
     }
 }
+
+/**
+ * [ref] resolved against [base], with what java.net.URI refuses percent-encoded first: spaces, and the square
+ * brackets NetMirror puts in subtitle addresses (hi.[CC].m3u8), which made the whole playlist fail (a 502 for the
+ * player). Null when it still can't be read; the caller then leaves that line as it was.
+ */
+internal fun resolveLoose(base: java.net.URI, ref: String): String? = runCatching {
+    val safe = buildString {
+        for (b in ref.trim().toByteArray(Charsets.UTF_8)) {
+            val c = b.toInt() and 0xff
+            if (c in 0x21..0x7e && c.toChar() !in "[]{}|\\^`\"<>") append(c.toChar()) else append("%%%02X".format(c))
+        }
+    }
+    base.resolve(safe).toString()
+}.getOrNull()

@@ -110,6 +110,19 @@ class PlaybackFeaturesTest {
     }
 
     @Test
+    fun `NetMirror's master playlist with brackets in subtitle addresses is rewritten whole`() {
+        // The real thing (shortened): subtitle renditions named hi.[CC].m3u8 made the whole playlist a 502.
+        val text = "#EXTM3U\n#EXT-X-VERSION:3\n" +
+            "#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID=\"subs\",NAME=\"Hindi [CC]\",LANGUAGE=\"hi.[CC]\",URI=\"https://subscdn.top/subs/82644524/hi.[CC].m3u8\"\n" +
+            "#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"aac\",LANGUAGE=\"hin\",NAME=\"2. Hindi\",DEFAULT=NO,URI=\"https://cdn.example/files/1/a/1/1.m3u8\"\n" +
+            "#EXT-X-STREAM-INF:BANDWIDTH=4000000,RESOLUTION=1920x1080,AUDIO=\"aac\",SUBTITLES=\"subs\"\nhttps://cdn.example/files/1/1080p/1080p.m3u8\n"
+        val out = StreamProxy.rewrite(text, "https://cdn.example/files/1/master.m3u8", token)
+        assertTrue(out.lines().filter { "URI=" in it }.all { "URI=\"http://127.0.0.1:" in it }, out)
+        assertTrue(out.lines().last { it.isNotBlank() }.startsWith("http://127.0.0.1:"), out)
+        assertEquals("https://subscdn.top/subs/82644524/hi.%5BCC%5D.m3u8", resolveLoose(java.net.URI("https://x/"), "https://subscdn.top/subs/82644524/hi.[CC].m3u8"))
+    }
+
+    @Test
     fun `online subtitles are found by title and episode`() = runBlocking {
         val api = demo()
         val response = Engine.load(api, "$base/title/pixel_city")!!
