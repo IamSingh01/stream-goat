@@ -7,7 +7,7 @@ Created by <b>Syed Ali Hamza</b></p>
 
 ![Stream Goat start animation: the goat logo over glowing waves](docs/screenshots/intro.png)
 
-> **Testing notes (9.0.1).** The Mac and Linux apps are built and checked automatically but haven't been tested by hand yet, so please report anything odd. On Windows the first launch after installing can be slow and laggy for a minute while the app sets itself up and loads an earlier backup; give it a moment and it runs smoothly after that.
+> **Testing notes (10.0.0).** The Mac and Linux apps are built and checked automatically but haven't been tested by hand yet, so please report anything odd. On Windows the first launch after installing can be slow and laggy for a minute while the app sets itself up and loads an earlier backup; give it a moment and it runs smoothly after that.
 
 > **Disclaimer.** Stream Goat is only a media player and organiser. It does not host, provide, link to or endorse any movies, shows, channels or other content, and it ships with no content sources. You add your own extensions, add-ons and playlists and are responsible for having the rights to whatever you play. Titles, posters and logos belong to their owners; in the screenshots below they are blurred.
 
@@ -33,12 +33,19 @@ library and downloads carry over.)*
 
 ## What it does
 
+> **New in 10.0.0:** updates inside the app, a **Sports** section with live scores, a **Music** section like YouTube
+> Music, **YouTube** (its TV app, ads removed), **ExoPlayer** next to VLC, and a much smoother TV app (tablet layout,
+> official-app remote, mouse support). Android: uninstall the old version once to install 10.0.0 (back up first);
+> later versions update from inside the app. [All changes](docs/releases/10.0.0.md)
+
 - **One app on every screen:** Android phones, tablets and TV, Windows, Mac, Linux and the web, with the same look.
 - **Your own sources:** CloudStream extensions and repositories, Stremio add-ons, and Live TV from M3U playlists,
   Xtream Codes logins or the free iptv-org lists by country. The app comes with none: you add what you use.
 - **Live TV** with a TV guide, favourites, region-lock detection and an automatic check that hides channels with broken
   links.
-- **A real player (VLC):** subtitles from the source or online, subtitle style and sync, audio sync, translation of
+- **Sports and music:** live scores for every big sport with news, and a music section with moods, playlists, liked
+  songs and recommendations. YouTube's TV app (ads removed) has its own tab.
+- **Two players (ExoPlayer and VLC):** subtitles from the source or online, subtitle style and sync, audio sync, translation of
   subtitles, skip intro, next-episode countdown, anime enhance and HDR.
 - **Downloads** for offline watching, with fast multi-connection downloading and quality choice.
 - **Profiles** with animal pictures, PINs and kids profiles.
@@ -54,8 +61,10 @@ library and downloads carry over.)*
 
 | | |
 |---|---|
-| ![Start animation](docs/screenshots/android-intro.png) | ![Home](docs/screenshots/android-home.png) |
-| ![Live TV](docs/screenshots/android-livetv.png) | ![Appearance](docs/screenshots/android-appearance.png) |
+| ![Home](docs/screenshots/android-home.png) | ![Sports: live scores](docs/screenshots/android-sports.png) |
+| ![Music, with the player beside the list](docs/screenshots/android-music.png) | ![Live TV](docs/screenshots/android-livetv.png) |
+| ![YouTube](docs/screenshots/android-youtube.png) | ![Appearance](docs/screenshots/android-appearance.png) |
+| ![Start animation](docs/screenshots/android-intro.png) | |
 | ![Profile editor](docs/screenshots/android-profile-editor.png) | ![Add-ons](docs/screenshots/android-addons.png) |
 | ![WeTrakr sync](docs/screenshots/android-wetrakr.png) | ![Library](docs/screenshots/android-library.png) |
 
@@ -87,12 +96,13 @@ a newer `.msi` updates in place. [More: INSTALL.md → Windows](INSTALL.md)
 | File | For |
 |---|---|
 | `streamgoat-android-arm64-v8a.apk` | Most phones and tablets from the last ~8 years |
-| `streamgoat-android-armeabi-v7a.apk` | Android TV, Google TV, Fire TV Stick and most TV boxes |
+| `streamgoat-android-armeabi-v7a.apk` | Android TV, Google TV, Fire TV Stick and most TV boxes (the Google TV Streamer can also use arm64-v8a) |
 | `streamgoat-android-universal.apk` | Not sure? This one runs everywhere (larger download) |
 
 Open the `.apk` on the device and allow *Install unknown apps* when asked. On a TV, use the **Downloader** app (or
-`adb install`). The app has a touch layout for phones and a remote-friendly layout for TV, the VLC player, and real
-**HDR** on HDR screens. [More: INSTALL.md → Android](INSTALL.md#android-phones-tablets-and-android-tv)
+`adb install`). The app has a touch layout for phones and a remote-friendly layout for TV (a mouse works too),
+ExoPlayer and VLC, and real **HDR** on HDR screens. **Updating to 10.0.0:** uninstall the old version once (back up
+first: Settings → Updates and backup, then restore); from then on new versions install from inside the app. [More: INSTALL.md → Android](INSTALL.md#android-phones-tablets-and-android-tv)
 
 ### Mac (Apple Silicon, from 9.0.1)
 
