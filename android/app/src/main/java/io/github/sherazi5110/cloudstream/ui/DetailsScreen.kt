@@ -452,7 +452,7 @@ private fun EpisodeMenu(open: Boolean, api: MainAPI, r: LoadResponse, ep: Playab
     val item = remember(dv, ep) { io.github.sherazi5110.cloudstream.Downloads.get(api.name, ep.data) }
     var dlMenu by remember { mutableStateOf(false) }
     DownloadsUi.Menu(dlMenu, item) { dlMenu = false }
-    DropdownMenu(open, onDismissRequest = onDismiss) {
+    DropdownMenu(open, onDismissRequest = onDismiss, modifier = Modifier.freshOkOnly()) {
         if (api !is io.github.sherazi5110.cloudstream.OfflineApi) DropdownMenuItem(text = { Text(if (item == null) "Download" else DownloadsUi.label(item) + "…") },
             leadingIcon = { Icon(DownloadsUi.icon(item), null) },
             onClick = { onDismiss(); if (item == null) DownloadsUi.start(context, api, r, ep) else dlMenu = true })

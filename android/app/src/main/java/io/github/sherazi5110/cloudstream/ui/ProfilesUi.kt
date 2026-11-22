@@ -162,7 +162,7 @@ fun ProfileButton(size: Dp = 36.dp, showName: Boolean = false) {
             Avatar(me.avatar, size)
             if (showName) Text(me.name, style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(start = 8.dp, end = 6.dp))
         }
-        DropdownMenu(open, onDismissRequest = { open = false }) {
+        DropdownMenu(open, onDismissRequest = { open = false }, modifier = Modifier.freshOkOnly()) {
             Profiles.all().forEach { p ->
                 DropdownMenuItem(
                     text = { Text(p.name + if (p.kids) "  · kids" else "") },

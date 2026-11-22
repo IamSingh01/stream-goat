@@ -43,6 +43,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
@@ -226,6 +227,26 @@ fun TvRowScroll(
     else rowWithArrows()
 }
 
+/**
+ * For a menu opened by holding OK: the remote keeps sending OK while it's held, and the menu (its own window)
+ * received those and the release, so letting go picked its first entry ("Mark as watched"). Until a new OK press,
+ * OK is ignored here: the menu waits for you to move to an entry and press OK.
+ */
+fun Modifier.freshOkOnly(): Modifier = composed {
+    var armed by remember { mutableStateOf(false) }
+    onPreviewKeyEvent { e ->
+        val k = e.nativeKeyEvent
+        val ok = k.keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER || k.keyCode == android.view.KeyEvent.KEYCODE_ENTER ||
+            k.keyCode == android.view.KeyEvent.KEYCODE_NUMPAD_ENTER || k.keyCode == android.view.KeyEvent.KEYCODE_BUTTON_A
+        when {
+            !ok -> false
+            k.action == android.view.KeyEvent.ACTION_DOWN && k.repeatCount == 0 -> { armed = true; false }
+            k.action == android.view.KeyEvent.ACTION_DOWN -> !armed      // held from before the menu
+            else -> !armed                                                               // the release of that hold
+        }
+    }
+}
+
 /** A network image with the extension's headers (some sites refuse posters without a Referer). */
 @Composable
 fun NetImage(
@@ -285,7 +306,7 @@ fun PosterCard(
             Modifier.fillMaxWidth().aspectRatio(2f / 3f)
                 .card(onFocus = onFocus, onLongClick = onLongClick ?: { menu = true }, selectFirst = true, onClick = onClick)
         ) {
-            androidx.compose.material3.DropdownMenu(menu, { menu = false }) {
+            androidx.compose.material3.DropdownMenu(menu, { menu = false }, Modifier.freshOkOnly()) {
                 androidx.compose.material3.DropdownMenuItem(text = { Text("Hide this title") }, onClick = {
                     menu = false
                     io.github.sherazi5110.cloudstream.Hidden.hide(item)

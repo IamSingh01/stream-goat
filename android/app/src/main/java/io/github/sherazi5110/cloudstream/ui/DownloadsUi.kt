@@ -150,7 +150,7 @@ object DownloadsUi {
     @Composable
     fun Menu(open: Boolean, item: Downloads.Item?, onDismiss: () -> Unit) {
         if (item == null) return
-        DropdownMenu(open, onDismissRequest = onDismiss) {
+        DropdownMenu(open, onDismissRequest = onDismiss, modifier = Modifier.freshOkOnly()) {
             DropdownMenuItem(text = { Text(status(item), maxLines = 2, color = Palette.muted) }, onClick = onDismiss, enabled = false)
             when (item.state) {
                 State.DONE -> DropdownMenuItem(text = { Text("Play downloaded copy") }, leadingIcon = { Icon(Icons.Filled.PlayArrow, null) }, onClick = { onDismiss(); play(item) })

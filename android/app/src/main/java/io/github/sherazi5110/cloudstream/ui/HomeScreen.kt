@@ -217,7 +217,7 @@ fun SourcePicker(state: HomeState, modifier: Modifier = Modifier) {
                 overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 180.dp))
             Icon(Icons.Filled.ArrowDropDown, null, tint = Color.White)
         }
-        DropdownMenu(open, onDismissRequest = { open = false }) {
+        DropdownMenu(open, onDismissRequest = { open = false }, modifier = Modifier.freshOkOnly()) {
             state.providers.forEach { api ->
                 DropdownMenuItem(
                     text = { Text(api.name) },
@@ -263,7 +263,7 @@ fun ContinueRow(entries: List<WatchEntry>, cardWidth: androidx.compose.ui.unit.D
 /** Long-press / Menu key on a Continue Watching card: ✓ watched or ✕ remove. */
 @Composable
 fun WatchedMenu(open: Boolean, e: WatchEntry, onDismiss: () -> Unit) {
-    DropdownMenu(open, onDismissRequest = onDismiss) {
+    DropdownMenu(open, onDismissRequest = onDismiss, modifier = Modifier.freshOkOnly()) {
         DropdownMenuItem(text = { Text("Mark as watched") }, leadingIcon = { Icon(Icons.Filled.Check, null) },
             onClick = { onDismiss(); Library.markWatched(e) })
         DropdownMenuItem(text = { Text("Remove from Continue Watching") }, leadingIcon = { Icon(Icons.Filled.Close, null) },

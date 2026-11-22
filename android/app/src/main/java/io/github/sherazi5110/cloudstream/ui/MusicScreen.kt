@@ -165,8 +165,12 @@ fun MusicScreen() {
         }
     }
 
+    // Tablet and TV: the player sits on the right of the section while a song plays (no pop-up, no mini player),
+    // with Up next and recommended songs under it; the pages (Home, Explore, Library, search) are on the left.
+    val docked = isWide && Music.current != null
     Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Palette.accent.copy(alpha = 0.18f), Color.Black, Color.Black)))) {
-        Column(Modifier.fillMaxSize().statusBarsPadding()) {
+      Row(Modifier.fillMaxSize()) {
+        Column(Modifier.weight(1f).fillMaxHeight().statusBarsPadding()) {
             val mood = MusicUi.mood
             val open = MusicUi.openList
             when {
@@ -189,7 +193,9 @@ fun MusicScreen() {
                 }
             }
         }
-        if (MusicUi.playerOpen && Music.current != null) FullPlayer()
+        if (docked) DockedPlayer(Modifier.width(if (isTv) 400.dp else 440.dp))
+      }
+        if (!isWide && MusicUi.playerOpen && Music.current != null) FullPlayer()
         MusicUi.menuFor?.let { SongMenu(it) }
     }
     MusicUi.saveFor?.let { SaveToPlaylist(it) }
@@ -480,7 +486,7 @@ private fun SongMenu(t: Music.Track) {
     val context = LocalContext.current
     val close = { MusicUi.menuFor = null }
     BackHandler { close() }
-    Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.55f)).card(RoundedCornerShape(0.dp), focusScale = 1f) { close() },
+    Box(Modifier.fillMaxSize().freshOkOnly().background(Color.Black.copy(alpha = 0.55f)).card(RoundedCornerShape(0.dp), focusScale = 1f) { close() },
         contentAlignment = Alignment.BottomCenter) {
         Column(Modifier.widthIn(max = 900.dp).fillMaxWidth().background(Color(0xFF212121), RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
             .padding(bottom = 12.dp + LocalBottomInset.current)) {
@@ -582,12 +588,24 @@ private fun FullPlayer() {
     }
 }
 
+/** The player beside the pages (tablet, TV): always there while a song plays, Up next and recommended under it. */
 @Composable
-private fun PlayerMain(t: Music.Track, artModifier: Modifier) {
+private fun DockedPlayer(modifier: Modifier) {
+    val t = Music.current ?: return
+    Column(modifier.fillMaxHeight().statusBarsPadding().padding(top = 12.dp, end = 16.dp, bottom = 12.dp + LocalBottomInset.current)
+        .clip(RoundedCornerShape(22.dp)).background(Brush.verticalGradient(listOf(Color(0xFF2B2420), Color(0xFF141214)))).padding(18.dp)) {
+        PlayerMain(t, Modifier.weight(0.85f), docked = true)
+        UpNext(Modifier.weight(1f).fillMaxWidth())
+    }
+}
+
+@Composable
+private fun PlayerMain(t: Music.Track, artModifier: Modifier, docked: Boolean = false) {
     val playPause = remember { androidx.compose.ui.focus.FocusRequester() }
-    LaunchedEffect(Unit) { if (isTv) { kotlinx.coroutines.delay(100); runCatching { playPause.requestFocus() } } }
+    // The pop-up player takes the remote's focus when it opens; the docked one waits until you move to it (→).
+    LaunchedEffect(Unit) { if (isTv && !docked) { kotlinx.coroutines.delay(100); runCatching { playPause.requestFocus() } } }
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        IconAction(Icons.Filled.KeyboardArrowDown, "Close player") { MusicUi.playerOpen = false }
+        if (!docked) IconAction(Icons.Filled.KeyboardArrowDown, "Close player") { MusicUi.playerOpen = false }
         Spacer(Modifier.weight(1f))
         IconAction(Icons.Filled.MoreVert, "More") { MusicUi.menuPlaylist = null; MusicUi.menuFor = t }
     }
@@ -656,7 +674,8 @@ private fun UpNext(modifier: Modifier) {
 fun MiniPlayer(modifier: Modifier = Modifier) {
     val t = Music.current ?: return
     // Music lives in its own section: its player shows only there (and it stops when you leave, see AppRoot).
-    if (Nav.tab != Tab.MUSIC || MusicUi.playerOpen) return
+    // Tablet and TV have the docked player instead; phones get this bar.
+    if (Nav.tab != Tab.MUSIC || MusicUi.playerOpen || isWide) return
     Column(modifier.fillMaxWidth().padding(horizontal = 12.dp).clip(RoundedCornerShape(12.dp)).background(Color(0xFF212121))
         .card(RoundedCornerShape(12.dp), focusScale = 1.01f) { Nav.tab = Tab.MUSIC; MusicUi.playerOpen = true }) {
         Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
