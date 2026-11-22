@@ -247,7 +247,8 @@ private fun PillItem(tab: Tab, icon: ImageVector, vertical: Boolean) {
 private fun visibleTabs(tabs: List<Tab>): List<Tab> = tabs.filter { t ->
     when (t) {
         Tab.LIVE -> io.github.sherazi5110.cloudstream.LiveTv.availableToProfile
-        Tab.EXTENSIONS, Tab.YOUTUBE -> !ProfileUi.current.kids
+        Tab.EXTENSIONS -> !ProfileUi.current.kids
+        Tab.YOUTUBE -> !ProfileUi.current.kids && io.github.sherazi5110.cloudstream.Settings.showYouTube
         else -> true
     }
 }

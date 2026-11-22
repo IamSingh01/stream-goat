@@ -177,8 +177,17 @@ object RepositoryManager {
         target.parentFile.mkdirs()
         val tmp = File.createTempFile(target.name, ".tmp", App.context.cacheDir)
         try {
-            app.get(convertRawGitUrl(url)).okhttpResponse.body.byteStream().use { body ->
+            val response = app.get(convertRawGitUrl(url)).okhttpResponse
+            // An old address answers with an error page: never save that as the extension.
+            check(response.isSuccessful) { "Couldn't download ${target.name} (HTTP ${response.code})" }
+            response.body.byteStream().use { body ->
                 tmp.outputStream().use { body.copyTo(it) }
+            }
+            // An extension (.cs3) is a zip file: anything else (a web page, a cut-off download) would fail to load
+            // every time ("No manifest.json").
+            if (target.name.endsWith(".cs3")) {
+                val head = tmp.inputStream().use { i -> ByteArray(2).also { i.read(it) } }
+                check(head[0] == 'P'.code.toByte() && head[1] == 'K'.code.toByte()) { "${target.name}: the server didn't send an extension file" }
             }
             if (expectedHash != null) {
                 val actual = sha256(tmp)

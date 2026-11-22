@@ -242,6 +242,11 @@ object Settings {
     fun setEngineFor(kind: String, engine: String) = put("player_engine_$kind", engine)
 
     /** Ask which engine to play with every time a video starts. */
+    /** Whether the YouTube tab is shown (Settings → Appearance → Tabs). */
+    var showYouTube: Boolean
+        get() = string("show_youtube", "true").toBoolean()
+        set(v) = put("show_youtube", v.toString())
+
     var askEngine: Boolean
         get() = string("ask_engine", "false").toBoolean()
         set(v) = put("ask_engine", v.toString())

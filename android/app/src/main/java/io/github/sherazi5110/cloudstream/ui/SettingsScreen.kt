@@ -258,6 +258,13 @@ private fun AppearanceSection() {
     SwitchRow("Banner slides through the top titles", null, slider) { slider = it; Settings.heroSlider = it }
     var spoiler by remember { mutableStateOf(Settings.antiSpoiler) }
     SwitchRow("Anti-spoiler", "Hide pictures and descriptions of episodes you haven't watched.", spoiler) { spoiler = it; Settings.antiSpoiler = it }
+    Heading("Tabs")
+    var yt by remember { mutableStateOf(io.github.sherazi5110.cloudstream.Settings.showYouTube) }
+    SwitchRow("YouTube tab", "YouTube's TV app: made for Android TV and a remote, not for touch screens. Off hides the tab.", yt) {
+        yt = it; io.github.sherazi5110.cloudstream.Settings.showYouTube = it
+        if (!it && Nav.tab == Tab.YOUTUBE) Nav.select(Tab.HOME)
+    }
+
     Heading("Pictures")
     var lowRes by remember { mutableStateOf(Settings.lowResImages) }
     ChoiceChips(listOf<Boolean?>(null, true, false), { when (it) { null -> "Automatic"; true -> "Low resolution"; false -> "Full resolution" } }, { it == lowRes }) {

@@ -241,7 +241,7 @@ internal fun BackupSection() {
                 App.toast("Restored. Downloading the extensions…")
                 val got = withContext(Dispatchers.IO) { runCatching { PluginManager.installMissing(includeNew = false) }.getOrDefault(emptyList()) }
                 App.toast(if (got.isEmpty()) "Restored" else "Restored, with ${got.size} extension(s)")
-                restored = true
+                CloudUi.restored = true   // the restart is required: a dialog that can't be dismissed
             }.onFailure { App.toast("Couldn't restore: ${it.message}") }
         }
     }

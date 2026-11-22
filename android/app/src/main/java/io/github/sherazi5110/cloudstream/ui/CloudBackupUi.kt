@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -130,8 +131,19 @@ fun CloudDialogs() {
     CloudUi.confirm?.let { RestoreDialog(it) }
     if (CloudUi.restored) {
         val context = LocalContext.current
-        SimpleDialog("Restored", { CloudUi.restored = false }, confirm = "Restart now", onConfirm = { restartApp(context) }) {
-            Hint("Your backup is back, and the extensions in it were downloaded. Restart the app to finish.")
+        // A restore only takes full effect after a restart (extensions, profiles, settings already loaded): it's
+        // required, so this can't be dismissed.
+        androidx.compose.ui.window.Dialog(onDismissRequest = {},
+            properties = androidx.compose.ui.window.DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false, usePlatformDefaultWidth = false)) {
+            DialogGlass()
+            androidx.compose.foundation.layout.Column(Modifier.padding(24.dp).widthIn(max = 520.dp).fillMaxWidth()
+                .glassPanel(androidx.compose.foundation.shape.RoundedCornerShape(22.dp), blur = false).padding(20.dp)) {
+                androidx.compose.material3.Text("Backup restored", style = androidx.compose.material3.MaterialTheme.typography.headlineSmall)
+                Hint("Your settings, profiles, lists, history and extensions are back. Stream Goat needs to restart to use them.")
+                androidx.compose.foundation.layout.Box(Modifier.fillMaxWidth().padding(top = 16.dp), contentAlignment = androidx.compose.ui.Alignment.CenterEnd) {
+                    PillButton("Restart now", Icons.Filled.Refresh, compact = true) { restartApp(context) }
+                }
+            }
         }
     }
 }

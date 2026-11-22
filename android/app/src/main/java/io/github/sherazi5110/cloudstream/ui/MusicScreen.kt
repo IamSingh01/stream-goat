@@ -296,14 +296,15 @@ private fun LibraryPage() {
             add(Triple("fav", "Liked songs", "Auto playlist · ${MusicLibrary.favourites.items.size} songs"))
             MusicLibrary.playlists.keys.sorted().forEach { add(Triple(it, it, "Playlist · ${MusicLibrary.playlists[it]?.size ?: 0} songs")) }
         }
-        if (filter in setOf("all", "downloads")) add(Triple("dl", "Downloaded", "${MusicLibrary.downloads.items.size} songs · plays without internet"))
+        if (filter in setOf("all", "downloads") && MusicLibrary.downloads.items.isNotEmpty()) add(Triple("dl", "Downloaded", "${MusicLibrary.downloads.items.size} songs · plays without internet"))
         if (filter in setOf("all", "recent")) add(Triple("recent", "Recently played", "${WebHistory.songs.items.size} songs"))
     }
     Box(Modifier.fillMaxSize()) {
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 110.dp + LocalBottomInset.current)) {
             item {
                 Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = side, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf("all" to "All", "downloads" to "Downloads", "playlists" to "Playlists", "recent" to "Recent").forEach { (id, label) ->
+                    (listOf("all" to "All") + (if (MusicLibrary.downloads.items.isNotEmpty()) listOf("downloads" to "Downloads") else emptyList()) +
+                        listOf("playlists" to "Playlists", "recent" to "Recent")).forEach { (id, label) ->
                         Chip(label, filter == id) { filter = id }
                     }
                 }
@@ -502,11 +503,8 @@ private fun SongMenu(t: Music.Track) {
             MenuLine(Icons.AutoMirrored.Filled.QueueMusic, "Add to queue") { Music.addToQueue(t); close() }
             MenuLine(if (MusicLibrary.isFavourite(t)) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
                 if (MusicLibrary.isFavourite(t)) "Remove from liked songs" else "Add to liked songs") { MusicLibrary.toggleFavourite(t); close() }
-            when {
-                MusicLibrary.isDownloaded(t) -> MenuLine(Icons.Filled.DownloadDone, "Remove download") { MusicLibrary.deleteDownload(t); close() }
-                t.url in MusicLibrary.downloading -> MenuLine(Icons.Filled.Download, "Downloading ${MusicLibrary.downloading[t.url]}%") { close() }
-                else -> MenuLine(Icons.Filled.Download, "Download") { MusicLibrary.download(t); close() }
-            }
+            // Songs can't be downloaded any more; ones downloaded before can still be removed.
+            if (MusicLibrary.isDownloaded(t)) MenuLine(Icons.Filled.DownloadDone, "Remove download") { MusicLibrary.deleteDownload(t); close() }
             MusicUi.menuPlaylist?.let { p -> MenuLine(Icons.Filled.Close, "Remove from $p") { MusicLibrary.removeFromPlaylist(p, t); close() } }
         }
     }
@@ -593,11 +591,6 @@ private fun PlayerMain(t: Music.Track, artModifier: Modifier) {
         val liked = MusicLibrary.isFavourite(t)
         ActionPill(if (liked) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder, if (liked) "Liked" else "Like") { MusicLibrary.toggleFavourite(t) }
         ActionPill(Icons.AutoMirrored.Filled.PlaylistAdd, "Save") { MusicUi.saveFor = t }
-        when {
-            MusicLibrary.isDownloaded(t) -> ActionPill(Icons.Filled.DownloadDone, "Downloaded") { MusicLibrary.deleteDownload(t) }
-            t.url in MusicLibrary.downloading -> ActionPill(Icons.Filled.Download, "${MusicLibrary.downloading[t.url]}%") { }
-            else -> ActionPill(Icons.Filled.Download, "Download") { MusicLibrary.download(t) }
-        }
         ActionPill(Icons.Filled.Radio, "Mix") { Music.startMix(t) }
     }
     var drag by remember { mutableStateOf<Float?>(null) }
