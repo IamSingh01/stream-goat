@@ -99,8 +99,8 @@ a newer `.msi` updates in place. [More: INSTALL.md → Windows](INSTALL.md)
 | `streamgoat-android-armeabi-v7a.apk` | Android TV, Google TV, Fire TV Stick and most TV boxes (the Google TV Streamer can also use arm64-v8a) |
 | `streamgoat-android-universal.apk` | Not sure? This one runs everywhere (larger download) |
 
-Open the `.apk` on the device and allow *Install unknown apps* when asked. On a TV, use the **Downloader** app (or
-`adb install`). The app has a touch layout for phones and a remote-friendly layout for TV (a mouse works too),
+Open the `.apk` on the device and allow *Install unknown apps* when asked. On a TV (Fire TV Stick, Google TV, Android TV, TV boxes), install the **Downloader** app and
+type the code **3045910** (or `adb install`). The app has a touch layout for phones and a remote-friendly layout for TV (a mouse works too),
 ExoPlayer and VLC, and real **HDR** on HDR screens. **Updating to 10.0.0:** uninstall the old version once (back up
 first: Settings → Updates and backup, then restore); from then on new versions install from inside the app. [More: INSTALL.md → Android](INSTALL.md#android-phones-tablets-and-android-tv)
 

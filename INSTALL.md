@@ -275,7 +275,7 @@ Needs Android 6.0 or newer.
    - **Fire TV:** Settings → My Fire TV → Developer options → Install unknown apps → Downloader → On.
      (If Developer options is missing: Settings → My Fire TV → About → click the device name 7 times.)
    - **Android TV / Google TV:** Settings → Apps → Security & restrictions → Unknown sources → Downloader → On.
-3. Open Downloader, type **`sherazi5110.github.io/stream-goat/tv`** in the box and press **Go**. It downloads the
+3. Open Downloader, type the code **`3045910`** (or the address **`sherazi5110.github.io/stream-goat/tv`**) in the box and press **Go**. It downloads the
    newest version for TVs (`armeabi-v7a`).
    - If the TV says *App not installed*, uninstall the old Stream Goat first (back up first: Settings → Updates and
      backup), or type `sherazi5110.github.io/stream-goat/apk` instead (the universal file, for every device).
