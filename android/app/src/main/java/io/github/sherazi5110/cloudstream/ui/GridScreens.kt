@@ -221,7 +221,9 @@ fun LibraryScreen() {
         val off = Library.onChange { bookmarks = Library.bookmarks(); history = Library.history() }
         onDispose { off() }
     }
-    var tab by remember { mutableStateOf(if (openLibraryDownloads) 2.also { openLibraryDownloads = false } else 0) }
+    // Saved with the tab: playing a download and coming back shows Downloads again, not My list.
+    var tab by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(0) }
+    if (openLibraryDownloads) { openLibraryDownloads = false; tab = 2 }
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
         Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             listOf("My list", "History", "Downloads").forEachIndexed { i, label ->

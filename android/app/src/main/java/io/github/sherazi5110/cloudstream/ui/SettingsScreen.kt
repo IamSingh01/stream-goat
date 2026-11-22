@@ -98,7 +98,7 @@ enum class Section(val title: String, val text: String, val icon: ImageVector) {
 /** Settings (the "More" tab on phones): sections in a list; on wide screens the section shows beside it. */
 @Composable
 fun SettingsScreen() {
-    var selected by remember { mutableStateOf(Section.PROFILES) }
+    var selected by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(Section.PROFILES) }
     val wide = isWide
     Row(Modifier.fillMaxSize().statusBarsPadding()) {
         Column(Modifier.then(if (wide) Modifier.width(300.dp) else Modifier.fillMaxWidth()).fillMaxHeight()

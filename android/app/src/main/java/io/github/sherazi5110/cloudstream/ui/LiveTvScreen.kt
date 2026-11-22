@@ -208,7 +208,7 @@ private fun LiveContent(all: List<LiveTv.Channel>, now: Long, guideVersion: Int,
     val recentKeys = remember(favVersion) { LiveTv.recent() }
     // A channel in several groups ("Animation;Kids") is under each of them.
     val groups = remember(all) { all.flatMap { c -> c.groups.ifEmpty { listOf("Other") } }.groupingBy { it }.eachCount().entries.sortedByDescending { it.value }.map { it.key } }
-    var filter by remember { mutableStateOf("All") }
+    var filter by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("All") }
     var query by remember { mutableStateOf("") }
     // "Check channels": which answer (public lists always have dead links), and hiding the ones that don't.
     var healthVersion by remember { mutableIntStateOf(0) }

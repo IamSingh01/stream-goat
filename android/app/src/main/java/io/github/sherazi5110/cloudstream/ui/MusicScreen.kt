@@ -289,7 +289,7 @@ private fun ExplorePage(openMood: (String) -> Unit) {
 
 @Composable
 private fun LibraryPage() {
-    var filter by remember { mutableStateOf("all") }
+    var filter by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("all") }
     val side = PageSide
     val rows = buildList {
         if (filter in setOf("all", "playlists")) {
