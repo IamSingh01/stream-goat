@@ -34,12 +34,14 @@ class MainActivity : com.lagradost.cloudstream3.MainActivity() {
         intro.value = savedInstanceState == null && Settings.startupAnimation
         if (intro.value) android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({ endIntro() }, INTRO_LIMIT_MS)
         setContent {
-            CloudStreamTheme {
-                AppRoot()
-                // Over every screen, the player included.
-                io.github.sherazi5110.cloudstream.ui.GlitchDialog()
-                io.github.sherazi5110.cloudstream.ui.GitHubReportQr()
-                if (intro.value) io.github.sherazi5110.cloudstream.ui.IntroScreen { endIntro() }
+            io.github.sherazi5110.cloudstream.ui.TvScale {
+                CloudStreamTheme {
+                    AppRoot()
+                    // Over every screen, the player included.
+                    io.github.sherazi5110.cloudstream.ui.GlitchDialog()
+                    io.github.sherazi5110.cloudstream.ui.GitHubReportQr()
+                    if (intro.value) io.github.sherazi5110.cloudstream.ui.IntroScreen { endIntro() }
+                }
             }
         }
     }

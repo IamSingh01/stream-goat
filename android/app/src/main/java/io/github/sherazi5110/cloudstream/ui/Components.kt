@@ -93,7 +93,8 @@ private fun Modifier.cardImpl(
 ): Modifier = composed {
     var focused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(if (focused) focusScale else 1f, label = "focus")
-    val firstClickSelects = selectFirst && isTv
+    // TV with a mouse used to need two clicks (one to select); a click now opens, as in the official app.
+    val firstClickSelects = false
     val requester = remember { androidx.compose.ui.focus.FocusRequester() }
     val press = remember { PressState() }
     this
@@ -141,8 +142,13 @@ internal val RevealScroll = object : androidx.compose.foundation.gestures.BringI
  */
 @OptIn(ExperimentalFoundationApi::class)
 internal val CenterScroll = object : androidx.compose.foundation.gestures.BringIntoViewSpec {
-    override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float =
-        if (size >= containerSize) offset else offset + size / 2f - containerSize / 2f
+    override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float = when {
+        size >= containerSize -> offset
+        // Already comfortably in view (the banner's Play button, a row in the middle): stay put. Centering it
+        // pushed the banner's top under the top bar.
+        offset >= containerSize * 0.15f && offset + size <= containerSize * 0.88f -> 0f
+        else -> offset + size / 2f - containerSize / 2f
+    }
 }
 
 @OptIn(ExperimentalFoundationApi::class)

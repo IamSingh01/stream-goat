@@ -69,10 +69,32 @@ private fun Tab.icon(): ImageVector = when (this) {
     Tab.MORE -> Icons.Filled.MoreHoriz
 }
 
+/**
+ * TVs give apps a small canvas (960 units wide), so everything was drawn ~40% bigger than on a tablet: two episodes
+ * per row, cut-off posters and rows. On a TV the app is laid out as on a 1280-unit-wide tablet instead (the same
+ * layout, scaled to the screen), which shows as much as the tablet does.
+ */
+@Composable
+fun TvScale(content: @Composable () -> Unit) {
+    if (!isTv) return content()
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val widthPx = androidx.compose.ui.platform.LocalWindowInfo.current.containerSize.width.takeIf { it > 0 }
+        ?: androidx.compose.ui.platform.LocalContext.current.resources.displayMetrics.widthPixels
+    val target = 1280f
+    val scaled = (widthPx / target).takeIf { widthPx / density.density < target } ?: return content()
+    CompositionLocalProvider(androidx.compose.ui.platform.LocalDensity provides androidx.compose.ui.unit.Density(scaled, density.fontScale)) {
+        content()
+    }
+}
+
 @Composable
 fun AppRoot() {
     val top = Nav.top
     BackHandler(enabled = Nav.stack.isNotEmpty() || Nav.tab != Tab.HOME) { Nav.back() }
+    // Leaving the Music section stops the music (it keeps playing with the screen off or the app in the background).
+    androidx.compose.runtime.LaunchedEffect(Nav.tab) {
+        if (Nav.tab != Tab.MUSIC && io.github.sherazi5110.cloudstream.Music.current != null) io.github.sherazi5110.cloudstream.Music.stop()
+    }
     BoxWithConstraints(Modifier.fillMaxSize().background(Palette.background)) {
         if (ThemeState.mode == ThemeMode.GLASS) GlassBackdrop(Modifier.fillMaxSize())
         val wide = isTv || maxWidth > maxHeight

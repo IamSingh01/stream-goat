@@ -655,7 +655,8 @@ private fun UpNext(modifier: Modifier) {
 @Composable
 fun MiniPlayer(modifier: Modifier = Modifier) {
     val t = Music.current ?: return
-    if (MusicUi.playerOpen && Nav.tab == Tab.MUSIC) return
+    // Music lives in its own section: its player shows only there (and it stops when you leave, see AppRoot).
+    if (Nav.tab != Tab.MUSIC || MusicUi.playerOpen) return
     Column(modifier.fillMaxWidth().padding(horizontal = 12.dp).clip(RoundedCornerShape(12.dp)).background(Color(0xFF212121))
         .card(RoundedCornerShape(12.dp), focusScale = 1.01f) { Nav.tab = Tab.MUSIC; MusicUi.playerOpen = true }) {
         Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
