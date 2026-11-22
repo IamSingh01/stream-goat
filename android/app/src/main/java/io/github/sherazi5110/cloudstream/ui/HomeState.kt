@@ -75,7 +75,7 @@ fun rememberHomeState(): HomeState {
     }
     LaunchedEffect(state.api, state.catalogVersion) {
         val api = state.api ?: run { state.sections.clear(); return@LaunchedEffect }
-        val key = listOf(api.name, System.identityHashCode(api), state.catalogVersion)
+        val key = listOf(api.name, System.identityHashCode(api), state.catalogVersion, io.github.sherazi5110.cloudstream.ContentFilter.nsfwAllowed)
         if (state.loadedFor == key && state.sections.isNotEmpty()) return@LaunchedEffect
         state.loadedFor = null
         state.sections.clear()

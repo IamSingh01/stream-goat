@@ -384,6 +384,15 @@ object Metadata {
     }
 
     /** AniList's entry for an anime title (score, banner, description, MyAnimeList id). */
+    /** The MyAnimeList id of an AniList entry (skip times are keyed by it). */
+    internal suspend fun anilistMalId(id: Int): Int? = withContext(Dispatchers.IO) {
+        val body = JSONObject().put("query", "query(\$i:Int){Media(id:\$i){idMal}}").put("variables", JSONObject().put("i", id)).toString()
+        val request = Request.Builder().url(anilistBase).post(body.toRequestBody("application/json".toMediaType())).header("Accept", "application/json").build()
+        app.baseClient.newCall(request).execute().use { r ->
+            if (r.isSuccessful) JSONObject(r.body.string()).optJSONObject("data")?.optJSONObject("Media")?.optInt("idMal")?.takeIf { it > 0 } else null
+        }
+    }
+
     internal suspend fun anilistMedia(title: String): JSONObject? = cached(cacheKey("anilist2", title)) {
         val query = "query(\$s:String){Media(search:\$s,type:ANIME){idMal averageScore bannerImage description(asHtml:false) title{romaji english}}}"
         val body = JSONObject().put("query", query).put("variables", JSONObject().put("s", title)).toString()

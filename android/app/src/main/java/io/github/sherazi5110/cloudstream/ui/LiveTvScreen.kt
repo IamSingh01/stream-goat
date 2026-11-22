@@ -227,7 +227,16 @@ private fun LiveContent(all: List<LiveTv.Channel>, now: Long, guideVersion: Int,
         all.mapNotNull { it.country?.uppercase() }.groupingBy { it }.eachCount().entries
             .sortedWith(compareByDescending<Map.Entry<String, Int>> { it.key == home }.thenByDescending { it.value }).map { it.key to it.value }
     }
-    var country by remember(all) { mutableStateOf(if (countries.size >= 5 && countries.any { it.first == home }) home else null) }
+    // The country picked last stays picked (playing a channel and coming back, or restarting the app); until one is
+    // picked, your own country.
+    val saved = io.github.sherazi5110.cloudstream.Settings.liveCountry
+    var country by remember(all) { mutableStateOf(when {
+        saved == "ALL" -> null
+        saved != null && countries.any { it.first.equals(saved, true) } -> saved
+        countries.size >= 5 && countries.any { it.first == home } -> home
+        else -> null
+    }) }
+    fun pickCountry(code: String?) { country = code; io.github.sherazi5110.cloudstream.Settings.liveCountry = code ?: "ALL" }
     var countryMenu by remember { mutableStateOf(false) }
     // The automatic check: the channels in view that weren't checked in the last day, quietly in the background;
     // the ones with broken links then drop out ("Hide not working" is on by default).
@@ -306,11 +315,11 @@ private fun LiveContent(all: List<LiveTv.Channel>, now: Long, guideVersion: Int,
                             .background(if (country != null) Palette.accent else Palette.surfaceHigh, RoundedCornerShape(50))
                             .padding(horizontal = 14.dp, vertical = 8.dp))
                         androidx.compose.material3.DropdownMenu(countryMenu, { countryMenu = false }, Modifier.heightIn(max = 420.dp)) {
-                            androidx.compose.material3.DropdownMenuItem(text = { Text("All countries (${all.size})") }, onClick = { country = null; countryMenu = false })
+                            androidx.compose.material3.DropdownMenuItem(text = { Text("All countries (${all.size})") }, onClick = { pickCountry(null); countryMenu = false })
                             countries.forEach { (code, n) ->
                                 androidx.compose.material3.DropdownMenuItem(
                                     text = { Text(LiveTv.countryName(code) + " ($n)" + if (code == home) " · your country" else "") },
-                                    onClick = { country = code; countryMenu = false })
+                                    onClick = { pickCountry(code); countryMenu = false })
                             }
                         }
                     }

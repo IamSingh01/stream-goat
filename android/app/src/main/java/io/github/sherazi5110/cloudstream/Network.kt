@@ -57,6 +57,7 @@ object Network {
             .readTimeout(30, TimeUnit.SECONDS)
             .writeTimeout(30, TimeUnit.SECONDS)
             .addInterceptor(RetryOnReset)
+            .addInterceptor(MovieBoxFamilyMode)
             .build()
         client = base.newBuilder().dns(SmartDns(base, Settings.dns, Settings.dnsFallback)).build()
         app.baseClient = client
@@ -89,6 +90,27 @@ object Network {
             }
             // IPv4 first: try IPv6 only after every IPv4 address.
             return addresses.sortedBy { if (it is Inet4Address) 0 else 1 }
+        }
+    }
+
+    /**
+     * MovieBox (its CloudStream extensions) tells MovieBox's servers which app modes are on, in its x-client-info
+     * header; adult titles (MovieBox's "Midnight" content) are left out in its family mode. While adult content is
+     * off for this profile (Settings → Hidden content, or a kids profile), family mode is turned on in that header.
+     * The request's signature doesn't cover this header, so the request stays valid.
+     */
+    private object MovieBoxFamilyMode : Interceptor {
+        private val hosts = listOf("aoneroom.com", "inmoviebox.com", "moviebox", "movie-box", "mvbox")
+        private val familyOff = Regex("\"X-Family-Mode\"\\s*:\\s*\"0\"")
+
+        override fun intercept(chain: Interceptor.Chain): okhttp3.Response {
+            val request = chain.request()
+            val host = request.url.host
+            if (hosts.none { it in host } || ContentFilter.nsfwAllowed) return chain.proceed(request)
+            val info = request.header("x-client-info")?.takeIf { it.trimEnd().endsWith("}") } ?: return chain.proceed(request)
+            val family = if ("X-Family-Mode" in info) info.replace(familyOff, "\"X-Family-Mode\":\"1\"")
+                else info.trimEnd().removeSuffix("}") + ",\"X-Family-Mode\":\"1\"}"
+            return chain.proceed(request.newBuilder().header("x-client-info", family).build())
         }
     }
 

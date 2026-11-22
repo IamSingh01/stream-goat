@@ -31,6 +31,10 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
@@ -304,7 +308,8 @@ internal fun WideHome(state: HomeState) {
     // Liquid glass: what scrolls under the top bar is blurred and fades out, with no hard edge (Apple's scroll edge).
     val topHaze = dev.chrisbanes.haze.rememberHazeState()
     BoxWithConstraints(Modifier.fillMaxSize()) {
-        val bannerHeight = (maxHeight * 0.74f).coerceIn(340.dp, 640.dp)
+        // The banner is a rounded card below the top bar (nothing drawn over it), so a little shorter than full-bleed.
+        val bannerHeight = (maxHeight * 0.62f).coerceIn(300.dp, 560.dp)
         val scope = rememberCoroutineScope()
         // On a TV, Compose scrolls a list so the focused item sits a third of the way down (the TV "pivot"). With the
         // remote on the banner's Play button that pushed the banner's top (logo, title) up under the top bar. Here
@@ -359,8 +364,13 @@ private fun WideBanner(state: HomeState, focused: SearchResponse?, height: andro
     }
     val rowName = state.sections.firstOrNull()?.list?.name
     // At least [height] tall, taller when the title, plot and buttons need it: on a short screen (a 1080p TV is
-    // only 540 units tall to the app) the text used to run off the top of the banner, under the top bar.
-    Box(Modifier.fillMaxWidth().heightIn(min = height)) {
+    // only 540 units tall to the app) the text used to run off the top of the banner.
+    // A card with rounded corners that starts below the top bar (extension picker, Catalogs, Search, profile), lined
+    // up with it, so the bar never covers the picture and every corner looks the same.
+    val topBarSpace = androidx.compose.foundation.layout.WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 66.dp
+    val cardShape = RoundedCornerShape(24.dp)
+    Box(Modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, top = topBarSpace)
+        .shadow(18.dp, cardShape, clip = false).clip(cardShape).heightIn(min = height)) {
         if (featured.isEmpty()) Box(Modifier.fillMaxWidth().height(height).background(Palette.surface))
         else if (focused != null) BannerPage(focused, featured.indexOfFirst { it.url == focused.url }.takeIf { it >= 0 }, rowName, height)
         else HorizontalPager(pager, Modifier.fillMaxWidth()) { page -> BannerPage(featured[page], page, rowName, height) }
@@ -392,9 +402,8 @@ private fun BannerPage(item: SearchResponse, rank: Int?, rowName: String?, heigh
         Box(Modifier.matchParentSize().background(Brush.horizontalGradient(
             0f to Palette.background.copy(alpha = 0.95f), 0.45f to Palette.background.copy(alpha = 0.55f), 0.75f to Color.Transparent)))
         Box(Modifier.matchParentSize().background(Brush.verticalGradient(
-            0f to Color.Black.copy(alpha = 0.45f), 0.2f to Color.Transparent, 0.6f to Color.Transparent, 1f to Palette.background)))
-        // The top padding keeps the text clear of the top bar (extension picker, search, profile).
-        Column(Modifier.align(Alignment.BottomStart).padding(start = 40.dp, top = 76.dp, bottom = if (compact) 20.dp else 28.dp).widthIn(max = 560.dp)) {
+            0f to Color.Transparent, 0.55f to Color.Transparent, 1f to Color.Black.copy(alpha = 0.55f))))
+        Column(Modifier.align(Alignment.BottomStart).padding(start = 36.dp, top = 24.dp, bottom = if (compact) 20.dp else 28.dp).widthIn(max = 560.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Logo(18.dp)
                 Text(item.apiName.uppercase(), style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(start = 8.dp))

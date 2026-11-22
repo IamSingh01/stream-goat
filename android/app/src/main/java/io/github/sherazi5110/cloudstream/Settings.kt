@@ -242,6 +242,11 @@ object Settings {
     fun setEngineFor(kind: String, engine: String) = put("player_engine_$kind", engine)
 
     /** Ask which engine to play with every time a video starts. */
+    /** Live TV's country filter as last picked: null = never picked (your country), "ALL" = all countries. */
+    var liveCountry: String?
+        get() = string("live_country", "").ifBlank { null }
+        set(v) = put("live_country", v ?: "")
+
     /** Whether the YouTube tab is shown (Settings → Appearance → Tabs). */
     var showYouTube: Boolean
         get() = string("show_youtube", "true").toBoolean()
