@@ -186,8 +186,20 @@ object PluginManager {
         instance.filename = file.absolutePath
         if (manifest.requiresResources) (instance as? Plugin)?.resources = resourcesOf(file)
 
-        synchronized(registerLock) {
-            if (instance is Plugin) instance.load(App.context) else instance.load()
+        // Like the official app, extensions get the main screen (an AppCompatActivity), not the app: some (CNC Verse)
+        // show their own dialogs from load() and failed with "CloudStreamApp cannot be cast to AppCompatActivity".
+        // At start-up extensions can load before the screen exists: then they get it as soon as it's there.
+        fun loadWith(context: android.content.Context) = synchronized(registerLock) {
+            if (instance is Plugin) instance.load(context) else instance.load()
+        }
+        val screen = com.lagradost.cloudstream3.CommonActivity.activity
+        try {
+            loadWith(screen ?: App.context)
+        } catch (e: ClassCastException) {
+            if (screen != null || "Activity" !in e.message.orEmpty()) throw e
+            var waited = 0
+            while (com.lagradost.cloudstream3.CommonActivity.activity == null && waited < 15_000) { Thread.sleep(100); waited += 100 }
+            loadWith(com.lagradost.cloudstream3.CommonActivity.activity ?: throw e)
         }
 
         LoadedPlugin(data.copy(version = manifest.version ?: data.version), manifest, instance, loader).also {

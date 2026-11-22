@@ -49,6 +49,18 @@ class MainActivity : com.lagradost.cloudstream3.MainActivity() {
     private val intro = androidx.compose.runtime.mutableStateOf(false)
     private val shake by lazy { ShakeToReport(this) }
 
+    /**
+     * Holding OK on a title opens its menu (Mark as watched, Hide, Remove…). The remote keeps sending OK while it's
+     * held: those repeats went to the menu's first entry as soon as it opened, and letting go picked it (holding OK
+     * on History marked a title watched). The repeats are dropped, so the menu waits for you to choose.
+     */
+    override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
+        val ok = event.keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER || event.keyCode == android.view.KeyEvent.KEYCODE_ENTER ||
+            event.keyCode == android.view.KeyEvent.KEYCODE_NUMPAD_ENTER || event.keyCode == android.view.KeyEvent.KEYCODE_BUTTON_A
+        if (ok && event.action == android.view.KeyEvent.ACTION_DOWN && event.repeatCount > 0) return true
+        return super.dispatchKeyEvent(event)
+    }
+
     override fun onResume() {
         super.onResume()
         shake.start()
