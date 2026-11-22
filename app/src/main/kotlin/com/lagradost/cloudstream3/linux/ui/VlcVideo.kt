@@ -243,9 +243,43 @@ class VideoView : Region() {
         return ((w * scale).roundToInt() and 1.inv()).coerceAtLeast(2) to ((h * scale).roundToInt() and 1.inv()).coerceAtLeast(2)
     }
 
+    // ---------- the Stream Goat player (JavaFX) draws here instead of VLC ----------
+
+    private var mediaView: javafx.scene.media.MediaView? = null
+    private var subtitleLayer: javafx.scene.Node? = null
+
+    /** Shows the Stream Goat player's picture (and its subtitles) here; null goes back to VLC's. */
+    fun showMedia(view: javafx.scene.media.MediaView?, subtitles: javafx.scene.Node?) {
+        mediaView?.let { children -= it }
+        subtitleLayer?.let { children -= it }
+        mediaView = view
+        subtitleLayer = subtitles
+        image.isVisible = view == null
+        if (view != null) {
+            view.isPreserveRatio = false
+            children += view
+            subtitles?.let { children += it }
+        }
+        requestLayout()
+    }
+
+    /** The Stream Goat player's picture size, once the video has started. */
+    fun mediaSize(w: Int, h: Int) {
+        sourceW = w; sourceH = h
+        displayW = w.toDouble(); displayH = h.toDouble()
+        requestLayout()
+    }
+
     override fun layoutChildren() {
         val w = width
         val h = height
+        subtitleLayer?.let { sub ->
+            sub.autosize()
+            val r = sub as? javafx.scene.layout.Region
+            r?.maxWidth = w * 0.86
+            val sw = sub.layoutBounds.width; val sh = sub.layoutBounds.height
+            sub.relocate((w - sw) / 2, h * 0.93 - sh)
+        }
         if (displayW <= 0 || displayH <= 0 || w <= 0 || h <= 0) return
         val aspect = zoom.aspect ?: (displayW / displayH)
         val (iw, ih) = when (zoom) {
@@ -257,5 +291,6 @@ class VideoView : Region() {
         image.fitWidth = iw
         image.fitHeight = ih
         image.relocate((w - iw) / 2, (h - ih) / 2)
+        mediaView?.let { it.fitWidth = iw; it.fitHeight = ih; it.relocate((w - iw) / 2, (h - ih) / 2) }
     }
 }

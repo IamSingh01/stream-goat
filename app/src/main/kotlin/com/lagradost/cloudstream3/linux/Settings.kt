@@ -143,6 +143,14 @@ object Settings {
         set(v) = put("subtitle_background", v)
 
     /** Built-in player zoom mode, a [com.lagradost.cloudstream3.linux.ui.Zoom] name. */
+    /**
+     * Which player plays a source: "AUTO" (the Stream Goat player for streams from extensions and Stremio, VLC for
+     * Live TV, torrents and files), "STREAM" or "VLC". The player menu can switch while watching.
+     */
+    var playerEngine: String
+        get() = string("player_engine", "AUTO")
+        set(v) = put("player_engine", v)
+
     var playerZoom: String
         get() = string("player_zoom", "FIT")
         set(v) = put("player_zoom", v)

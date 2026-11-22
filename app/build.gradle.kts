@@ -33,7 +33,8 @@ dependencies {
         arm -> "linux-aarch64"
         else -> "linux"
     }
-    for (module in listOf("base", "graphics", "controls")) {
+    // media: the Stream Goat player (JavaFX's own HLS player, like ExoPlayer on Android).
+    for (module in listOf("base", "graphics", "controls", "media")) {
         implementation("org.openjfx:javafx-$module:21.0.8:$fxPlatform")
     }
     // Many streaming sites serve WebP posters, which JavaFX cannot decode itself.

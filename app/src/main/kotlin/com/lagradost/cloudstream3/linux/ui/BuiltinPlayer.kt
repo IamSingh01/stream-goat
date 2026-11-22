@@ -82,7 +82,14 @@ class BuiltinPlayer(
     private val next = all.getOrNull(all.indexOfFirst { it.data == playable.data } + 1)?.takeIf { it.dub == playable.dub }
     private val title = Playback.title(response, playable, all.size)
     private val video = VideoView()
-    private val player: EmbeddedMediaPlayer = Vlc.factory!!.mediaPlayers().newEmbeddedMediaPlayer()
+    private val events = Events()
+    /** The player playing now: the Stream Goat player (streams) or VLC (Live TV, files, torrents…), see [kindFor]. */
+    private var engine: PlayerEngine = makeEngine(kindFor(current))
+    /** Players already tried on each source: one that fails is tried on the other before the next source. */
+    private val enginesTried = mutableMapOf<String, MutableSet<EngineKind>>()
+    /** The player picked in the player menu for this playback (null: Settings). */
+    private var pinnedEngine: EngineKind? = null
+    private var forcedEngine: EngineKind? = null
 
     private var position = 0L
     private var duration = 0L
@@ -180,13 +187,21 @@ class BuiltinPlayer(
         // A copy of the master with only this quality (and its audio), saved as a file VLC opens; addresses that
         // need headers go through the local proxy.
         val headers = link.getAllHeaders()
+        sourceChip.text = "${link.name} · ${v.label}"
+        if (engine.kind == EngineKind.STREAM) {
+            // The Stream Goat player reads HLS only from a web address: the one-quality playlist is served by the proxy.
+            val all = headers.toMutableMap().apply { if (keys.none { it.equals("user-agent", true) }) put("User-Agent", USER_AGENT) }
+            val text = com.lagradost.cloudstream3.linux.HlsVariants.single(m, v) { u -> u }
+            val data = "data:application/vnd.apple.mpegurl;base64," + java.util.Base64.getEncoder().encodeToString(text.toByteArray())
+            val url = StreamProxy.wrapData(data, all) ?: return onError()
+            if (!engine.open(url, emptyList(), at.takeIf { it > 1000 })) onError()
+            return
+        }
         val needsProxy = headers.keys.any { !it.equals("referer", true) && !it.equals("user-agent", true) }
         val text = com.lagradost.cloudstream3.linux.HlsVariants.single(m, v) { u -> if (needsProxy) com.lagradost.cloudstream3.linux.StreamProxy.wrap(u, headers) else u }
         val file = java.io.File.createTempFile("quality-", ".m3u8").apply { deleteOnExit(); writeText(text) }
-        val opts = mrl(link).second.toMutableList()
-        if (at > 1000) opts += ":start-time=${at / 1000.0}"
-        sourceChip.text = "${link.name} · ${v.label}"
-        if (!player.media().play(file.toURI().toString(), *opts.toTypedArray())) onError()
+        val opts = mrl(link).second
+        if (!engine.open(file.toURI().toString(), opts, at.takeIf { it > 1000 })) onError()
     }
     private val hideTimer = PauseTransition(Duration.seconds(2.8)).apply { setOnFinished { hideControls() } }
     private var controlsVisible = true
@@ -203,7 +218,6 @@ class BuiltinPlayer(
     init {
         styleClass += "builtin-player"
         isFocusTraversable = true
-        player.videoSurface().set(video.surface)
         video.zoom = runCatching { Zoom.valueOf(Settings.playerZoom) }.getOrDefault(Zoom.FIT)
 
         top = hbox(14.0,
@@ -256,7 +270,6 @@ class BuiltinPlayer(
         video.setOnScroll { e: ScrollEvent -> setVolume(volume.value.toInt() + if (e.deltaY > 0) 5 else -5) }
         menu.onClosed = { scheduleHide() }
 
-        player.events().addMediaPlayerEventListener(Events())
         sources.onUpdate { Platform.runLater { onSourcesChanged() } }
     }
 
@@ -301,14 +314,22 @@ class BuiltinPlayer(
         enhancing = !com.lagradost.cloudstream3.linux.Os.isMac && (enhanceOverride ?: Picture.enhance(response, link))
         video.upscale = enhancing
         video.hdrFix = hdrOverride ?: Picture.hdrFix(link)
-        // Seeking with :start-time works for files and HLS alike, before the first frame.
-        startAt?.takeIf { it > 1000 }?.let { opts += ":start-time=${it / 1000.0}" }
         addedSubtitles.clear()
         slaveNames.clear()
         slaveFiles.clear()
         audioPicked = false
         subtitlesFor = null
-        if (!player.media().play(url, *opts.toTypedArray())) {
+        // The player for this source (Settings, the player menu, or the other one after a failure).
+        val kind = kindFor(link)
+        if (engine.kind != kind) {
+            val old = engine
+            engine = makeEngine(kind)
+            releaseEngine(old)
+        }
+        enginesTried.getOrPut(link.url) { mutableSetOf() } += engine.kind
+        val target = if (engine.kind == EngineKind.STREAM) streamUrl(link) else url
+        com.lagradost.cloudstream3.linux.Glitch.step("Playing ${link.name} with ${engine.kind.label}")
+        if (!engine.open(target, opts, startAt)) {
             onError()
         }
     }
@@ -363,11 +384,7 @@ class BuiltinPlayer(
         Nav.window.exitPlayer(this)
         Playback.active = null
         // stop() waits for VLC's threads; never block the UI on it.
-        Thread({
-            runCatching { player.controls().stop() }
-            runCatching { player.release() }
-            Vlc.playbackEnded()
-        }, "vlc-release").start()
+        releaseEngine(engine)
         val then = leaving
         when {
             then != null -> then()
@@ -392,8 +409,8 @@ class BuiltinPlayer(
 
     // ---------- VLC events (arrive on VLC's threads) ----------
 
-    private inner class Events : MediaPlayerEventAdapter() {
-        override fun playing(mediaPlayer: MediaPlayer) = fx {
+    private inner class Events : EngineEvents {
+        override fun playing() = fx {
             com.lagradost.cloudstream3.linux.KeepAwake.on()
             // Next time (Continue Watching, Resume) this title starts with the same source.
             if (api !is com.lagradost.cloudstream3.linux.LiveApi) com.lagradost.cloudstream3.linux.LastSource.remember(api.name, response.url, current)
@@ -408,7 +425,7 @@ class BuiltinPlayer(
             trakr?.playing(percent())
         }
 
-        override fun paused(mediaPlayer: MediaPlayer) = fx {
+        override fun paused() = fx {
             com.lagradost.cloudstream3.linux.KeepAwake.off()
             playing = false
             trakr?.paused(percent())
@@ -416,11 +433,13 @@ class BuiltinPlayer(
             showControls()
         }
 
-        override fun buffering(mediaPlayer: MediaPlayer, newCache: Float) = fx {
+        override fun buffering(cache: Float) = fx {
+            val newCache = cache
             spinner.isVisible = newCache < 100f && (playing || position == 0L)
         }
 
-        override fun timeChanged(mediaPlayer: MediaPlayer, newTime: Long) = fx {
+        override fun timeChanged(ms: Long) = fx {
+            val newTime = ms
             position = newTime
             if (!seek.dragging) seek.set(newTime, duration)
             timeLabel.text = format(newTime)
@@ -431,28 +450,29 @@ class BuiltinPlayer(
             updateCountdown(newTime)
         }
 
-        override fun lengthChanged(mediaPlayer: MediaPlayer, newLength: Long) = fx {
+        override fun lengthChanged(ms: Long) = fx {
+            val newLength = ms
             duration = newLength
             durationLabel.text = format(newLength)
             loadSegments()
         }
 
-        override fun seekableChanged(mediaPlayer: MediaPlayer, newSeekable: Int) = fx {
-            if (newSeekable == 1) pendingSeek?.let { pendingSeek = null; player.controls().setTime(it) }
+        override fun seekableChanged(seekable: Boolean) = fx {
+            if (seekable) pendingSeek?.let { pendingSeek = null; engine.setTime(it) }
         }
 
-        override fun elementaryStreamAdded(mediaPlayer: MediaPlayer, type: uk.co.caprica.vlcj.media.TrackType, id: Int) = fx {
+        override fun streamAdded(audio: Boolean) = fx {
             if (subtitlesFor != current.url) { subtitlesFor = current.url; addExtensionSubtitles() }
-            if (type == uk.co.caprica.vlcj.media.TrackType.AUDIO) pickAudioLanguage()
+            if (audio) pickAudioLanguage()
         }
 
-        override fun finished(mediaPlayer: MediaPlayer) = fx {
+        override fun finished() = fx {
             com.lagradost.cloudstream3.linux.KeepAwake.off()
             // VLC also says "finished" when a source fails to open or drops mid-way: only a real end
             // (close to the length) ends the episode; anything else is a failed source.
             // A late event from the source that was just replaced: the player is already opening the new one.
-            if (player.status().state() != uk.co.caprica.vlcj.player.base.State.ENDED && System.currentTimeMillis() - openedAt < 5000) return@fx
-            val t = player.status().time().takeIf { it > 0 } ?: position
+            if (!engine.ended() && System.currentTimeMillis() - openedAt < 5000) return@fx
+            val t = engine.time().takeIf { it > 0 } ?: position
             // Some hosts send a short "error" clip instead of failing; a real episode is longer than 3 minutes.
             if (duration >= 180_000 && t >= duration - maxOf(20_000L, duration / 20)) {
                 position = duration
@@ -460,13 +480,77 @@ class BuiltinPlayer(
             } else onError()
         }
 
-        override fun error(mediaPlayer: MediaPlayer) = fx { com.lagradost.cloudstream3.linux.KeepAwake.off(); onError() }
+        override fun error() = fx { com.lagradost.cloudstream3.linux.KeepAwake.off(); onError() }
     }
 
     private fun fx(block: () -> Unit) = Platform.runLater { if (!finished) block() }
 
+    // ---------- players ----------
+
+    private fun makeEngine(kind: EngineKind): PlayerEngine =
+        if (kind == EngineKind.VLC && Vlc.factory != null) VlcEngine(video, events) else StreamEngine(video, events)
+
+    /** VLC's stop() waits for its threads: never on the UI thread. */
+    private fun releaseEngine(old: PlayerEngine) {
+        if (old.kind == EngineKind.VLC) Thread({
+            runCatching { old.stop() }
+            runCatching { old.release() }
+            Vlc.playbackEnded()
+        }, "vlc-release").start()
+        else runCatching { old.release() }
+    }
+
+    /** A stream the Stream Goat player can read: HLS (an .m3u8 address, an HLS link, or a playlist given inline). */
+    private fun isHls(link: ExtractorLink): Boolean {
+        val url = link.url.lowercase()
+        return link.type == com.lagradost.cloudstream3.utils.ExtractorLinkType.M3U8 || ".m3u8" in url ||
+            (url.startsWith("data:") && "mpegurl" in url.substringBefore(','))
+    }
+
+    /** Which player plays [link]: the menu's choice, else Settings; Auto = the Stream Goat player for HLS from extensions. */
+    private fun kindFor(link: ExtractorLink): EngineKind {
+        forcedEngine?.let { return it }
+        pinnedEngine?.let { return it }
+        return when (com.lagradost.cloudstream3.linux.Settings.playerEngine) {
+            "STREAM" -> EngineKind.STREAM
+            "VLC" -> EngineKind.VLC
+            else -> if (isHls(link) && api !is com.lagradost.cloudstream3.linux.LiveApi && !link.url.startsWith("file:")) EngineKind.STREAM else EngineKind.VLC
+        }.let { if (it == EngineKind.VLC && Vlc.factory == null) EngineKind.STREAM else it }
+    }
+
+    /** The Stream Goat player can't send headers: it always plays through the local proxy, as an .m3u8 address. */
+    private fun streamUrl(link: ExtractorLink): String {
+        val url = ((link as? ExtractorLinkPlayList)?.playlist?.firstOrNull()?.url ?: link.url).removeSuffix(com.lagradost.cloudstream3.linux.LiveApi.EXPIRED_MARK)
+        if (url.startsWith("file:")) return url
+        val headers = link.getAllHeaders().toMutableMap()
+        if (headers.keys.none { it.equals("user-agent", true) }) headers["User-Agent"] = USER_AGENT
+        val wrapped = StreamProxy.wrap(url, headers, link.name == com.lagradost.cloudstream3.linux.LiveApi.EXPIRED)
+        return if (isHls(link)) wrapped.substringBeforeLast('/') + "/playlist.m3u8" else wrapped
+    }
+
+    /** The player menu's choice: plays the current source again on [kind], where it was. */
+    private fun useEngine(kind: EngineKind?) {
+        pinnedEngine = kind
+        forcedEngine = null
+        enginesTried.remove(current.url)
+        menu.close()
+        flash("Playing with ${kindFor(current).label}")
+        open(current, startAt = position.takeIf { it > 1000 })
+    }
+
     /** A source that fails is skipped automatically, keeping the position. */
     private fun onError() {
+        // First the same source on the other player (the Stream Goat player can't read everything VLC can, and the
+        // other way round), then the next source.
+        val other = if (engine.kind == EngineKind.STREAM) EngineKind.VLC else EngineKind.STREAM
+        val tried = enginesTried[current.url].orEmpty()
+        if (other !in tried && (other == EngineKind.STREAM && isHls(current) || other == EngineKind.VLC && Vlc.factory != null)) {
+            flash("${engine.kind.label} couldn't play it — trying ${other.label}")
+            forcedEngine = other
+            open(current, startAt = position.takeIf { it > 1000 })
+            return
+        }
+        forcedEngine = null
         failed += current.url
         val alternative = sources.ranked().firstOrNull { it.url !in failed }
         when {
@@ -524,6 +608,7 @@ class BuiltinPlayer(
     }
 
     private fun switchTo(link: ExtractorLink) {
+        forcedEngine = null
         val at = position.takeIf { it > 1000 }
         flash("Source: ${link.name}")
         open(link, startAt = at)
@@ -532,7 +617,7 @@ class BuiltinPlayer(
     // ---------- playback controls ----------
 
     private fun togglePause() {
-        if (player.status().isPlaying) player.controls().pause() else player.controls().play()
+        if (engine.isPlaying) engine.pause() else engine.play()
     }
 
     private fun skip(ms: Long) {
@@ -541,8 +626,8 @@ class BuiltinPlayer(
     }
 
     internal fun seekTo(ms: Long) {
-        if (!player.status().isSeekable) { pendingSeek = ms; return }
-        player.controls().setTime(ms)
+        if (!engine.isSeekable) { pendingSeek = ms; return }
+        engine.setTime(ms)
         position = ms
         seek.set(ms, duration)
         timeLabel.text = format(ms)
@@ -552,7 +637,7 @@ class BuiltinPlayer(
     private fun setVolume(v: Int, show: Boolean = true) {
         val clamped = v.coerceIn(0, 200)
         if (volume.value.toInt() != clamped) volume.value = clamped.toDouble()
-        player.audio().setVolume(clamped)
+        engine.setVolume(clamped)
         Settings.playerVolume = clamped
         muteButton.graphic = icon(if (clamped == 0 || muted) Icons.VOLUME_OFF else Icons.VOLUME_UP, 22.0)
         if (show) flash("Volume $clamped%")
@@ -560,13 +645,13 @@ class BuiltinPlayer(
 
     private fun toggleMute() {
         muted = !muted
-        player.audio().setMute(muted)
+        engine.setMute(muted)
         muteButton.graphic = icon(if (muted) Icons.VOLUME_OFF else Icons.VOLUME_UP, 22.0)
         flash(if (muted) "Muted" else "Sound on")
     }
 
     private fun setRate(rate: Float) {
-        player.controls().setRate(rate)
+        engine.setRate(rate)
         flash("Speed ${rate}×")
     }
 
@@ -658,7 +743,7 @@ class BuiltinPlayer(
     // ---------- menus ----------
 
     private fun showSpeed() {
-        val rate = player.status().rate()
+        val rate = engine.rate()
         menu.open("speed", "Speed", listOf(0.25f, 0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 1.75f, 2.0f).map { r ->
             PlayerMenu.Item(if (r == 1.0f) "Normal" else "$r×", active = abs(rate - r) < 0.01f) { setRate(r); menu.close() }
         })
@@ -721,14 +806,14 @@ class BuiltinPlayer(
 
     private fun applyEqualizer(name: String) {
         val eq = name.takeIf { it.isNotBlank() }?.let { runCatching { Vlc.factory?.equalizer()?.newEqualizer(it) }.getOrNull() }
-        player.audio().setEqualizer(eq)
+        engine.setEqualizer(eq)
     }
 
     /** Selects the first audio track in a preferred language (Settings → Playback). */
     private fun pickAudioLanguage() {
         val wanted = Settings.audioLanguage
         if (audioPicked || wanted.isBlank()) return
-        val tracks = player.audio().trackDescriptions().filter { it.id() >= 0 }
+        val tracks = engine.audioTracks().filter { it.id() >= 0 }
         if (tracks.size < 2) return
         val match = tracks.firstOrNull { t ->
             val d = t.description().lowercase()
@@ -738,8 +823,8 @@ class BuiltinPlayer(
             }
         } ?: return
         audioPicked = true
-        if (match.id() != player.audio().track()) {
-            player.audio().setTrack(match.id())
+        if (match.id() != engine.audioTrack()) {
+            engine.setAudioTrack(match.id())
             flash("Audio: ${cleanTrack(match.description())}")
         }
     }
@@ -752,7 +837,7 @@ class BuiltinPlayer(
         val fmt = java.time.format.DateTimeFormatter.ofPattern("HH:mm")
         val zone = java.time.ZoneId.systemDefault()
         val time = java.time.Instant.ofEpochMilli(now).atZone(zone).format(fmt)
-        val rate = player.status().rate().takeIf { it > 0 } ?: 1f
+        val rate = engine.rate().takeIf { it > 0 } ?: 1f
         val ends = if (duration > 0) java.time.Instant.ofEpochMilli(now + ((duration - position) / rate).toLong()).atZone(zone).format(fmt) else null
         clock.text = if (ends != null) "$time · ends $ends" else time
     }
@@ -763,7 +848,7 @@ class BuiltinPlayer(
         val name = (response.name + if (all.size > 1) " ${playable.label}" else "").replace(Regex("[^\\p{L}\\p{N} ._-]"), "").trim()
         val file = java.io.File(dir, "$name ${format(position).replace(':', '-')}.png")
         Thread({
-            val ok = runCatching { player.snapshots().save(file) }.getOrDefault(false)
+            val ok = engine.snapshot(file)
             Platform.runLater { flash(if (ok) "Screenshot saved to Pictures/Stream Goat" else "Couldn't take a screenshot") }
         }, "vlc-snapshot").start()
     }
@@ -771,27 +856,27 @@ class BuiltinPlayer(
     private fun cycleZoom() = setZoom(Zoom.entries[(video.zoom.ordinal + 1) % Zoom.entries.size])
 
     private fun showAudio() {
-        val tracks = player.audio().trackDescriptions().filter { it.id() >= 0 }
-        val selected = player.audio().track()
-        val delay = player.audio().delay() / 1000
+        val tracks = engine.audioTracks().filter { it.id() >= 0 }
+        val selected = engine.audioTrack()
+        val delay = engine.audioDelay() / 1000
         val eq = Settings.playerEqualizer.ifBlank { "Off" }
         val items = tracks.map { t ->
-            PlayerMenu.Item(cleanTrack(t.description()), active = t.id() == selected) { player.audio().setTrack(t.id()); flash("Audio: ${cleanTrack(t.description())}"); menu.close() }
+            PlayerMenu.Item(cleanTrack(t.description()), active = t.id() == selected) { engine.setAudioTrack(t.id()); flash("Audio: ${cleanTrack(t.description())}"); menu.close() }
         }.ifEmpty { listOf(PlayerMenu.Item("No audio tracks yet", enabled = false) {}) } + listOf(
             PlayerMenu.Item("Equalizer: $eq", icon = Icons.TUNE, keepOpen = true) { showEqualizer() },
             PlayerMenu.Item("Audio delay: $delay ms", enabled = false) {},
-            PlayerMenu.Item("Delay −50 ms", keepOpen = true) { player.audio().setDelay(player.audio().delay() - 50_000); showAudio() },
-            PlayerMenu.Item("Delay +50 ms", keepOpen = true) { player.audio().setDelay(player.audio().delay() + 50_000); showAudio() },
+            PlayerMenu.Item("Delay −50 ms", keepOpen = true) { engine.setAudioDelay(engine.audioDelay() - 50_000); showAudio() },
+            PlayerMenu.Item("Delay +50 ms", keepOpen = true) { engine.setAudioDelay(engine.audioDelay() + 50_000); showAudio() },
         )
         menu.open("audio", "Audio language", items)
     }
 
     private fun showSubtitles() {
-        val tracks = player.subpictures().trackDescriptions()
-        val selected = player.subpictures().track()
-        val delay = player.subpictures().delay() / 1000
+        val tracks = engine.subtitleTracks()
+        val selected = engine.subtitleTrack()
+        val delay = engine.subtitleDelay() / 1000
         val items = mutableListOf<PlayerMenu.Item>()
-        items += PlayerMenu.Item("Off", active = selected < 0) { player.subpictures().setTrack(-1); flash("Subtitles off"); menu.close() }
+        items += PlayerMenu.Item("Off", active = selected < 0) { engine.setSubtitleTrack(-1); flash("Subtitles off"); menu.close() }
         val real = tracks.filter { it.id() >= 0 }
         // Added files come after the stream's own tracks, in the order they were added.
         val firstAdded = real.size - slaveNames.size
@@ -799,7 +884,7 @@ class BuiltinPlayer(
             val name = slaveNames.getOrNull(i - firstAdded)?.takeIf { i >= firstAdded && t.description().startsWith("Track") }
                 ?: cleanTrack(t.description())
             items += PlayerMenu.Item(name, active = t.id() == selected) {
-                player.subpictures().setTrack(t.id()); flash("Subtitles: $name"); menu.close()
+                engine.setSubtitleTrack(t.id()); flash("Subtitles: $name"); menu.close()
             }
         }
         items += PlayerMenu.Item("Search online (OpenSubtitles)…", hint = "free, no account", icon = Icons.CLOUD_DOWNLOAD, keepOpen = true) { showOnline() }
@@ -814,14 +899,14 @@ class BuiltinPlayer(
     private fun addSubtitleFile(file: File, name: String, select: Boolean) {
         slaveNames += name
         slaveFiles += file
-        player.media().addSlave(MediaSlaveType.SUBTITLE, file.toPath().toUri().toString(), select)
+        engine.addSubtitle(file, select)
     }
 
     /** The subtitle file to translate: the added track that's showing, else the first added one. */
     private fun translateSource(): Pair<File, String>? {
-        val real = player.subpictures().trackDescriptions().filter { it.id() >= 0 }
+        val real = engine.subtitleTracks().filter { it.id() >= 0 }
         val firstAdded = real.size - slaveNames.size
-        val i = real.indexOfFirst { it.id() == player.subpictures().track() } - firstAdded
+        val i = real.indexOfFirst { it.id() == engine.subtitleTrack() } - firstAdded
         val pick = if (i in slaveFiles.indices) i else slaveFiles.indices.firstOrNull { !slaveNames[it].contains("→") } ?: slaveFiles.indices.firstOrNull()
         return pick?.let { slaveFiles[it] to slaveNames[it] }
     }
@@ -862,8 +947,8 @@ class BuiltinPlayer(
     }
 
     private fun subDelay(ms: Long) {
-        player.subpictures().setDelay(player.subpictures().delay() + ms * 1000)
-        flash("Subtitle delay ${player.subpictures().delay() / 1000} ms")
+        engine.setSubtitleDelay(engine.subtitleDelay() + ms * 1000)
+        flash("Subtitle delay ${engine.subtitleDelay() / 1000} ms")
     }
 
     /** OpenSubtitles results for this title/episode, preferred language first. */
@@ -938,7 +1023,7 @@ class BuiltinPlayer(
             for (sub in list) {
                 val file = runCatching { downloadSubtitle(sub) }.getOrNull() ?: continue
                 if (finished) return@launch
-                val select = wanted.isNotBlank() && player.subpictures().track() < 0 && OnlineSubtitles.matches(sub.lang, wanted)
+                val select = wanted.isNotBlank() && engine.subtitleTrack() < 0 && OnlineSubtitles.matches(sub.lang, wanted)
                 addSubtitleFile(file, sub.lang, select)
             }
         }
@@ -981,6 +1066,11 @@ class BuiltinPlayer(
             }
         }.toMutableList()
         if (!sources.finished) items += PlayerMenu.Item("Still searching for more sources…", enabled = false) {}
+        // Which player plays it: the Stream Goat player (like ExoPlayer: streams) or VLC (everything else).
+        EngineKind.entries.forEach { kind ->
+            items += PlayerMenu.Item("Play with ${kind.label}", hint = if (kind == EngineKind.STREAM) "best for extension streams" else "plays almost anything",
+                active = engine.kind == kind, enabled = kind != EngineKind.VLC || Vlc.factory != null) { useEngine(kind) }
+        }
         menu.open("sources", "Sources (${links.size})", items)
     }
 
@@ -1007,8 +1097,8 @@ class BuiltinPlayer(
             KeyCode.N -> playNext()
             KeyCode.G -> subDelay(-100)
             KeyCode.H -> subDelay(100)
-            KeyCode.OPEN_BRACKET -> setRate((player.status().rate() - 0.25f).coerceAtLeast(0.25f))
-            KeyCode.CLOSE_BRACKET -> setRate((player.status().rate() + 0.25f).coerceAtMost(2.0f))
+            KeyCode.OPEN_BRACKET -> setRate((engine.rate() - 0.25f).coerceAtLeast(0.25f))
+            KeyCode.CLOSE_BRACKET -> setRate((engine.rate() + 0.25f).coerceAtMost(2.0f))
             KeyCode.HOME -> seekTo(0)
             in listOf(KeyCode.DIGIT0, KeyCode.DIGIT1, KeyCode.DIGIT2, KeyCode.DIGIT3, KeyCode.DIGIT4, KeyCode.DIGIT5,
                 KeyCode.DIGIT6, KeyCode.DIGIT7, KeyCode.DIGIT8, KeyCode.DIGIT9) ->
