@@ -118,6 +118,12 @@
     .hero { padding-top: 40px; }
     section { padding: 40px 0; }
   }
+  .stars { display: inline-flex; gap: 6px; margin: 6px 0 4px; }
+  .stars button { font-size: 44px; line-height: 1; background: none; border: 0; cursor: pointer; color: var(--line); padding: 2px 4px; transition: color .12s, transform .12s; }
+  .stars button.on { color: #ffc24b; }
+  .stars button:hover { transform: scale(1.12); }
+  .stars.done button { cursor: default; transform: none; }
+  .rate-msg { color: var(--muted); min-height: 1.4em; }
 </style>
 </head>
 <body>
@@ -299,6 +305,17 @@
   </div>
 </section>
 
+<section id="rate" hidden>
+  <div class="wrap" style="text-align:center">
+    <h2>Rate Stream Goat</h2>
+    <p class="sub">How do you like the app? One tap, no sign-in.</p>
+    <div class="stars" role="radiogroup" aria-label="Rating out of 5">
+      <button type="button" data-stars="1" aria-label="1 star">★</button><button type="button" data-stars="2" aria-label="2 stars">★</button><button type="button" data-stars="3" aria-label="3 stars">★</button><button type="button" data-stars="4" aria-label="4 stars">★</button><button type="button" data-stars="5" aria-label="5 stars">★</button>
+    </div>
+    <p class="rate-msg" aria-live="polite"></p>
+  </div>
+</section>
+
 <footer>
   <div class="wrap">
     <img src="logo.svg" alt=""><br>
@@ -329,6 +346,33 @@
     zoom.querySelector("img").src = img.src; zoom.querySelector("img").alt = img.alt; zoom.showModal();
   }));
   zoom.addEventListener("click", () => zoom.close());
+</script>
+<script src="rating-config.js"></script>
+<script>
+// Rate the app: 1 to 5 stars, sent to the counter (packaging/rating-worker); hidden until it's set up.
+(function () {
+  var url = window.STREAMGOAT_RATING_URL;
+  var section = document.getElementById("rate");
+  if (!url || !section) return;
+  section.hidden = false;
+  var box = section.querySelector(".stars"), msg = section.querySelector(".rate-msg");
+  var buttons = [].slice.call(box.querySelectorAll("button"));
+  function show(n) { buttons.forEach(function (b, i) { b.classList.toggle("on", i < n); }); }
+  var given = Number(localStorage.getItem("sg-rating") || 0);
+  if (given) { show(given); box.classList.add("done"); msg.textContent = "Thanks for rating Stream Goat " + given + " out of 5!"; return; }
+  buttons.forEach(function (b) {
+    var n = Number(b.dataset.stars);
+    b.addEventListener("mouseenter", function () { if (!box.classList.contains("done")) show(n); });
+    b.addEventListener("click", function () {
+      if (box.classList.contains("done")) return;
+      box.classList.add("done"); show(n); msg.textContent = "Sending…";
+      fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ stars: n }) })
+        .then(function (r) { if (!r.ok) throw r; localStorage.setItem("sg-rating", n); msg.textContent = "Thanks for rating Stream Goat " + n + " out of 5!"; })
+        .catch(function () { box.classList.remove("done"); show(0); msg.textContent = "Couldn't send it. Please try again later."; });
+    });
+  });
+  box.addEventListener("mouseleave", function () { if (!box.classList.contains("done")) show(0); });
+})();
 </script>
 </body>
 </html>

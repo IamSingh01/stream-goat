@@ -32,6 +32,7 @@ jobs:
           # Google sign-in for the web version (a "Web application" client; docs/google-drive-setup.md). A web
           # page's client id is public anyway; without it the web version says sign-in isn't set up.
           GOOGLE_WEB_CLIENT_ID: ${{ secrets.GOOGLE_WEB_CLIENT_ID }}
+          RATING_URL: ${{ vars.RATING_URL }}
         run: |
           mkdir -p _site/screenshots
           cp -r site/. _site/
@@ -40,6 +41,9 @@ jobs:
             printf 'window.STREAMGOAT_CONFIG = { googleClientId: "%s" };\n' "$GOOGLE_WEB_CLIENT_ID" > _site/app/config.js
           fi
           cp packaging/linux/cloudstream-linux.svg _site/logo.svg
+          # The "Rate Stream Goat" stars: the rating counter's address (repository variable RATING_URL, see
+          # docs/rating-setup.md); empty keeps them hidden.
+          printf 'window.STREAMGOAT_RATING_URL = "%s";\n' "$RATING_URL" > _site/rating-config.js
           cp docs/screenshots/*.jpg _site/screenshots/
           mkdir -p _site/releases
           cp docs/releases/*.md _site/releases/
