@@ -74,14 +74,14 @@ Intel Macs aren't supported yet; the [web version](https://sherazi5110.github.io
 
 **Option A: in the terminal (recommended)**
 ```bash
-wget -O /tmp/cloudstream-linux.deb https://github.com/sherazi5110/stream-goat/releases/download/V8.0.1/streamgoat-linux_8.0.1_amd64.deb
+wget -O /tmp/cloudstream-linux.deb https://github.com/sherazi5110/stream-goat/releases/download/V10.0.1/streamgoat-linux_10.0.1_amd64.deb
 sudo apt install /tmp/cloudstream-linux.deb
 ```
 
 **Option B: with a file you downloaded in the browser**
 ```bash
 cd ~/Downloads
-sudo apt install ./streamgoat-linux_8.0.1_amd64.deb
+sudo apt install ./streamgoat-linux_10.0.1_amd64.deb
 ```
 Keep the `./`, which tells apt it's a file, not a package name.
 apt installs VLC's libraries automatically.
@@ -162,7 +162,7 @@ sudo zypper install vlc gtk3 libXtst6 Mesa-libGL1 binutils
 ### 2. Unpack the app
 ```bash
 cd /tmp
-wget -O cloudstream-linux.deb https://github.com/sherazi5110/stream-goat/releases/download/V8.0.1/streamgoat-linux_8.0.1_amd64.deb
+wget -O cloudstream-linux.deb https://github.com/sherazi5110/stream-goat/releases/download/V10.0.1/streamgoat-linux_10.0.1_amd64.deb
 mkdir -p cs-unpack && cd cs-unpack
 ar x ../cloudstream-linux.deb
 tar -xJf data.tar.xz
@@ -229,7 +229,7 @@ To update, unpack the new `.tar` over the old folder. To remove, delete the fold
 | Problem | Fix |
 |---|---|
 | "The built-in player needs VLC's libraries" | Install VLC (see above), then restart the app. |
-| `E: Unsupported file … given on commandline` | You typed the file name without `./` in front; use `sudo apt install ./streamgoat-linux_8.0.1_amd64.deb`. |
+| `E: Unsupported file … given on commandline` | You typed the file name without `./` in front; use `sudo apt install ./streamgoat-linux_10.0.1_amd64.deb`. |
 | `ar: command not found` | Install `binutils` (included in the step 1 commands). |
 | A site doesn't load | Settings → Network & DNS → pick a DNS-over-HTTPS provider. |
 | An extension misbehaves | Settings → Developer & logs → **Test** next to it, then copy the log into a bug report. |
@@ -275,10 +275,11 @@ Needs Android 6.0 or newer.
    - **Fire TV:** Settings → My Fire TV → Developer options → Install unknown apps → Downloader → On.
      (If Developer options is missing: Settings → My Fire TV → About → click the device name 7 times.)
    - **Android TV / Google TV:** Settings → Apps → Security & restrictions → Unknown sources → Downloader → On.
-3. Open Downloader, type the code **`3045910`** (or the address **`sherazi5110.github.io/stream-goat/tv`**) in the box and press **Go**. It downloads the
+3. Open Downloader, type the code **`4564305`** (or the address **`sherazi5110.github.io/stream-goat/tv`**) in the box and press **Go**. It downloads the
    newest version for TVs (`armeabi-v7a`).
    - If the TV says *App not installed*, uninstall the old Stream Goat first (back up first: Settings → Updates and
-     backup), or type `sherazi5110.github.io/stream-goat/apk` instead (the universal file, for every device).
+     backup), or type the code **`2193283`** instead (the universal file, for every device; or the address
+     `sherazi5110.github.io/stream-goat/apk`). Both codes always get the newest version.
    - The full link works too: `https://github.com/sherazi5110/stream-goat/releases/latest/download/streamgoat-android-armeabi-v7a.apk`.
 4. Choose **Install**, then **Open**. Downloader offers to delete the downloaded file: you can, it isn't needed any more.
 
