@@ -9,6 +9,11 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -134,16 +139,57 @@ internal val RevealScroll = object : androidx.compose.foundation.gestures.BringI
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun TvRowScroll(content: @Composable () -> Unit) {
+fun TvRowScroll(content: @Composable (androidx.compose.foundation.lazy.LazyListState) -> Unit) {
+    val state = androidx.compose.foundation.lazy.rememberLazyListState()
+    // A mouse (a TV's air mouse, a phone or tablet with a mouse): its wheel only scrolls the page up and down, so
+    // a row shows ‹ › buttons at its ends while the pointer is over it, to move it back and forward.
+    var hovered by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val rowWithArrows: @Composable () -> Unit = {
+        androidx.compose.foundation.layout.BoxWithConstraints(Modifier.pointerInput(Unit) {
+            awaitPointerEventScope {
+                while (true) {
+                    val e = awaitPointerEvent()
+                    if (e.changes.none { it.type == androidx.compose.ui.input.pointer.PointerType.Mouse }) continue
+                    hovered = when (e.type) {
+                        androidx.compose.ui.input.pointer.PointerEventType.Exit -> false
+                        else -> true
+                    }
+                }
+            }
+        }) {
+            content(state)
+            val step = with(androidx.compose.ui.platform.LocalDensity.current) { (maxWidth * 0.8f).toPx() }
+            @Composable
+            fun Arrow(forward: Boolean, align: Alignment) {
+                val can = if (forward) state.canScrollForward else state.canScrollBackward
+                if (hovered && can) androidx.compose.foundation.layout.Box(
+                    Modifier.align(align).padding(horizontal = 6.dp).size(52.dp)
+                        .background(Color.Black.copy(alpha = 0.62f), CircleShape)
+                        .border(1.dp, Color.White.copy(alpha = 0.25f), CircleShape)
+                        .clickable(interactionSource = null, indication = null) {
+                            scope.launch { state.animateScrollBy(if (forward) step else -step) }
+                        }
+                        .focusProperties { canFocus = false },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(if (forward) Icons.AutoMirrored.Filled.KeyboardArrowRight else Icons.AutoMirrored.Filled.KeyboardArrowLeft,
+                        if (forward) "Forward" else "Back", tint = Color.White, modifier = Modifier.size(34.dp))
+                }
+            }
+            Arrow(false, Alignment.CenterStart)
+            Arrow(true, Alignment.CenterEnd)
+        }
+    }
     if (isTv) androidx.compose.runtime.CompositionLocalProvider(androidx.compose.foundation.gestures.LocalBringIntoViewSpec provides RevealScroll) {
         // Right on the last card stays put (it used to jump to the profile button at the far side of the screen).
         androidx.compose.foundation.layout.Box(Modifier
             .focusProperties { onExit = { if (requestedFocusDirection == androidx.compose.ui.focus.FocusDirection.Right) cancelFocusChange() } }
             // Coming back to a row (Up/Down from the next row) returns to the card that was selected there, instead
             // of whichever card happens to be nearest on screen.
-            .focusRestorer()) { content() }
+            .focusRestorer()) { rowWithArrows() }
     }
-    else content()
+    else rowWithArrows()
 }
 
 /** A network image with the extension's headers (some sites refuse posters without a Referer). */

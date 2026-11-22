@@ -107,10 +107,12 @@ object Network {
             val request = chain.request()
             val host = request.url.host
             if (hosts.none { it in host } || ContentFilter.nsfwAllowed) return chain.proceed(request)
-            val info = request.header("x-client-info")?.takeIf { it.trimEnd().endsWith("}") } ?: return chain.proceed(request)
-            val family = if ("X-Family-Mode" in info) info.replace(familyOff, "\"X-Family-Mode\":\"1\"")
-                else info.trimEnd().removeSuffix("}") + ",\"X-Family-Mode\":\"1\"}"
-            return chain.proceed(request.newBuilder().header("x-client-info", family).build())
+            val info = request.header("x-client-info")?.takeIf { it.trimEnd().endsWith("}") }
+            val sent = if (info == null) request else request.newBuilder().header("x-client-info",
+                if ("X-Family-Mode" in info) info.replace(familyOff, "\"X-Family-Mode\":\"1\"") else info.trimEnd().removeSuffix("}") + ",\"X-Family-Mode\":\"1\"}").build()
+            // MovieBox's servers ignore family mode for some lists, so the titles are also checked here, with the
+            // rules Phisher's MovieBox extension uses on the same data (genre, title words, kids flag and rating).
+            return MovieBoxAdult.filter(chain.proceed(sent))
         }
     }
 

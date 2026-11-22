@@ -234,7 +234,7 @@ fun ContinueRow(entries: List<WatchEntry>, cardWidth: androidx.compose.ui.unit.D
     val edge = if (isWide) 40.dp else 16.dp
     Column(Modifier.padding(top = 12.dp)) {
         SectionTitle("Continue Watching", Modifier.padding(horizontal = edge))
-        TvRowScroll { LazyRow(
+        TvRowScroll { rowState -> LazyRow(state = rowState,
             contentPadding = PaddingValues(horizontal = edge, vertical = 10.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
@@ -282,7 +282,7 @@ fun CatalogRow(
             section.list.name, Modifier.padding(horizontal = edge),
             action = if (isTv) null else "View all",
         ) { viewAll() }
-        TvRowScroll { LazyRow(
+        TvRowScroll { rowState -> LazyRow(state = rowState,
             contentPadding = PaddingValues(horizontal = edge, vertical = 10.dp),
             horizontalArrangement = Arrangement.spacedBy(if (isWide) 14.dp else 10.dp),
         ) {

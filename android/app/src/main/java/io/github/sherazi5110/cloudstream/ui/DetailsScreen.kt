@@ -254,7 +254,7 @@ private fun Details(api: MainAPI, r: LoadResponse) {
                     item(key = "cast") {
                         Column(Modifier.padding(top = 24.dp)) {
                             SectionTitle("Cast", Modifier.padding(horizontal = edge))
-                            TvRowScroll { LazyRow(contentPadding = PaddingValues(horizontal = edge, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                            TvRowScroll { rowState -> LazyRow(state = rowState, contentPadding = PaddingValues(horizontal = edge, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                                 items(cast.take(30)) { (name, role, photo) ->
                                     Column(Modifier.width(104.dp).card(RoundedCornerShape(12.dp)) { Nav.search(name) }, horizontalAlignment = Alignment.CenterHorizontally) {
                                         NetImage(photo, Modifier.size(92.dp).clip(CircleShape))
@@ -293,7 +293,7 @@ private fun Details(api: MainAPI, r: LoadResponse) {
                     item(key = "similar") {
                         Column(Modifier.padding(top = 24.dp)) {
                             SectionTitle("More like this", Modifier.padding(horizontal = edge))
-                            TvRowScroll { LazyRow(contentPadding = PaddingValues(horizontal = edge, vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                            TvRowScroll { rowState -> LazyRow(state = rowState, contentPadding = PaddingValues(horizontal = edge, vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                                 items(similar) { s ->
                                     Column(Modifier.width(if (wide) 140.dp else 108.dp)) {
                                         Box(Modifier.fillMaxWidth().aspectRatio(2f / 3f).card { Nav.searchQuery = s.title; Nav.searchSubmitted = s.title; Nav.select(Tab.SEARCH) }) {
@@ -311,7 +311,7 @@ private fun Details(api: MainAPI, r: LoadResponse) {
                     item(key = "recs") {
                         Column(Modifier.padding(top = 24.dp)) {
                             SectionTitle("More like this", Modifier.padding(horizontal = edge))
-                            TvRowScroll { LazyRow(contentPadding = PaddingValues(horizontal = edge, vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                            TvRowScroll { rowState -> LazyRow(state = rowState, contentPadding = PaddingValues(horizontal = edge, vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                                 uniqueItems(recs, key = { it.url }) { item -> PosterCard(item, if (wide) 140.dp else 108.dp) { openTitle(item) } }
                             } }
                         }

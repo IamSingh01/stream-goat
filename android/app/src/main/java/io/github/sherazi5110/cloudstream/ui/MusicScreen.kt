@@ -423,8 +423,8 @@ private fun ShelfTitle(title: String, action: String? = null, onAction: (() -> U
 private fun Shelf(title: String, tracks: List<Music.Track>) {
     val w = if (isWide) 190.dp else 150.dp
     ShelfTitle(title, "Play all") { Music.play(tracks.first(), tracks) }
-    TvRowScroll {
-        LazyRow(contentPadding = PaddingValues(horizontal = PageSide), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+    TvRowScroll { rowState ->
+        LazyRow(state = rowState, contentPadding = PaddingValues(horizontal = PageSide), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             items(tracks, key = { title + it.url }) { t ->
                 Column(Modifier.width(w).card(RoundedCornerShape(8.dp), onLongClick = { MusicUi.menuPlaylist = null; MusicUi.menuFor = t }) { Music.play(t, tracks) }) {
                     Box {
