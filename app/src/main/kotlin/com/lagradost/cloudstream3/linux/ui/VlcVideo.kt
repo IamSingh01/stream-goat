@@ -243,6 +243,53 @@ class VideoView : Region() {
         return ((w * scale).roundToInt() and 1.inv()).coerceAtLeast(2) to ((h * scale).roundToInt() and 1.inv()).coerceAtLeast(2)
     }
 
+    // ---------- mpv draws here too (its software renderer, into a buffer of ours) ----------
+
+    class Target(val buffer: ByteBuffer, val width: Int, val height: Int)
+    @Volatile private var mpvTarget: Target? = null
+
+    /**
+     * The buffer mpv draws its next frame into (on mpv's render thread): the video's display size ([dispW]x[dispH],
+     * aspect ratio applied), no larger than the screen, the width a multiple of 16 for mpv's fast path. A new one
+     * when the size changes.
+     */
+    fun mpvBuffer(srcW: Int, srcH: Int, dispW: Int, dispH: Int): Target {
+        sourceW = srcW; sourceH = srcH
+        var (w, h) = fitToScreen(dispW, dispH)
+        w = (w and 15.inv()).coerceAtLeast(16); h = h.coerceAtLeast(2)
+        mpvTarget?.takeIf { it.width == w && it.height == h && pixelBuffer != null }?.let { return it }
+        val buffer = ByteBuffer.allocateDirect(w * h * 4 + 64).alignedSlice(64).limit(w * h * 4) as ByteBuffer
+        val target = Target(buffer.slice(), w, h)
+        val pb = PixelBuffer(w, h, target.buffer, PixelFormat.getByteBgraPreInstance())
+        closed = false
+        pixelBuffer = pb
+        mpvTarget = target
+        bufferW = w; bufferH = h
+        Platform.runLater {
+            displayW = w.toDouble(); displayH = h.toDouble()
+            image.image = WritableImage(pb)
+            requestLayout()
+        }
+        return target
+    }
+
+    /** mpv finished a frame in the buffer: show it (at most one repaint queued, as for VLC). */
+    fun mpvFrame() {
+        if (closed || !pending.compareAndSet(false, true)) return
+        val pb = pixelBuffer ?: return pending.set(false)
+        Platform.runLater {
+            pending.set(false)
+            if (!closed && pb === pixelBuffer) pb.updateBuffer { null }
+        }
+    }
+
+    /** A new player is about to draw: forget the last one's buffer. */
+    fun reset() {
+        mpvTarget = null
+        pixelBuffer = null
+        closed = false
+    }
+
     override fun layoutChildren() {
         val w = width
         val h = height

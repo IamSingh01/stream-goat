@@ -97,11 +97,29 @@ class PlaybackFeaturesTest {
 
     @Test
     fun `playlist rewriting resolves relative URIs and key attributes`() {
+        // AES-128 is decrypted by the proxy: the key line goes, the segments carry the key (a different address each).
         val text = "#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI=\"key.bin\"\n#EXTINF:4,\nseg 1.ts\n#EXTINF:4,\n/abs/seg2.ts\n"
         val out = StreamProxy.rewrite(text, "https://cdn.example/path/index.m3u8", token).lines()
-        assertTrue(out[1].startsWith("#EXT-X-KEY:METHOD=AES-128,URI=\"http://127.0.0.1:"))
-        assertTrue(out[3].startsWith("http://127.0.0.1:") && out[3].endsWith("/seg%201.ts"), out[3])
-        assertTrue(out[5].endsWith("/seg2.ts"))
+        assertTrue(out.none { it.startsWith("#EXT-X-KEY") }, out.toString())
+        assertTrue(out[2].startsWith("http://127.0.0.1:") && out[2].endsWith("/seg%201.ts"), out[2])
+        assertTrue(out[4].endsWith("/seg2.ts"))
+        assertTrue(StreamProxy.rewrite(text.replace("#EXT-X-KEY:METHOD=AES-128,URI=\"key.bin\"\n", ""), "https://cdn.example/path/index.m3u8", token).lines()[2] != out[2])
+        // Other methods (SAMPLE-AES) stay for the player, their key through the proxy.
+        val sample = StreamProxy.rewrite(text.replace("AES-128", "SAMPLE-AES"), "https://cdn.example/path/index.m3u8", token).lines()
+        assertTrue(sample[1].startsWith("#EXT-X-KEY:METHOD=SAMPLE-AES,URI=\"http://127.0.0.1:"))
+    }
+
+    @Test
+    fun `NetMirror's master playlist with brackets in subtitle addresses is rewritten whole`() {
+        // The real thing (shortened): subtitle renditions named hi.[CC].m3u8 made the whole playlist a 502.
+        val text = "#EXTM3U\n#EXT-X-VERSION:3\n" +
+            "#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID=\"subs\",NAME=\"Hindi [CC]\",LANGUAGE=\"hi.[CC]\",URI=\"https://subscdn.top/subs/82644524/hi.[CC].m3u8\"\n" +
+            "#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"aac\",LANGUAGE=\"hin\",NAME=\"2. Hindi\",DEFAULT=NO,URI=\"https://cdn.example/files/1/a/1/1.m3u8\"\n" +
+            "#EXT-X-STREAM-INF:BANDWIDTH=4000000,RESOLUTION=1920x1080,AUDIO=\"aac\",SUBTITLES=\"subs\"\nhttps://cdn.example/files/1/1080p/1080p.m3u8\n"
+        val out = StreamProxy.rewrite(text, "https://cdn.example/files/1/master.m3u8", token)
+        assertTrue(out.lines().filter { "URI=" in it }.all { "URI=\"http://127.0.0.1:" in it }, out)
+        assertTrue(out.lines().last { it.isNotBlank() }.startsWith("http://127.0.0.1:"), out)
+        assertEquals("https://subscdn.top/subs/82644524/hi.%5BCC%5D.m3u8", resolveLoose(java.net.URI("https://x/"), "https://subscdn.top/subs/82644524/hi.[CC].m3u8"))
     }
 
     @Test

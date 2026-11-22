@@ -1,5 +1,7 @@
 package io.github.sherazi5110.cloudstream.ui
 
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.SmartDisplay
@@ -199,19 +201,32 @@ private val pillColor: Color get() = Color(0xFF16161B).copy(alpha = 0.94f)
 private val pillEdge: Color get() = Color.White.copy(alpha = 0.10f)
 private val chosenColor: Color get() = Color.White.copy(alpha = 0.14f)
 
-/** Portrait: a floating pill: Home · Live TV · Search · My list | Settings. The chosen tab shows its name. */
+/**
+ * Portrait: a floating pill: Home · Live TV · Sports · Search · Music · YouTube · My list | Settings. The chosen tab
+ * shows its name where there's room. Settings always stays in view: with Sports, Music and YouTube added, the row was
+ * wider than a phone and Settings went off the right edge (issue #74); now narrow phones get compact tabs that scroll.
+ */
 @Composable
 private fun BottomBar() {
-    Box(Modifier.fillMaxWidth().navigationBarsPadding().padding(start = 12.dp, end = 12.dp, top = 6.dp, bottom = 10.dp), contentAlignment = Alignment.Center) {
+    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth().navigationBarsPadding().padding(start = 12.dp, end = 12.dp, top = 6.dp, bottom = 10.dp), contentAlignment = Alignment.Center) {
+        val tabs = visibleTabs(listOf(Tab.HOME, Tab.LIVE, Tab.SPORTS, Tab.SEARCH, Tab.MUSIC, Tab.YOUTUBE, Tab.LIBRARY))
+        // Room for every tab at full size with the chosen one's name (about 48 units each, plus ~75 for the name)?
+        val compact = maxWidth < (48 * (tabs.size + 1) + 75 + 40).dp
         Row(
             (if (Palette.isGlass) Modifier.glassPanel(RoundedCornerShape(50)) else Modifier.shadow(12.dp, RoundedCornerShape(50))
                 .background(pillColor, RoundedCornerShape(50)).border(1.dp, pillEdge, RoundedCornerShape(50))).padding(5.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(2.dp),
         ) {
-            visibleTabs(listOf(Tab.HOME, Tab.LIVE, Tab.SPORTS, Tab.SEARCH, Tab.MUSIC, Tab.YOUTUBE, Tab.LIBRARY)).forEach { tab -> PillItem(tab, tab.icon(), vertical = false) }
-            Box(Modifier.padding(horizontal = 6.dp).width(1.dp).height(22.dp).background(Color.White.copy(alpha = 0.18f)))
-            PillItem(Tab.MORE, Icons.Filled.Settings, vertical = false)
+            Row(
+                Modifier.weight(1f, fill = false).horizontalScroll(rememberScrollState()),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                tabs.forEach { tab -> PillItem(tab, tab.icon(), vertical = false, compact = compact) }
+            }
+            Box(Modifier.padding(horizontal = if (compact) 3.dp else 6.dp).width(1.dp).height(22.dp).background(Color.White.copy(alpha = 0.18f)))
+            PillItem(Tab.MORE, Icons.Filled.Settings, vertical = false, compact = compact)
         }
     }
 }
@@ -253,7 +268,7 @@ private fun Rail() {
 
 /** One tab in a pill bar: chosen = a lighter inner pill (with its name in the bottom bar). */
 @Composable
-private fun PillItem(tab: Tab, icon: ImageVector, vertical: Boolean, size: androidx.compose.ui.unit.Dp = 48.dp) {
+private fun PillItem(tab: Tab, icon: ImageVector, vertical: Boolean, size: androidx.compose.ui.unit.Dp = 48.dp, compact: Boolean = false) {
     val selected = (Nav.tab == tab || (tab == Tab.MORE && Nav.tab == Tab.EXTENSIONS && !vertical)) && (Nav.stack.isEmpty() || !vertical)
     val shape = RoundedCornerShape(50)
     val tint = if (selected) Color.White else Palette.muted
@@ -262,12 +277,12 @@ private fun PillItem(tab: Tab, icon: ImageVector, vertical: Boolean, size: andro
             .background(if (selected) chosenColor else Color.Transparent, shape)
             .then(if (selected && !vertical) Modifier.border(1.dp, Color.White.copy(alpha = 0.12f), shape) else Modifier)
             .animateContentSize()
-            .then(if (vertical) Modifier.size(size) else Modifier.height(44.dp).padding(horizontal = if (selected) 16.dp else 13.dp)),
+            .then(if (vertical) Modifier.size(size) else Modifier.height(44.dp).padding(horizontal = if (compact) 10.dp else if (selected) 16.dp else 13.dp)),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center,
     ) {
         Icon(icon, tab.label, tint = if (selected && vertical) Palette.accent else tint, modifier = Modifier.size(if (vertical) (size * 0.5f).coerceIn(20.dp, 24.dp) else 22.dp))
-        if (selected && !vertical) {
+        if (selected && !vertical && !compact) {
             Spacer(Modifier.width(8.dp))
             Text(tab.label, style = MaterialTheme.typography.labelLarge, color = tint, maxLines = 1)
         }

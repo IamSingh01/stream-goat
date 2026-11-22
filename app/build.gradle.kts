@@ -45,7 +45,8 @@ dependencies {
 
 application {
     applicationName = "cloudstream-linux"
-    mainClass.set("com.lagradost.cloudstream3.linux.MainKt")
+    // Boot starts MainKt, with an installed update patch when there is one (Boot.java).
+    mainClass.set("com.lagradost.cloudstream3.linux.Boot")
     applicationDefaultJvmArgs = listOf(
         // Plugin bytecode comes from dex2jar and may reference Android classes we only stub.
         "-XX:+UnlockDiagnosticVMOptions",
@@ -70,6 +71,8 @@ tasks.test {
     systemProperty("test.python", (findProperty("test.python") as String?) ?: "python3")
     // Windows: the VLC folder the app bundles (-PvlcDir=...), for the libVLC playback test.
     (findProperty("vlcDir") as String?)?.let { systemProperty("jna.library.path", it); systemProperty("cs.vlc.dir", it) }
+    // Windows/Mac: the libmpv folder the app bundles (-PmpvDir=...), for the mpv playback test.
+    (findProperty("mpvDir") as String?)?.let { systemProperty("cs.mpv.dir", it) }
     jvmArgs("-XX:+UnlockDiagnosticVMOptions", "-XX:-BytecodeVerificationRemote")
 }
 
@@ -111,7 +114,7 @@ val packageDeb by tasks.registering(Exec::class) {
         if (type == "deb") {
             addAll(listOf("--linux-shortcut", "--linux-menu-group", "AudioVideo;Video", "--linux-app-category", "video"))
             addAll(listOf("--linux-deb-maintainer", "cloudstream-linux@users.noreply.github.com"))
-            addAll(listOf("--linux-package-deps", "libvlc5, vlc-plugin-base"))
+            addAll(listOf("--linux-package-deps", "libvlc5, vlc-plugin-base, libmpv2 | libmpv1"))
         }
         application.applicationDefaultJvmArgs.forEach { addAll(listOf("--java-options", it)) }
     })
@@ -135,6 +138,8 @@ val packageWindows by tasks.registering(Exec::class) {
         lib.get().asFile.copyRecursively(inDir)
         // VLC for Windows (libvlc.dll, libvlccore.dll, plugins\) goes into <app>\app\vlc; see Os.bundledVlcDir.
         (findProperty("vlcDir") as String?)?.let { file(it).copyRecursively(inDir.resolve("vlc")) }
+        // libmpv (the main player, see ui/Mpv.kt) goes into <app>/mpv.
+        (findProperty("mpvDir") as String?)?.let { file(it).copyRecursively(inDir.resolve("mpv")) }
         if (type == "app-image") out.get().asFile.deleteRecursively()
     }
     commandLine(buildList {
@@ -182,6 +187,8 @@ val packageMac by tasks.registering(Exec::class) {
         lib.get().asFile.copyRecursively(inDir)
         // VLC's lib/ and plugins/ go into Stream Goat.app/Contents/app/vlc; see Os.bundledVlcDir.
         (findProperty("vlcDir") as String?)?.let { file(it).copyRecursively(inDir.resolve("vlc")) }
+        // libmpv (the main player, see ui/Mpv.kt) goes into <app>/mpv.
+        (findProperty("mpvDir") as String?)?.let { file(it).copyRecursively(inDir.resolve("mpv")) }
         if (type == "app-image") out.get().asFile.deleteRecursively()
     }
     commandLine(buildList {
@@ -224,4 +231,19 @@ val cloudConfig = tasks.register("cloudConfig") {
             .writeText("GOOGLE_CLIENT_ID=${id.get()}\nGOOGLE_CLIENT_SECRET=${secret.get()}\nWETRAKR_CLIENT_ID=${wetrakr.get()}\n")
     }
 }
-sourceSets.main { resources.srcDir(cloudConfig) }
+// Update patches (Boot.java, Updates): which build this is, and the certificate patches must be signed with
+// (the GitHub builds export it from the signing key: STREAMGOAT_UPDATE_CERT; without it patches are off).
+val updateConfig = tasks.register("updateConfig") {
+    val out = layout.buildDirectory.dir("generated/update")
+    val sha = providers.environmentVariable("GITHUB_SHA").orElse("dev")
+    val cert = providers.environmentVariable("STREAMGOAT_UPDATE_CERT").orElse("")
+    inputs.property("sha", sha)
+    inputs.property("cert", cert)
+    outputs.dir(out)
+    doLast {
+        val dir = out.get().asFile.apply { deleteRecursively(); mkdirs() }
+        dir.resolve("stream-goat-build.properties").writeText("build=${sha.get().take(12)}\n")
+        cert.get().takeIf { it.isNotBlank() }?.let(::file)?.takeIf { it.isFile }?.copyTo(dir.resolve("stream-goat-update.pem"))
+    }
+}
+sourceSets.main { resources.srcDir(cloudConfig); resources.srcDir(updateConfig) }

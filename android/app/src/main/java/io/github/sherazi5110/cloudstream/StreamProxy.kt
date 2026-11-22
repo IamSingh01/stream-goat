@@ -178,14 +178,32 @@ object StreamProxy {
     /** Points every URI in an HLS playlist (segments, variants, keys, maps) back at the proxy. */
     fun rewrite(playlist: String, baseUrl: String, headers: Map<String, String>, expiredOk: Boolean = false): String {
         val base = URI(baseUrl)
-        fun proxied(ref: String) = wrap(base.resolve(ref.trim().replace(" ", "%20")).toString(), headers, expiredOk)
-        return playlist.lineSequence().joinToString("\n") { line ->
+        fun proxied(ref: String) = resolveLoose(base, ref)?.let { wrap(it, headers, expiredOk) } ?: ref
+        return vodEnd(playlist.lineSequence().joinToString("\n") { line ->
             when {
                 line.isBlank() -> line
                 line.startsWith("#") -> uriAttribute.replace(line) { m -> "URI=\"${proxied(m.groupValues[1])}\"" }
                 else -> proxied(line)
             }
-        }
+        })
+    }
+
+    private val extinf = Regex("#EXTINF:\\s*([0-9.]+)")
+    private val mediaSequence = Regex("#EXT-X-MEDIA-SEQUENCE:\\s*(\\d+)")
+
+    /**
+     * A whole film or episode whose playlist doesn't say it has ended (NetMirror): VLC took it for a live stream,
+     * showed 27:46:39 (its "live" length) and seeked inside a live window (37:00 landed at 1:37). Such a playlist
+     * gets the end marker. Only when it's clearly not live: at least 10 minutes of segments, counted from the first
+     * one (live channels list a short, moving window), and not an event that's still growing.
+     */
+    internal fun vodEnd(text: String): String {
+        if ("#EXT-X-ENDLIST" in text || "#EXT-X-PLAYLIST-TYPE:EVENT" in text) return text
+        if ((mediaSequence.find(text)?.groupValues?.get(1)?.toLongOrNull() ?: 0L) > 0L) return text
+        val seconds = extinf.findAll(text).sumOf { it.groupValues[1].toDoubleOrNull() ?: 0.0 }
+        if (seconds < 600) return text
+        val typed = if ("#EXT-X-PLAYLIST-TYPE" in text) text else text.replaceFirst("#EXTM3U", "#EXTM3U\n#EXT-X-PLAYLIST-TYPE:VOD")
+        return typed.trimEnd() + "\n#EXT-X-ENDLIST\n"
     }
 }
 
@@ -232,3 +250,18 @@ object Disguise {
         return 0
     }
 }
+
+/**
+ * [ref] resolved against [base], with what java.net.URI refuses percent-encoded first: spaces, and the square
+ * brackets NetMirror puts in subtitle addresses (hi.[CC].m3u8), which made the whole playlist fail (a 502 for the
+ * player). Null when it still can't be read; the caller then leaves that line as it was.
+ */
+internal fun resolveLoose(base: java.net.URI, ref: String): String? = runCatching {
+    val safe = buildString {
+        for (b in ref.trim().toByteArray(Charsets.UTF_8)) {
+            val c = b.toInt() and 0xff
+            if (c in 0x21..0x7e && c.toChar() !in "[]{}|\\^`\"<>") append(c.toChar()) else append("%%%02X".format(c))
+        }
+    }
+    base.resolve(safe).toString()
+}.getOrNull()

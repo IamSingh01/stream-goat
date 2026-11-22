@@ -55,8 +55,9 @@ object Images {
      * Stale results are dropped if the view was reused for another url meanwhile.
      */
     fun load(view: ImageView, url: String?, w: Double, h: Double, headers: Map<String, String>? = null) {
-        view.fitWidth = w
-        view.fitHeight = h
+        // Some cards tie the picture's size to their own ("A bound value cannot be set" otherwise).
+        if (!view.fitWidthProperty().isBound) view.fitWidth = w
+        if (!view.fitHeightProperty().isBound) view.fitHeight = h
         view.isSmooth = true
         if (url.isNullOrBlank()) {
             (view.properties.remove(JOB) as? Job)?.cancel()

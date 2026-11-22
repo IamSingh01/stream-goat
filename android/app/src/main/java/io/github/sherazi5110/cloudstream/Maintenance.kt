@@ -46,7 +46,11 @@ object Updates {
     const val RELEASES = "https://github.com/$REPO/releases/latest"
 
     /** [apk]: the download for this device (null = only the release page). [test]: a test build. */
-    data class Release(val version: String, val url: String, val apk: String? = null, val size: Long = 0, val test: Boolean = false)
+    data class Release(val version: String, val url: String, val apk: String? = null, val size: Long = 0, val test: Boolean = false,
+                       val patch: String? = null, val patchSize: Long = 0, val sha256: String? = null)
+
+    /** The download size: the patch when there is one for this copy, else the whole APK. */
+    val Release.downloadSize get() = if (patch != null) patchSize else size
 
     /** "release" (published versions) or "test" (the test builds). */
     var channel: String
@@ -62,24 +66,50 @@ object Updates {
         return null
     }
 
+    /** The first 16 hex digits of the installed APK's SHA-256 (patch names start from it), remembered per install. */
+    private fun installedSha(): String? = runCatching {
+        val ctx = App.context
+        val apk = java.io.File(ctx.applicationInfo.sourceDir)
+        val stamp = ctx.packageManager.getPackageInfo(ctx.packageName, 0).lastUpdateTime
+        val prefs = ctx.getSharedPreferences("app_settings", 0)
+        prefs.getString("apk_sha_$stamp", null) ?: run {
+            val md = java.security.MessageDigest.getInstance("SHA-256")
+            apk.inputStream().use { i -> val buf = ByteArray(1 shl 16); var n: Int; while (i.read(buf).also { n = it } > 0) md.update(buf, 0, n) }
+            md.digest().joinToString("") { "%02x".format(it) }.take(16).also { prefs.edit().putString("apk_sha_$stamp", it).apply() }
+        }
+    }.getOrNull()
+
+    /** [r] with the patch from this copy to its APK, when the release has one (and GitHub's SHA-256 of the APK). */
+    private fun withPatch(r: Release, assets: org.json.JSONArray?): Release {
+        val list = assets?.let { a -> (0 until a.length()).map { a.getJSONObject(it) } } ?: return r
+        val apk = list.firstOrNull { it.optString("browser_download_url") == r.apk } ?: return r
+        val sha = apk.optString("digest").removePrefix("sha256:").takeIf { it.length == 64 }
+        val mine = installedSha() ?: return r.copy(sha256 = sha)
+        val patch = list.firstOrNull { it.optString("name") == apk.optString("name") + ".from-$mine.patch" }
+        return r.copy(sha256 = sha, patch = patch?.optString("browser_download_url"), patchSize = patch?.optLong("size") ?: 0)
+    }
+
     /** The latest release (or test build, on the test channel) if it's newer than what's installed, else null. */
-    suspend fun check(current: String): Release? = withContext(Dispatchers.IO) {
+    suspend fun check(current: String): Release? = withContext(Dispatchers.IO) { checkRelease(current) }
+
+    private suspend fun checkRelease(current: String): Release? {
         if (channel == "test") {
             val json = JSONObject(app.get("https://api.github.com/repos/$REPO/releases/tags/test-build", timeout = 15).text)
-            val (apk, size) = pickApk(json.optJSONArray("assets") ?: return@withContext null) ?: return@withContext null
+            val (apk, size) = pickApk(json.optJSONArray("assets") ?: return null) ?: return null
             val assets = json.getJSONArray("assets")
             val updated = (0 until assets.length()).map { assets.getJSONObject(it) }.firstOrNull { it.optString("browser_download_url") == apk }
-                ?.optString("updated_at")?.let { runCatching { java.time.Instant.parse(it).toEpochMilli() }.getOrNull() } ?: return@withContext null
+                ?.optString("updated_at")?.let { runCatching { java.time.Instant.parse(it).toEpochMilli() }.getOrNull() } ?: return null
             val installed = App.context.packageManager.getPackageInfo(App.context.packageName, 0).lastUpdateTime
             // Built more than 10 minutes after this copy was installed: a newer test build.
-            return@withContext if (updated > installed + 10 * 60_000L)
-                Release("test build of " + java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.MEDIUM, java.text.DateFormat.SHORT).format(java.util.Date(updated)),
-                    json.optString("html_url"), apk, size, test = true) else null
+            return if (updated > installed + 10 * 60_000L)
+                withPatch(Release("test build of " + java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.MEDIUM, java.text.DateFormat.SHORT).format(java.util.Date(updated)),
+                    json.optString("html_url"), apk, size, test = true), assets) else null
         }
         val json = JSONObject(app.get("https://api.github.com/repos/$REPO/releases/latest", timeout = 15).text)
-        val tag = json.optString("tag_name").takeIf { it.isNotBlank() } ?: return@withContext null
+        val tag = json.optString("tag_name").takeIf { it.isNotBlank() } ?: return null
         val apk = json.optJSONArray("assets")?.let { pickApk(it) }
-        if (newer(tag, current)) Release(tag.trimStart('v', 'V'), json.optString("html_url", RELEASES), apk?.first, apk?.second ?: 0) else null
+        return if (newer(tag, current)) withPatch(Release(tag.trimStart('v', 'V'), json.optString("html_url", RELEASES), apk?.first, apk?.second ?: 0),
+            json.optJSONArray("assets")) else null
     }
 
     // ---------- download and install ----------
@@ -107,6 +137,14 @@ object Updates {
         val url = r.apk ?: error("No download for this device")
         progress = 0
         try {
+            // A patch first (a fraction of the size): the new APK is rebuilt from this copy and must match GitHub's
+            // SHA-256 of it exactly. Anything wrong with it: the whole APK, as before.
+            if (r.patch != null && r.sha256 != null) {
+                val rebuilt = runCatching { withContext(Dispatchers.IO) { patched(r) } }
+                    .onFailure { android.util.Log.w("update", "patch not used: $it") }.getOrNull()
+                if (rebuilt != null) { install(rebuilt); return }
+                withContext(Dispatchers.Main) { progress = 0 }
+            }
             val file = withContext(Dispatchers.IO) {
                 val dir = java.io.File(App.context.cacheDir, "updates").apply { mkdirs(); listFiles()?.forEach { it.delete() } }
                 val out = java.io.File(dir, "streamgoat-update.apk")
@@ -128,6 +166,33 @@ object Updates {
             }
             install(file)
         } finally { progress = null }
+    }
+
+    private suspend fun patched(r: Release): java.io.File {
+        val dir = java.io.File(App.context.cacheDir, "updates").apply { mkdirs(); listFiles()?.forEach { it.delete() } }
+        val patch = java.io.File(dir, "update.patch")
+        val req = okhttp3.Request.Builder().url(r.patch!!).header("User-Agent", "StreamGoat").build()
+        app.baseClient.newCall(req).execute().use { resp ->
+            if (!resp.isSuccessful) error("patch download failed (HTTP ${resp.code})")
+            val total = resp.body.contentLength().takeIf { it > 0 } ?: r.patchSize
+            patch.outputStream().use { o ->
+                resp.body.byteStream().use { i ->
+                    val buf = ByteArray(256 * 1024); var done = 0L; var n: Int
+                    while (i.read(buf).also { n = it } > 0) {
+                        o.write(buf, 0, n); done += n
+                        if (total > 0) withContext(Dispatchers.Main) { progress = (done * 100 / total).toInt() }
+                    }
+                }
+            }
+        }
+        val out = java.io.File(dir, "streamgoat-update.apk")
+        Bspatch.apply(java.io.File(App.context.applicationInfo.sourceDir), patch, out)
+        patch.delete()
+        val md = java.security.MessageDigest.getInstance("SHA-256")
+        out.inputStream().use { i -> val buf = ByteArray(1 shl 16); var n: Int; while (i.read(buf).also { n = it } > 0) md.update(buf, 0, n) }
+        val sha = md.digest().joinToString("") { "%02x".format(it) }
+        if (!sha.equals(r.sha256, true)) { out.delete(); error("the rebuilt APK doesn't match") }
+        return out
     }
 
     /** Android's package installer, in a session: it asks the person to confirm, then replaces this app. */

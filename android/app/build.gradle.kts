@@ -16,7 +16,7 @@ android {
         targetSdk = 36
         // CI passes the release tag (-PappVersion=7.0.0); local builds use the numbers below.
         val tagVersion = (findProperty("appVersion") as String?)?.removePrefix("v")?.removePrefix("V")
-        versionName = tagVersion ?: "10.0.0"
+        versionName = tagVersion ?: "10.0.1"
         versionCode = tagVersion?.let { v ->
             val (major, minor, patch) = (v.substringBefore('-').split('.').map { it.toIntOrNull() ?: 0 } + listOf(0, 0, 0)).take(3)
             major * 10000 + minor * 100 + patch
@@ -95,6 +95,8 @@ kotlin {
 }
 
 dependencies {
+    // bzip2 for update patches (Bspatch: bsdiff's format).
+    implementation("org.apache.commons:commons-compress:1.27.1")
     implementation(project(":cs-library"))
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs_nio:2.1.5")
 

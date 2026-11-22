@@ -59,11 +59,33 @@ jobs:
           du -sh vlc
           echo "VLC_DIR=$PWD/vlc" >> "$GITHUB_ENV"
 
+      - name: mpv for Apple Silicon
+        # libmpv (FFmpeg inside), the main player: Homebrew's, with the libraries it needs copied beside it.
+        run: |
+          brew install mpv dylibbundler > /dev/null
+          mkdir -p mpv
+          cp "$(brew --prefix mpv)/lib/libmpv.2.dylib" mpv/
+          chmod u+w mpv/libmpv.2.dylib
+          dylibbundler -of -b -x mpv/libmpv.2.dylib -d mpv/ -p @loader_path/ > /dev/null
+          codesign --force --sign - mpv/*.dylib > /dev/null
+          ls mpv | head -40
+          du -sh mpv
+          echo "MPV_DIR=$PWD/mpv" >> "$GITHUB_ENV"
+
+      - name: Update signing certificate
+        # Built into the app, so it can check the signature of small updates (packaging/update/ci.sh).
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: ./packaging/update/ci.sh cert
+
       - name: Test
         # The same tests as on Linux and Windows: extensions (.cs3 and .jar), sources, the header proxy, subtitles,
         # downloads, backup and libVLC playback with the bundled VLC.
         run: |
-          if ! ./gradlew :app:test -PvlcDir="$VLC_DIR/lib"; then
+          if ! ./gradlew :app:test -PvlcDir="$VLC_DIR/lib" -PmpvDir="$MPV_DIR"; then
             python - <<'PY'
           import glob, xml.etree.ElementTree as ET
           for f in glob.glob("app/build/test-results/test/*.xml"):
@@ -82,18 +104,27 @@ jobs:
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           WETRAKR_CLIENT_ID: ${{ secrets.WETRAKR_CLIENT_ID }}
         run: |
-          ./gradlew :app:packageMac -PvlcDir="$VLC_DIR"
+          ./gradlew :app:packageMac -PvlcDir="$VLC_DIR" -PmpvDir="$MPV_DIR"
           app="app/build/jpackage-mac/Stream Goat.app"
           # No Apple developer certificate: sign it "ad hoc" so Apple Silicon runs it (macOS then asks once, in
           # System Settings → Privacy & Security → Open Anyway).
           codesign --force --deep --sign - "$app"
           codesign --verify --deep --strict "$app" && echo "signature OK"
-          ./gradlew :app:packageMac -PvlcDir="$VLC_DIR" -PjpackageType=dmg
+          ./gradlew :app:packageMac -PvlcDir="$VLC_DIR" -PmpvDir="$MPV_DIR" -PjpackageType=dmg
           VERSION=$(grep -o 'VERSION = "[^"]*"' app/src/main/kotlin/com/lagradost/cloudstream3/linux/ui/AppWindow.kt | cut -d'"' -f2)
           mkdir -p build/macos
           cp app/build/jpackage-mac/Stream\ Goat-*.dmg "build/macos/streamgoat-macos-arm64-$VERSION.dmg"
           ls -la build/macos
           du -sh "$app"
+
+      - name: Update patch
+        # Stream Goat's own jars, signed: what the app downloads for a small update (Settings → Updates).
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: ./packaging/update/ci.sh make mac
 
       - name: Check the packaged app
         # The packaged app's own checker must find its Java, extensions folder and the bundled VLC.
@@ -106,6 +137,7 @@ jobs:
             echo "$out" | tail -25 | while IFS= read -r line; do echo "::warning title=doctor::${line:0:300}"; done
             echo "::error::The packaged app didn't find its bundled VLC"; exit 1
           fi
+          echo "$out" | grep -q "libmpv    yes" || { echo "::error::The packaged app didn't find its bundled libmpv"; exit 1; }
 
       - name: Screenshots of the app window
         # Starts the packaged app in screenshot mode (the same tours as on Linux); the pictures are in the artifact.
@@ -155,7 +187,9 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: build/macos/*.dmg
+          files: |
+            build/macos/*.dmg
+            build/update/*
 
       - name: Test build (pull requests)
         # Also on the "test-build" pre-release (see build.yml), next to the Android and Windows files.
@@ -167,4 +201,6 @@ jobs:
           name: Test build (not a release)
           prerelease: true
           make_latest: false
-          files: build/macos/*.dmg
+          files: |
+            build/macos/*.dmg
+            build/update/*
