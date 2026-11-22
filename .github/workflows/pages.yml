@@ -40,9 +40,7 @@ jobs:
             printf 'window.STREAMGOAT_CONFIG = { googleClientId: "%s" };\n' "$GOOGLE_WEB_CLIENT_ID" > _site/app/config.js
           fi
           cp packaging/linux/cloudstream-linux.svg _site/logo.svg
-          for f in intro android-home android-sports android-music android-youtube android-livetv android-appearance android-profile-editor android-addons android-wetrakr android-library windows-home windows-downloads windows-appearance windows-livetv-sources; do
-            cp "docs/screenshots/$f.png" _site/screenshots/
-          done
+          cp docs/screenshots/*.jpg _site/screenshots/
           mkdir -p _site/releases
           cp docs/releases/*.md _site/releases/
           python3 -c 'import glob,json,os; print(json.dumps([os.path.basename(f)[:-3] for f in glob.glob("docs/releases/*.md")]))' > _site/releases/index.json

@@ -5,11 +5,11 @@
 <p align="center"><b>Movies, series, anime and Live TV on Android phones, tablets and TV, Windows, Mac, Linux and the web.</b><br>
 Created by <b>Syed Ali Hamza</b></p>
 
-![Stream Goat start animation: the goat logo over glowing waves](docs/screenshots/intro.png)
+![Stream Goat: Home](docs/screenshots/home.jpg)
 
 > **Testing notes (10.0.0).** The Mac and Linux apps are built and checked automatically but haven't been tested by hand yet, so please report anything odd. On Windows the first launch after installing can be slow and laggy for a minute while the app sets itself up and loads an earlier backup; give it a moment and it runs smoothly after that.
 
-> **Disclaimer.** Stream Goat is only a media player and organiser. It does not host, provide, link to or endorse any movies, shows, channels or other content, and it ships with no content sources. You add your own extensions, add-ons and playlists and are responsible for having the rights to whatever you play. Titles, posters and logos belong to their owners; in the screenshots below they are blurred.
+> **Disclaimer.** Stream Goat is only a media player and organiser. It does not host, provide, link to or endorse any movies, shows, channels or other content, and it ships with no content sources. You add your own extensions, add-ons and playlists and are responsible for having the rights to whatever you play. Titles, posters and logos belong to their owners and appear in the screenshots only to show how the app looks.
 
 Stream Goat runs **CloudStream extensions and Stremio add-ons**, from the same repositories the official CloudStream
 Android app uses, with no changes to the extensions. *(Formerly "CloudStream for Linux"; your extensions, profiles,
@@ -57,24 +57,15 @@ library and downloads carry over.)*
 - **Report a glitch:** shake the phone, press F12 (⌘⇧R on a Mac) or use the menu. It opens a filled-in GitHub issue
   with a screenshot; nothing is sent by the app. If the app closed unexpectedly, it offers the report next time.
 
-## Android (phone, tablet, TV)
+## Screenshots
 
 | | |
 |---|---|
-| ![Home](docs/screenshots/android-home.png) | ![Sports: live scores](docs/screenshots/android-sports.png) |
-| ![Music, with the player beside the list](docs/screenshots/android-music.png) | ![Live TV](docs/screenshots/android-livetv.png) |
-| ![YouTube](docs/screenshots/android-youtube.png) | ![Appearance](docs/screenshots/android-appearance.png) |
-| ![Start animation](docs/screenshots/android-intro.png) | |
-| ![Profile editor](docs/screenshots/android-profile-editor.png) | ![Add-ons](docs/screenshots/android-addons.png) |
-| ![WeTrakr sync](docs/screenshots/android-wetrakr.png) | ![Library](docs/screenshots/android-library.png) |
-
-## Windows, Mac and Linux
-
-| | |
-|---|---|
-| ![Home](docs/screenshots/windows-home.png) | ![Download a whole season](docs/screenshots/windows-downloads.png) |
-| ![Appearance](docs/screenshots/windows-appearance.png) | ![Live TV sources](docs/screenshots/windows-livetv-sources.png) |
-| ![WeTrakr sync](docs/screenshots/windows-wetrakr.png) | |
+| ![Home](docs/screenshots/home.jpg) | ![Start animation](docs/screenshots/intro.jpg) |
+| ![Sports: live scores](docs/screenshots/sports.jpg) | ![Music, with the player beside the list](docs/screenshots/music.jpg) |
+| ![Live TV](docs/screenshots/livetv.jpg) | ![YouTube](docs/screenshots/youtube.jpg) |
+| ![Updates inside the app](docs/screenshots/update.jpg) | ![Updates and backup](docs/screenshots/settings-updates.jpg) |
+| ![About](docs/screenshots/about.jpg) | |
 
 ## Download for your device
 
