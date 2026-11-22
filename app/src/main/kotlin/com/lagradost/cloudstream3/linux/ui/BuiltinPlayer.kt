@@ -188,8 +188,8 @@ class BuiltinPlayer(
         // need headers go through the local proxy.
         val headers = link.getAllHeaders()
         sourceChip.text = "${link.name} · ${v.label}"
-        if (engine.kind == EngineKind.STREAM) {
-            // The Stream Goat player reads HLS only from a web address: the one-quality playlist is served by the proxy.
+        if (engine.kind == EngineKind.MPV) {
+            // mpv gets streams from the local proxy: the one-quality playlist is served there.
             val all = headers.toMutableMap().apply { if (keys.none { it.equals("user-agent", true) }) put("User-Agent", USER_AGENT) }
             val text = com.lagradost.cloudstream3.linux.HlsVariants.single(m, v) { u -> u }
             val data = "data:application/vnd.apple.mpegurl;base64," + java.util.Base64.getEncoder().encodeToString(text.toByteArray())
@@ -327,7 +327,7 @@ class BuiltinPlayer(
             releaseEngine(old)
         }
         enginesTried.getOrPut(link.url) { mutableSetOf() } += engine.kind
-        val target = if (engine.kind == EngineKind.STREAM) streamUrl(link) else url
+        val target = if (engine.kind == EngineKind.MPV) streamUrl(link) else url
         com.lagradost.cloudstream3.linux.Glitch.step("Playing ${link.name} with ${engine.kind.label}")
         if (!engine.open(target, opts, startAt)) {
             onError()
@@ -355,10 +355,7 @@ class BuiltinPlayer(
         val isHttp = url.startsWith("http://") || url.startsWith("https://")
         // A Live TV server with an expired (but genuine) certificate: through the local proxy, which accepts it.
         val expiredOk = link.name == com.lagradost.cloudstream3.linux.LiveApi.EXPIRED
-        // HLS from extensions goes through the proxy too: it adds the missing end marker (NetMirror showed 27:46:39 in
-        // VLC and seeked like a live stream) and cleans segments disguised as pictures. Live TV stays direct.
-        val vodHls = isHls(link) && api !is com.lagradost.cloudstream3.linux.LiveApi
-        if (isHttp && (other.isNotEmpty() || expiredOk || vodHls)) {
+        if (isHttp && (other.isNotEmpty() || expiredOk)) {
             val all = buildMap { putAll(other); put("User-Agent", ua); referer?.let { put("Referer", it) } }
             return StreamProxy.wrap(url, all, expiredOk) to options
         }
@@ -490,38 +487,47 @@ class BuiltinPlayer(
 
     // ---------- players ----------
 
-    private fun makeEngine(kind: EngineKind): PlayerEngine =
-        if (kind == EngineKind.VLC && Vlc.factory != null) VlcEngine(video, events) else StreamEngine(video, events)
-
-    /** VLC's stop() waits for its threads: never on the UI thread. */
-    private fun releaseEngine(old: PlayerEngine) {
-        if (old.kind == EngineKind.VLC) Thread({
-            runCatching { old.stop() }
-            runCatching { old.release() }
-            Vlc.playbackEnded()
-        }, "vlc-release").start()
-        else runCatching { old.release() }
+    private fun makeEngine(kind: EngineKind): PlayerEngine {
+        if (kind == EngineKind.MPV || Vlc.factory == null) {
+            runCatching { MpvEngine(video, events) }.onSuccess { return it }
+                .onFailure { android.util.Log.w("player", "mpv: ${it.message}") }
+        }
+        return VlcEngine(video, events)
     }
 
-    /** A stream the Stream Goat player can read: HLS (an .m3u8 address, an HLS link, or a playlist given inline). */
+    /** Both players' stop() waits for their threads: never on the UI thread. */
+    private fun releaseEngine(old: PlayerEngine) {
+        Thread({
+            runCatching { old.stop() }
+            runCatching { old.release() }
+            if (old.kind == EngineKind.VLC) Vlc.playbackEnded()
+        }, "player-release").start()
+    }
+
+    /** HLS: an .m3u8 address, an HLS link, or a playlist given inline. */
     private fun isHls(link: ExtractorLink): Boolean {
         val url = link.url.lowercase()
         return link.type == com.lagradost.cloudstream3.utils.ExtractorLinkType.M3U8 || ".m3u8" in url ||
             (url.startsWith("data:") && "mpegurl" in url.substringBefore(','))
     }
 
-    /** Which player plays [link]: the menu's choice, else Settings; Auto = the Stream Goat player for HLS from extensions. */
+    /** Which player plays [link]: the menu's choice, else Settings; Auto = mpv (VLC when mpv isn't there). */
     private fun kindFor(link: ExtractorLink): EngineKind {
         forcedEngine?.let { return it }
         pinnedEngine?.let { return it }
         return when (com.lagradost.cloudstream3.linux.Settings.playerEngine) {
-            "STREAM" -> EngineKind.STREAM
             "VLC" -> EngineKind.VLC
-            else -> if (isHls(link) && api !is com.lagradost.cloudstream3.linux.LiveApi && !link.url.startsWith("file:")) EngineKind.STREAM else EngineKind.VLC
-        }.let { if (it == EngineKind.VLC && Vlc.factory == null) EngineKind.STREAM else it }
+            else -> EngineKind.MPV
+        }.let {
+            when {
+                it == EngineKind.MPV && !Mpv.available && Vlc.factory != null -> EngineKind.VLC
+                it == EngineKind.VLC && Vlc.factory == null && Mpv.available -> EngineKind.MPV
+                else -> it
+            }
+        }
     }
 
-    /** The Stream Goat player can't send headers: it always plays through the local proxy, as an .m3u8 address. */
+    /** mpv gets every stream from the local proxy (headers, disguised segments, inline playlists), HLS as an .m3u8 address. */
     private fun streamUrl(link: ExtractorLink): String {
         val url = ((link as? ExtractorLinkPlayList)?.playlist?.firstOrNull()?.url ?: link.url).removeSuffix(com.lagradost.cloudstream3.linux.LiveApi.EXPIRED_MARK)
         if (url.startsWith("file:")) return url
@@ -543,11 +549,10 @@ class BuiltinPlayer(
 
     /** A source that fails is skipped automatically, keeping the position. */
     private fun onError() {
-        // First the same source on the other player (the Stream Goat player can't read everything VLC can, and the
-        // other way round), then the next source.
-        val other = if (engine.kind == EngineKind.STREAM) EngineKind.VLC else EngineKind.STREAM
+        // First the same source on the other player, then the next source.
+        val other = if (engine.kind == EngineKind.MPV) EngineKind.VLC else EngineKind.MPV
         val tried = enginesTried[current.url].orEmpty()
-        if (other !in tried && (other == EngineKind.STREAM && isHls(current) || other == EngineKind.VLC && Vlc.factory != null)) {
+        if (other !in tried && (other == EngineKind.MPV && Mpv.available || other == EngineKind.VLC && Vlc.factory != null)) {
             flash("${engine.kind.label} couldn't play it — trying ${other.label}")
             forcedEngine = other
             open(current, startAt = position.takeIf { it > 1000 })
@@ -1069,10 +1074,10 @@ class BuiltinPlayer(
             }
         }.toMutableList()
         if (!sources.finished) items += PlayerMenu.Item("Still searching for more sources…", enabled = false) {}
-        // Which player plays it: the Stream Goat player (like ExoPlayer: streams) or VLC (everything else).
+        // Which player plays it: mpv (like ExoPlayer: reads streams itself) or VLC.
         EngineKind.entries.forEach { kind ->
-            items += PlayerMenu.Item("Play with ${kind.label}", hint = if (kind == EngineKind.STREAM) "best for extension streams" else "plays almost anything",
-                active = engine.kind == kind, enabled = kind != EngineKind.VLC || Vlc.factory != null) { useEngine(kind) }
+            items += PlayerMenu.Item("Play with ${kind.label}", hint = if (kind == EngineKind.MPV) "best for extension streams" else "backup player",
+                active = engine.kind == kind, enabled = if (kind == EngineKind.VLC) Vlc.factory != null else Mpv.available) { useEngine(kind) }
         }
         menu.open("sources", "Sources (${links.size})", items)
     }

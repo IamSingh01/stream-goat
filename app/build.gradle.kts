@@ -33,8 +33,7 @@ dependencies {
         arm -> "linux-aarch64"
         else -> "linux"
     }
-    // media: the Stream Goat player (JavaFX's own HLS player, like ExoPlayer on Android).
-    for (module in listOf("base", "graphics", "controls", "media")) {
+    for (module in listOf("base", "graphics", "controls")) {
         implementation("org.openjfx:javafx-$module:21.0.8:$fxPlatform")
     }
     // Many streaming sites serve WebP posters, which JavaFX cannot decode itself.
@@ -72,6 +71,8 @@ tasks.test {
     systemProperty("test.python", (findProperty("test.python") as String?) ?: "python3")
     // Windows: the VLC folder the app bundles (-PvlcDir=...), for the libVLC playback test.
     (findProperty("vlcDir") as String?)?.let { systemProperty("jna.library.path", it); systemProperty("cs.vlc.dir", it) }
+    // Windows/Mac: the libmpv folder the app bundles (-PmpvDir=...), for the mpv playback test.
+    (findProperty("mpvDir") as String?)?.let { systemProperty("cs.mpv.dir", it) }
     jvmArgs("-XX:+UnlockDiagnosticVMOptions", "-XX:-BytecodeVerificationRemote")
 }
 
@@ -113,7 +114,7 @@ val packageDeb by tasks.registering(Exec::class) {
         if (type == "deb") {
             addAll(listOf("--linux-shortcut", "--linux-menu-group", "AudioVideo;Video", "--linux-app-category", "video"))
             addAll(listOf("--linux-deb-maintainer", "cloudstream-linux@users.noreply.github.com"))
-            addAll(listOf("--linux-package-deps", "libvlc5, vlc-plugin-base"))
+            addAll(listOf("--linux-package-deps", "libvlc5, vlc-plugin-base, libmpv2 | libmpv1"))
         }
         application.applicationDefaultJvmArgs.forEach { addAll(listOf("--java-options", it)) }
     })
@@ -137,6 +138,8 @@ val packageWindows by tasks.registering(Exec::class) {
         lib.get().asFile.copyRecursively(inDir)
         // VLC for Windows (libvlc.dll, libvlccore.dll, plugins\) goes into <app>\app\vlc; see Os.bundledVlcDir.
         (findProperty("vlcDir") as String?)?.let { file(it).copyRecursively(inDir.resolve("vlc")) }
+        // libmpv (the main player, see ui/Mpv.kt) goes into <app>/mpv.
+        (findProperty("mpvDir") as String?)?.let { file(it).copyRecursively(inDir.resolve("mpv")) }
         if (type == "app-image") out.get().asFile.deleteRecursively()
     }
     commandLine(buildList {
@@ -184,6 +187,8 @@ val packageMac by tasks.registering(Exec::class) {
         lib.get().asFile.copyRecursively(inDir)
         // VLC's lib/ and plugins/ go into Stream Goat.app/Contents/app/vlc; see Os.bundledVlcDir.
         (findProperty("vlcDir") as String?)?.let { file(it).copyRecursively(inDir.resolve("vlc")) }
+        // libmpv (the main player, see ui/Mpv.kt) goes into <app>/mpv.
+        (findProperty("mpvDir") as String?)?.let { file(it).copyRecursively(inDir.resolve("mpv")) }
         if (type == "app-image") out.get().asFile.deleteRecursively()
     }
     commandLine(buildList {

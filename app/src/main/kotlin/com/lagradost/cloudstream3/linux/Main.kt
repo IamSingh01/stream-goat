@@ -194,6 +194,7 @@ suspend fun cli(args: List<String>): Int {
             println("data      ${AppDirs.data}")
             println("log       ${Logs.file}")
             println("libVLC    ${com.lagradost.cloudstream3.linux.ui.Vlc.version ?: "not found — " + Os.vlcHint}")
+            println("libmpv    ${if (com.lagradost.cloudstream3.linux.ui.Mpv.available) "yes" else "not found (VLC plays everything)"}")
             println("dns       ${Settings.dns.label}")
             println("repos     ${RepositoryManager.getRepositories().size}")
             println("plugins   ${PluginManager.loaded.size} loaded, ${PluginManager.failures.size} failed")

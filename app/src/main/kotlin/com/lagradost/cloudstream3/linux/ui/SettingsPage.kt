@@ -390,11 +390,11 @@ class SettingsPage : StackPane(), Refreshable {
                 row("Player engine", if (!vlcEngine) "VLC's libraries aren't available, so videos can't play. " + com.lagradost.cloudstream3.linux.Os.vlcHint else
                     "Videos play inside this window using VLC${if (Vlc.isLoaded) " " + Vlc.version.orEmpty() else ""}: every format VLC plays, hardware decoding, source switching, online subtitles, audio languages, speed and zoom.",
                     engineLabel),
-                row("Which player plays a video", "Auto: the Stream Goat player for streams from extensions and Stremio add-ons " +
-                    "(like ExoPlayer on Android: it reads the stream itself, so sources such as NetMirror show their real length and seek where you ask), " +
-                    "VLC for Live TV, downloads and torrents. If one can't play a source, the other is tried. You can also switch while watching (Sources menu). " +
-                    "The Stream Goat player plays H.264 streams; it can't go above 100 % volume or switch audio tracks.",
-                    combo(listOf("AUTO", "STREAM", "VLC"), Settings.playerEngine, { when (it) { "STREAM" -> "Stream Goat player"; "VLC" -> "VLC"; else -> "Auto" } }) {
+                row("Which player plays a video", "mpv (FFmpeg inside) reads streams itself, like ExoPlayer on Android: separate audio " +
+                    "languages (NetMirror), subtitle tracks, the real length and exact seeking. VLC is the backup: if one can't play a source, " +
+                    "the other is tried. You can also switch while watching (Sources menu)." +
+                    (if (Mpv.available) "" else " mpv isn't installed here, so VLC plays everything."),
+                    combo(listOf("AUTO", "VLC"), Settings.playerEngine.let { if (it == "VLC") it else "AUTO" }, { when (it) { "VLC" -> "VLC"; else -> "mpv (recommended)" } }) {
                         Settings.playerEngine = it
                     }),
                 row("Battery saver", "For low-end PCs and laptops on battery: skips the H.264 deblocking filter (much less CPU), buffers longer and does no extra processing. Hardware decoding stays on.",

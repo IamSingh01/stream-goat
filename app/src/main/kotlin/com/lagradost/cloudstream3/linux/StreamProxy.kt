@@ -105,7 +105,10 @@ object StreamProxy {
                 exchange.sendResponseHeaders(200, bytes.size.toLong()); exchange.responseBody.write(bytes); return
             }
             val headers = target.headers.toMutableMap()
-            if (target.key == null) exchange.requestHeaders.getFirst("Range")?.let { headers["Range"] = it }
+            // "bytes=0-" (FFmpeg asks every segment that way) is the whole file: sent as such, so a segment disguised
+            // as a picture is still cleaned below.
+            val range = exchange.requestHeaders.getFirst("Range")?.takeIf { it.replace(" ", "") != "bytes=0-" }
+            if (target.key == null) range?.let { headers["Range"] = it }
             val request = Request.Builder().url(target.url).headers(headers.toHeaders())
                 .apply { if (exchange.requestMethod == "HEAD") head() }
                 .build()
@@ -151,7 +154,7 @@ object StreamProxy {
                     // MPEG-TS and say it's video.
                     val input = stream
                     var sendLength = length
-                    if (exchange.requestHeaders.getFirst("Range") == null && response.code == 200) {
+                    if (range == null && response.code == 200) {
                         val skip = Disguise.junkBefore(input)
                         if (skip > 0) {
                             input.skip(skip.toLong())

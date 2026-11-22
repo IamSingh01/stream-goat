@@ -243,43 +243,56 @@ class VideoView : Region() {
         return ((w * scale).roundToInt() and 1.inv()).coerceAtLeast(2) to ((h * scale).roundToInt() and 1.inv()).coerceAtLeast(2)
     }
 
-    // ---------- the Stream Goat player (JavaFX) draws here instead of VLC ----------
+    // ---------- mpv draws here too (its software renderer, into a buffer of ours) ----------
 
-    private var mediaView: javafx.scene.media.MediaView? = null
-    private var subtitleLayer: javafx.scene.Node? = null
+    class Target(val buffer: ByteBuffer, val width: Int, val height: Int)
+    @Volatile private var mpvTarget: Target? = null
 
-    /** Shows the Stream Goat player's picture (and its subtitles) here; null goes back to VLC's. */
-    fun showMedia(view: javafx.scene.media.MediaView?, subtitles: javafx.scene.Node?) {
-        mediaView?.let { children -= it }
-        subtitleLayer?.let { children -= it }
-        mediaView = view
-        subtitleLayer = subtitles
-        image.isVisible = view == null
-        if (view != null) {
-            view.isPreserveRatio = false
-            children += view
-            subtitles?.let { children += it }
+    /**
+     * The buffer mpv draws its next frame into (on mpv's render thread): the video's display size ([dispW]x[dispH],
+     * aspect ratio applied), no larger than the screen, the width a multiple of 16 for mpv's fast path. A new one
+     * when the size changes.
+     */
+    fun mpvBuffer(srcW: Int, srcH: Int, dispW: Int, dispH: Int): Target {
+        sourceW = srcW; sourceH = srcH
+        var (w, h) = fitToScreen(dispW, dispH)
+        w = (w and 15.inv()).coerceAtLeast(16); h = h.coerceAtLeast(2)
+        mpvTarget?.takeIf { it.width == w && it.height == h && pixelBuffer != null }?.let { return it }
+        val buffer = ByteBuffer.allocateDirect(w * h * 4 + 64).alignedSlice(64).limit(w * h * 4) as ByteBuffer
+        val target = Target(buffer.slice(), w, h)
+        val pb = PixelBuffer(w, h, target.buffer, PixelFormat.getByteBgraPreInstance())
+        closed = false
+        pixelBuffer = pb
+        mpvTarget = target
+        bufferW = w; bufferH = h
+        Platform.runLater {
+            displayW = w.toDouble(); displayH = h.toDouble()
+            image.image = WritableImage(pb)
+            requestLayout()
         }
-        requestLayout()
+        return target
     }
 
-    /** The Stream Goat player's picture size, once the video has started. */
-    fun mediaSize(w: Int, h: Int) {
-        sourceW = w; sourceH = h
-        displayW = w.toDouble(); displayH = h.toDouble()
-        requestLayout()
+    /** mpv finished a frame in the buffer: show it (at most one repaint queued, as for VLC). */
+    fun mpvFrame() {
+        if (closed || !pending.compareAndSet(false, true)) return
+        val pb = pixelBuffer ?: return pending.set(false)
+        Platform.runLater {
+            pending.set(false)
+            if (!closed && pb === pixelBuffer) pb.updateBuffer { null }
+        }
+    }
+
+    /** A new player is about to draw: forget the last one's buffer. */
+    fun reset() {
+        mpvTarget = null
+        pixelBuffer = null
+        closed = false
     }
 
     override fun layoutChildren() {
         val w = width
         val h = height
-        subtitleLayer?.let { sub ->
-            sub.autosize()
-            val r = sub as? javafx.scene.layout.Region
-            r?.maxWidth = w * 0.86
-            val sw = sub.layoutBounds.width; val sh = sub.layoutBounds.height
-            sub.relocate((w - sw) / 2, h * 0.93 - sh)
-        }
         if (displayW <= 0 || displayH <= 0 || w <= 0 || h <= 0) return
         val aspect = zoom.aspect ?: (displayW / displayH)
         val (iw, ih) = when (zoom) {
@@ -291,6 +304,5 @@ class VideoView : Region() {
         image.fitWidth = iw
         image.fitHeight = ih
         image.relocate((w - iw) / 2, (h - ih) / 2)
-        mediaView?.let { it.fitWidth = iw; it.fitHeight = ih; it.relocate((w - iw) / 2, (h - ih) / 2) }
     }
 }

@@ -149,8 +149,8 @@ object Settings {
 
     /** Built-in player zoom mode, a [com.lagradost.cloudstream3.linux.ui.Zoom] name. */
     /**
-     * Which player plays a source: "AUTO" (the Stream Goat player for streams from extensions and Stremio, VLC for
-     * Live TV, torrents and files), "STREAM" or "VLC". The player menu can switch while watching.
+     * Which player plays a source: "AUTO" (mpv, VLC when mpv isn't there) or "VLC". The player menu can switch while
+     * watching.
      */
     var playerEngine: String
         get() = string("player_engine", "AUTO")
