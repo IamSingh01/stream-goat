@@ -108,6 +108,7 @@ object StreamProxy {
                     if (exchange.requestMethod != "HEAD" && (isPlaylist(target.url, type) || startsWithPlaylist(stream))) {
                         val text = stream.readBytes().toString(Charsets.UTF_8)
                         if (text.trimStart().startsWith("#EXTM3U")) {
+                            logPlaylist(id, text)
                             val bytes = rewrite(text, response.request.url.toString(), target.headers, target.expiredOk).toByteArray()
                             exchange.responseHeaders.add("Content-Type", "application/vnd.apple.mpegurl")
                             exchange.sendResponseHeaders(response.code, bytes.size.toLong())
@@ -184,6 +185,18 @@ object StreamProxy {
                 else -> proxied(line)
             }
         })
+    }
+
+    private val logged = ConcurrentHashMap.newKeySet<String>()
+
+    /** The start of each playlist once (codecs, audio groups, end marker), so a log shows what a source sends. */
+    private fun logPlaylist(id: String, text: String) {
+        if (!logged.add(id) || logged.size > 200) return
+        val lines = text.lineSequence().filter { it.isNotBlank() }.toList()
+        val head = lines.filter { it.startsWith("#") && !it.startsWith("#EXTINF") }.take(12)
+        val firstUri = lines.firstOrNull { !it.startsWith("#") }?.let { u -> u.substringBefore('?').takeLast(60) }
+        val seconds = extinf.findAll(text).sumOf { it.groupValues[1].toDoubleOrNull() ?: 0.0 }.toLong()
+        android.util.Log.i("proxy", "playlist ${lines.size} lines, ${seconds}s, first: $firstUri | " + head.joinToString(" | "))
     }
 
     private val extinf = Regex("#EXTINF:\\s*([0-9.]+)")

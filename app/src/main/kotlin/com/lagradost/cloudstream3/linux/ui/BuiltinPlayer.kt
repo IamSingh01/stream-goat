@@ -355,7 +355,10 @@ class BuiltinPlayer(
         val isHttp = url.startsWith("http://") || url.startsWith("https://")
         // A Live TV server with an expired (but genuine) certificate: through the local proxy, which accepts it.
         val expiredOk = link.name == com.lagradost.cloudstream3.linux.LiveApi.EXPIRED
-        if (isHttp && (other.isNotEmpty() || expiredOk)) {
+        // HLS from extensions goes through the proxy too: it adds the missing end marker (NetMirror showed 27:46:39 in
+        // VLC and seeked like a live stream) and cleans segments disguised as pictures. Live TV stays direct.
+        val vodHls = isHls(link) && api !is com.lagradost.cloudstream3.linux.LiveApi
+        if (isHttp && (other.isNotEmpty() || expiredOk || vodHls)) {
             val all = buildMap { putAll(other); put("User-Agent", ua); referer?.let { put("Referer", it) } }
             return StreamProxy.wrap(url, all, expiredOk) to options
         }
