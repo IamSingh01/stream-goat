@@ -232,12 +232,12 @@ object Settings {
         get() = string("start_buffer_ms", "1500").toIntOrNull()?.coerceIn(300, 20_000) ?: 1500
         set(v) = put("start_buffer_ms", v.toString())
 
-    /** Player engine: "AUTO" (ExoPlayer for extension streams, VLC for Live TV, torrents and files), "EXO", "MPV" or "VLC". */
+    /** Player engine: "AUTO" (ExoPlayer for extension streams, VLC for Live TV, torrents and files), "EXO" or "VLC". */
     var playerEngine: String
         get() = string("player_engine", "AUTO")
         set(v) = put("player_engine", v)
 
-    /** The engine for one kind of source ([PlayerSource]): "EXO", "MPV" or "VLC". */
+    /** The engine for one kind of source ([PlayerSource]): "EXO" or "VLC". */
     fun engineFor(kind: String): String = string("player_engine_$kind", when (kind) { "extension", "stremio" -> "EXO"; else -> "VLC" })
     fun setEngineFor(kind: String, engine: String) = put("player_engine_$kind", engine)
 

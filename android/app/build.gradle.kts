@@ -70,7 +70,7 @@ android {
             "META-INF/LICENSE*", "META-INF/NOTICE*", "META-INF/INDEX.LIST")
         // libVLC is ~40-60 MB per CPU type: compress it in the APK (it is extracted once on install).
         jniLibs.useLegacyPackaging = true
-        // libVLC and libmpv both bring the C++ runtime: keep one.
+        // Native libraries that bring their own C++ runtime: keep one copy.
         jniLibs.pickFirsts += setOf("**/libc++_shared.so")
     }
 
@@ -135,10 +135,8 @@ dependencies {
     implementation("io.coil-kt.coil3:coil-network-okhttp:3.3.0")
 
     // The player: libVLC for Android (Maven Central), with this app's own controls.
-    // libmpv first: its C++ runtime (libc++_shared) is the newer one, which also serves libVLC (picked first below).
-    implementation("dev.jdtech.mpv:libmpv:1.0.0")
     implementation("org.videolan.android:libvlc-all:3.6.5")
-    // The other player engines: ExoPlayer (Media3, what the official app uses: extensions are made for it) and mpv.
+    // The other player engines: ExoPlayer (Media3, what the official app uses: extensions are made for it).
     val media3 = "1.11.1"
     implementation("androidx.media3:media3-exoplayer:$media3")
     implementation("androidx.media3:media3-exoplayer-hls:$media3")

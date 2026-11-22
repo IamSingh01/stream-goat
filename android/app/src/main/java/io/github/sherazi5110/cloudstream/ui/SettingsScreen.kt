@@ -289,8 +289,7 @@ private fun PlayerSection() {
     }
     Heading("Player engine")
     Hint("Which player plays each kind of source. ExoPlayer is the official CloudStream app's player (extensions are made for it); " +
-        "mpv is FFmpeg-based and strong with files and unusual formats; VLC plays almost anything. If one can't play a source, " +
-        "the next is tried before another source. You can also switch while watching (the player's engine button).")
+        "VLC plays almost anything. If one can't play a source, the other is tried before another source. You can also switch while watching (the player's engine button).")
     var ask by remember { mutableStateOf(Settings.askEngine) }
     SwitchRow("Ask every time", "When a video starts, choose which player plays it.", ask) { ask = it; Settings.askEngine = it }
     io.github.sherazi5110.cloudstream.player.PlayerSource.entries.forEach { src ->

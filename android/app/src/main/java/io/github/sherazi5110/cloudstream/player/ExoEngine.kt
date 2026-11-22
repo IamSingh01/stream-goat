@@ -185,7 +185,7 @@ class ExoEngine(context: Context) : PlaybackEngine {
         }
     }
 
-    /** ExoPlayer can't shift audio or subtitles in time: sync works with VLC and mpv. */
+    /** ExoPlayer can't shift audio or subtitles in time: sync works with VLC. */
     override fun setDelays(audioMs: Long, subtitleMs: Long) = Unit
 
     private fun tracksOf(type: Int): List<Pair<Tracks.Group, Int>> = player.currentTracks.groups

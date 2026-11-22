@@ -94,7 +94,7 @@ class PlayerController(
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val main = Handler(Looper.getMainLooper())
-    /** The video engine playing now (ExoPlayer, mpv or VLC): Settings → Player → Player engine, Auto per source. */
+    /** The video engine playing now (ExoPlayer or VLC): Settings → Player → Player engine, Auto per source. */
     var engine by mutableStateOf(firstEngine(api))
         private set
     /** True while the engine opens a source: calls that would wait for it are skipped. */
@@ -451,7 +451,7 @@ class PlayerController(
         val kind = engineFor(link, source)
         if (engine.kind != kind) switchTo(kind)
         enginesTried.getOrPut(link.url) { mutableSetOf() } += kind
-        // VLC and mpv fetch through the local proxy (headers, cookies, DNS over HTTPS, disguised segments, inline
+        // VLC fetches through the local proxy (headers, cookies, DNS over HTTPS, disguised segments, inline
         // playlists); a source that failed through it is tried once directly with VLC. ExoPlayer fetches itself,
         // with the app's network client, like the official app.
         val viaProxyForHls = kind != EngineKind.EXO && hls && !headersNeedProxy && link.url !in directTried
@@ -900,8 +900,8 @@ class PlayerController(
     }
 
     /** The order engines are tried in for one source. */
-    private fun fallbackOrder(): List<EngineKind> = listOf(EngineKind.EXO, EngineKind.VLC, EngineKind.MPV)
-        .let { all -> val first = enginesTried[current?.url].orEmpty().firstOrNull(); if (first == EngineKind.VLC) listOf(EngineKind.VLC, EngineKind.EXO, EngineKind.MPV) else all }
+    private fun fallbackOrder(): List<EngineKind> = listOf(EngineKind.EXO, EngineKind.VLC)
+        .let { all -> val first = enginesTried[current?.url].orEmpty().firstOrNull(); if (first == EngineKind.VLC) listOf(EngineKind.VLC, EngineKind.EXO) else all }
 
     /** Replaces the engine; the screen makes a view for the new one (it watches [engine]). */
     private fun switchTo(kind: EngineKind) {
@@ -912,7 +912,6 @@ class PlayerController(
         engine = runCatching {
             when (kind) {
                 EngineKind.EXO -> ExoEngine(App.context)
-                EngineKind.MPV -> if (android.os.Build.VERSION.SDK_INT >= 26) MpvEngine(App.context) else error("mpv needs Android 8")
                 EngineKind.VLC -> VlcEngine()
             }
         }.getOrElse {
@@ -974,7 +973,6 @@ private fun firstEngine(api: MainAPI): PlaybackEngine {
     return runCatching {
         when (kind) {
             EngineKind.EXO -> ExoEngine(App.context)
-            EngineKind.MPV -> if (android.os.Build.VERSION.SDK_INT >= 26) MpvEngine(App.context) else error("mpv needs Android 8")
             EngineKind.VLC -> VlcEngine()
         }
     }.getOrElse { VlcEngine() }

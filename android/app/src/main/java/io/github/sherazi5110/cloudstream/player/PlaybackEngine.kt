@@ -10,7 +10,6 @@ data class TrackInfo(val id: Int, val name: String)
 /** Which video engine plays a source. Settings → Player → Player engine; Auto picks per source. */
 enum class EngineKind(val label: String, val detail: String) {
     EXO("ExoPlayer", "What the official CloudStream app uses: extensions are made for it"),
-    MPV("mpv", "FFmpeg-based: strong with files and unusual formats"),
     VLC("VLC", "Plays almost anything; best for Live TV, torrents and files"),
 }
 
@@ -51,7 +50,7 @@ data class OpenRequest(
 )
 
 /**
- * A video engine: VLC, ExoPlayer or mpv behind the same calls, so the player screen and everything around it
+ * A video engine: VLC or ExoPlayer behind the same calls, so the player screen and everything around it
  * (sources, failover, subtitles, quality, skip intro, Continue Watching) work the same with each.
  * Calls come from the main thread; engines do slow work on their own threads. Events come back on the main thread.
  */
