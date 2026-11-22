@@ -126,17 +126,23 @@ private fun Modifier.cardImpl(
 }
 
 /**
- * Rows of posters on TV: the selected one stays about a card away from the row's edges, so selecting the last one
- * you can see (with the remote or a click) scrolls the row to show the next ones.
+ * Rows of posters on TV, as in the official app (LinearListLayout.requestChildRectangleOnScreen): the selected card
+ * slides to the row's start, so the next ones are always in view. (At the row's end the list stops by itself.)
  */
 @OptIn(ExperimentalFoundationApi::class)
 internal val RevealScroll = object : androidx.compose.foundation.gestures.BringIntoViewSpec {
-    override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float {
-        val margin = minOf(size * 1.1f, containerSize * 0.3f)
-        val before = offset - margin
-        val after = offset + size + margin - containerSize
-        return when { before < 0f && after > 0f -> 0f; before < 0f -> before; after > 0f -> after; else -> 0f }
-    }
+    override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float =
+        offset - containerSize * 0.04f   // the row's own side padding
+}
+
+/**
+ * Pages of rows on TV, as in the official app (MainActivity.centerView): the selected row is brought to the middle
+ * of the screen, so the rows above and below show and nothing sits under the top bar.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+internal val CenterScroll = object : androidx.compose.foundation.gestures.BringIntoViewSpec {
+    override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float =
+        if (size >= containerSize) offset else offset + size / 2f - containerSize / 2f
 }
 
 @OptIn(ExperimentalFoundationApi::class)

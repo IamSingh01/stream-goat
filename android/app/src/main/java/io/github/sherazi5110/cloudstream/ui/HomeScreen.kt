@@ -334,7 +334,7 @@ internal fun WideHome(state: HomeState) {
                 if (bottom > barPx) list.animateScrollBy(bottom - barPx)
             }
         }
-        androidx.compose.runtime.CompositionLocalProvider(androidx.compose.foundation.gestures.LocalBringIntoViewSpec provides MinimalScroll) {
+        androidx.compose.runtime.CompositionLocalProvider(androidx.compose.foundation.gestures.LocalBringIntoViewSpec provides if (isTv) CenterScroll else MinimalScroll) {
         LazyColumn(Modifier.fillMaxSize().then(if (Palette.isGlass) Modifier.hazeSource(topHaze) else Modifier), state = list, contentPadding = PaddingValues(bottom = 32.dp + LocalBottomInset.current)) {
             item(key = "banner") {
                 Box(Modifier.onFocusChanged { f ->
