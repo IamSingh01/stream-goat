@@ -234,7 +234,9 @@ fun ContinueRow(entries: List<WatchEntry>, cardWidth: androidx.compose.ui.unit.D
     val edge = if (isWide) 40.dp else 16.dp
     Column(Modifier.padding(top = 12.dp)) {
         SectionTitle("Continue Watching", Modifier.padding(horizontal = edge))
-        TvRowScroll { rowState -> LazyRow(state = rowState,
+        val first = remember { androidx.compose.ui.focus.FocusRequester() }
+        val firstKey = entries.firstOrNull()?.let { "${it.apiName}|${it.url}" }
+        TvRowScroll(first) { rowState -> LazyRow(state = rowState,
             contentPadding = PaddingValues(horizontal = edge, vertical = 10.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
@@ -246,6 +248,7 @@ fun ContinueRow(entries: List<WatchEntry>, cardWidth: androidx.compose.ui.unit.D
                 }) {
                     WideCard(
                         e.name, e.leftText(), e.posterUrl, e.progress.toFloat(), cardWidth,
+                        modifier = if ("${e.apiName}|${e.url}" == firstKey) Modifier.focusRequester(first) else Modifier,
                         onFocus = onFocus?.let { { it(e) } },
                         onLongClick = { menu = true },
                         onClick = { openTitle(e) },
@@ -282,12 +285,15 @@ fun CatalogRow(
             section.list.name, Modifier.padding(horizontal = edge),
             action = if (isTv) null else "View all",
         ) { viewAll() }
-        TvRowScroll { rowState -> LazyRow(state = rowState,
+        val first = remember { androidx.compose.ui.focus.FocusRequester() }
+        val firstUrl = section.list.list.firstOrNull()?.url
+        TvRowScroll(if (firstUrl != null) first else null) { rowState -> LazyRow(state = rowState,
             contentPadding = PaddingValues(horizontal = edge, vertical = 10.dp),
             horizontalArrangement = Arrangement.spacedBy(if (isWide) 14.dp else 10.dp),
         ) {
             uniqueItems(section.list.list, key = { it.url }) { item ->
-                PosterCard(item, posterWidth, onFocus = onFocus?.let { { it(item) } }) { openTitle(item) }
+                PosterCard(item, posterWidth, modifier = if (item.url == firstUrl) Modifier.focusRequester(first) else Modifier,
+                    onFocus = onFocus?.let { { it(item) } }) { openTitle(item) }
             }
             item(key = "view-all") { ViewAllTile(section.list.name, posterWidth) { viewAll() } }
         } }
@@ -340,7 +346,7 @@ internal fun WideHome(state: HomeState) {
             }
             uniqueItems(state.sections, key = { "${it.api.name}|${it.order}" }) { section ->
                 Box(Modifier.onFocusChanged { if (it.hasFocus) hideBannerUnderBar() }) {
-                    CatalogRow(section, 140.dp, onFocus = if (isTv) { item -> focused = item } else null)
+                    CatalogRow(section, 140.dp)
                 }
             }
             if (state.loading && state.sections.isEmpty()) item { Spinner(Modifier.fillMaxWidth().height(200.dp)) }

@@ -68,6 +68,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -344,6 +346,11 @@ private fun LibraryPage() {
 @Composable
 private fun SearchPage(search: (String) -> Unit) {
     val side = PageSide
+    // Remote: the search box has the focus when the page opens, and the top result once results arrive.
+    val box = remember { androidx.compose.ui.focus.FocusRequester() }
+    val topPlay = remember { androidx.compose.ui.focus.FocusRequester() }
+    LaunchedEffect(Unit) { if (isTv && MusicUi.results.isEmpty()) runCatching { box.requestFocus() } }
+    LaunchedEffect(MusicUi.results) { if (isTv && MusicUi.results.isNotEmpty()) { kotlinx.coroutines.delay(150); runCatching { topPlay.requestFocus() } } }
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = side, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             IconAction(Icons.AutoMirrored.Filled.ArrowBack, "Back") { MusicUi.searching = false; MusicUi.results = emptyList(); MusicUi.query = "" }
@@ -351,7 +358,7 @@ private fun SearchPage(search: (String) -> Unit) {
                 placeholder = { Text("Search songs, artists, albums") }, leadingIcon = { Icon(Icons.Filled.Search, null) },
                 trailingIcon = { if (MusicUi.query.isNotEmpty()) IconAction(Icons.Filled.Close, "Clear") { MusicUi.query = "" } },
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search), keyboardActions = KeyboardActions(onSearch = { search(MusicUi.query.trim()) }),
-                modifier = Modifier.weight(1f).padding(start = 8.dp))
+                modifier = Modifier.weight(1f).padding(start = 8.dp).focusRequester(box))
         }
         if (MusicUi.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
         MusicUi.error?.let { Text(it, color = Palette.muted, modifier = Modifier.padding(horizontal = side, vertical = 8.dp)) }
@@ -368,7 +375,7 @@ private fun SearchPage(search: (String) -> Unit) {
                             Text("Song · ${top.artist}" + (top.seconds.takeIf { it > 0 }?.let { " · " + clock(it * 1000) } ?: ""),
                                 style = MaterialTheme.typography.bodyMedium, color = Palette.muted, maxLines = 1)
                             Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                PillButton("Play", Icons.Filled.PlayArrow, compact = true) { Music.play(top, results) }
+                                PillButton("Play", Icons.Filled.PlayArrow, Modifier.focusRequester(topPlay), compact = true) { Music.play(top, results) }
                                 PillButton("Save", Icons.AutoMirrored.Filled.PlaylistAdd, primary = false, compact = true) { MusicUi.saveFor = top }
                             }
                         }
@@ -577,6 +584,8 @@ private fun FullPlayer() {
 
 @Composable
 private fun PlayerMain(t: Music.Track, artModifier: Modifier) {
+    val playPause = remember { androidx.compose.ui.focus.FocusRequester() }
+    LaunchedEffect(Unit) { if (isTv) { kotlinx.coroutines.delay(100); runCatching { playPause.requestFocus() } } }
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         IconAction(Icons.Filled.KeyboardArrowDown, "Close player") { MusicUi.playerOpen = false }
         Spacer(Modifier.weight(1f))
@@ -596,7 +605,7 @@ private fun PlayerMain(t: Music.Track, artModifier: Modifier) {
     var drag by remember { mutableStateOf<Float?>(null) }
     Slider(value = drag ?: if (Music.length > 0) (Music.position.toFloat() / Music.length).coerceIn(0f, 1f) else 0f,
         onValueChange = { drag = it }, onValueChangeFinished = { drag?.let { Music.seekTo((it * Music.length).toLong()) }; drag = null },
-        modifier = Modifier.fillMaxWidth())
+        modifier = Modifier.fillMaxWidth().focusProperties { canFocus = !isTv })
     Row(Modifier.fillMaxWidth()) {
         Text(clock(Music.position), style = MaterialTheme.typography.labelSmall, color = Palette.muted)
         Spacer(Modifier.weight(1f))
@@ -605,7 +614,7 @@ private fun PlayerMain(t: Music.Track, artModifier: Modifier) {
     Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
         IconAction(Icons.Filled.Shuffle, "Shuffle", tint = if (Music.shuffle) Palette.accent else Color.White) { Music.shuffle = !Music.shuffle }
         IconAction(Icons.Filled.SkipPrevious, "Previous") { Music.previous() }
-        Box(Modifier.size(72.dp).card(CircleShape) { Music.toggle() }.background(Color.White, CircleShape), contentAlignment = Alignment.Center) {
+        Box(Modifier.size(72.dp).focusRequester(playPause).card(CircleShape) { Music.toggle() }.background(Color.White, CircleShape), contentAlignment = Alignment.Center) {
             if (Music.loading) CircularProgressIndicator(Modifier.size(32.dp), color = Color.Black)
             else Icon(if (Music.playing) Icons.Filled.Pause else Icons.Filled.PlayArrow, "Play/pause", tint = Color.Black, modifier = Modifier.size(40.dp))
         }

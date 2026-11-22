@@ -46,6 +46,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -96,7 +97,8 @@ private fun Modifier.cardImpl(
     val requester = remember { androidx.compose.ui.focus.FocusRequester() }
     val press = remember { PressState() }
     this
-        .scale(scale)
+        // Read while drawing (not composing): the zoom animation doesn't rebuild the card on every frame.
+        .graphicsLayer { scaleX = scale; scaleY = scale }
         .then(if (firstClickSelects) Modifier.focusRequester(requester).pointerInput(Unit) {
             // Seen before the click handler: was it already selected when the button went down?
             awaitPointerEventScope {
@@ -139,7 +141,11 @@ internal val RevealScroll = object : androidx.compose.foundation.gestures.BringI
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun TvRowScroll(content: @Composable (androidx.compose.foundation.lazy.LazyListState) -> Unit) {
+fun TvRowScroll(
+    /** The row's first card: where the remote lands when it comes into the row for the first time. */
+    first: androidx.compose.ui.focus.FocusRequester? = null,
+    content: @Composable (androidx.compose.foundation.lazy.LazyListState) -> Unit,
+) {
     val state = androidx.compose.foundation.lazy.rememberLazyListState()
     // A mouse (a TV's air mouse, a phone or tablet with a mouse): its wheel only scrolls the page up and down, so
     // a row shows ‹ › buttons at its ends while the pointer is over it, to move it back and forward.
@@ -147,13 +153,29 @@ fun TvRowScroll(content: @Composable (androidx.compose.foundation.lazy.LazyListS
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     val rowWithArrows: @Composable () -> Unit = {
         androidx.compose.foundation.layout.BoxWithConstraints(Modifier.pointerInput(Unit) {
+            // Seen before the cards: hold the mouse button and drag to move the row (as in the official app);
+            // a drag doesn't open the card it started on.
+            var downX = 0f
+            var lastX = 0f
+            var pressed = false
+            var dragging = false
             awaitPointerEventScope {
                 while (true) {
-                    val e = awaitPointerEvent()
-                    if (e.changes.none { it.type == androidx.compose.ui.input.pointer.PointerType.Mouse }) continue
-                    hovered = when (e.type) {
-                        androidx.compose.ui.input.pointer.PointerEventType.Exit -> false
-                        else -> true
+                    val e = awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+                    val c = e.changes.firstOrNull { it.type == androidx.compose.ui.input.pointer.PointerType.Mouse } ?: continue
+                    when (e.type) {
+                        androidx.compose.ui.input.pointer.PointerEventType.Exit -> hovered = false
+                        androidx.compose.ui.input.pointer.PointerEventType.Press -> { hovered = true; pressed = true; dragging = false; downX = c.position.x; lastX = downX }
+                        androidx.compose.ui.input.pointer.PointerEventType.Move -> {
+                            hovered = true
+                            if (pressed && c.pressed) {
+                                if (!dragging && kotlin.math.abs(c.position.x - downX) > viewConfiguration.touchSlop) dragging = true
+                                if (dragging) { state.dispatchRawDelta(lastX - c.position.x); c.consume() }
+                                lastX = c.position.x
+                            }
+                        }
+                        androidx.compose.ui.input.pointer.PointerEventType.Release -> { if (dragging) c.consume(); pressed = false; dragging = false }
+                        else -> hovered = true
                     }
                 }
             }
@@ -187,7 +209,7 @@ fun TvRowScroll(content: @Composable (androidx.compose.foundation.lazy.LazyListS
             .focusProperties { onExit = { if (requestedFocusDirection == androidx.compose.ui.focus.FocusDirection.Right) cancelFocusChange() } }
             // Coming back to a row (Up/Down from the next row) returns to the card that was selected there, instead
             // of whichever card happens to be nearest on screen.
-            .focusRestorer()) { rowWithArrows() }
+            .then(if (first != null) Modifier.focusRestorer(first) else Modifier.focusRestorer())) { rowWithArrows() }
     }
     else rowWithArrows()
 }
