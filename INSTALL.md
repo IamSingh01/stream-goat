@@ -278,7 +278,8 @@ Needs Android 6.0 or newer.
 3. Open Downloader, type the code **`3045910`** (or the address **`sherazi5110.github.io/stream-goat/tv`**) in the box and press **Go**. It downloads the
    newest version for TVs (`armeabi-v7a`).
    - If the TV says *App not installed*, uninstall the old Stream Goat first (back up first: Settings → Updates and
-     backup), or type `sherazi5110.github.io/stream-goat/apk` instead (the universal file, for every device).
+     backup), or type the code **`2193283`** instead (the universal file, for every device; or the address
+     `sherazi5110.github.io/stream-goat/apk`). Both codes always get the newest version.
    - The full link works too: `https://github.com/sherazi5110/stream-goat/releases/latest/download/streamgoat-android-armeabi-v7a.apk`.
 4. Choose **Install**, then **Open**. Downloader offers to delete the downloaded file: you can, it isn't needed any more.
 

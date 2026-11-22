@@ -91,7 +91,8 @@ a newer `.msi` updates in place. [More: INSTALL.md → Windows](INSTALL.md)
 | `streamgoat-android-universal.apk` | Not sure? This one runs everywhere (larger download) |
 
 Open the `.apk` on the device and allow *Install unknown apps* when asked. On a TV (Fire TV Stick, Google TV, Android TV, TV boxes), install the **Downloader** app and
-type the code **3045910** (or `adb install`). The app has a touch layout for phones and a remote-friendly layout for TV (a mouse works too),
+type the code **3045910** (TV version) or **2193283** (universal, any device), or use `adb install`. Both codes always
+get the newest version. The app has a touch layout for phones and a remote-friendly layout for TV (a mouse works too),
 ExoPlayer and VLC, and real **HDR** on HDR screens. **Updating:** 10.0.0 and later install new versions from inside the
 app (Settings → Updates and backup); coming from 9.x, uninstall once first (back up, then restore). [More: INSTALL.md → Android](INSTALL.md#android-phones-tablets-and-android-tv)
 
