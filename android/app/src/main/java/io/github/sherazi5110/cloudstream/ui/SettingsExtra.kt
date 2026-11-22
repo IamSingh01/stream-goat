@@ -299,6 +299,7 @@ fun UpdateDialog() {
             }
             needPermission -> Hint("Android needs your OK once: turn on \"Allow from this source\" for Stream Goat, come back, then tap \"Allow and install\".")
             rel.apk != null -> Hint((if (rel.test) rel.version.replaceFirstChar { it.uppercase() } + ". " else "") +
+                (if (rel.patch != null) "A small update (%.1f MB instead of %.0f MB): ".format(rel.patchSize / 1048576.0, rel.size / 1048576.0) else "") +
                 "It downloads here and installs over this version: your extensions, settings, history and downloads are kept.")
             else -> Hint("There's no download for this device in this release; the release page opens.")
         }

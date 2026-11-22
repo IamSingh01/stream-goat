@@ -95,6 +95,8 @@ kotlin {
 }
 
 dependencies {
+    // bzip2 for update patches (Bspatch: bsdiff's format).
+    implementation("org.apache.commons:commons-compress:1.27.1")
     implementation(project(":cs-library"))
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs_nio:2.1.5")
 

@@ -58,6 +58,15 @@ jobs:
           echo "VLC_DIR=$(cygpath -w "$PWD/vlc")" >> "$GITHUB_ENV"
           echo "$PWD/vlc" >> "$GITHUB_PATH"
 
+      - name: Update signing certificate
+        # Built into the app, so it can check the signature of small updates (packaging/update/ci.sh).
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: ./packaging/update/ci.sh cert
+
       - name: Test
         # The same tests as on Linux: extensions (.cs3 and .jar), sources, the header proxy, subtitles, downloads,
         # backup and libVLC playback with the bundled VLC.
@@ -88,6 +97,15 @@ jobs:
           (cd app/build/jpackage-win && 7z a -tzip -bd -mx=7 "../../../build/windows/streamgoat-windows-$VERSION-portable.zip" "Stream Goat" > /dev/null)
           cp app/build/jpackage-win/Stream\ Goat-*.msi "build/windows/streamgoat-windows-$VERSION.msi"
           ls -la build/windows
+
+      - name: Update patch
+        # Stream Goat's own jars, signed: what the app downloads for a small update (Settings → Updates).
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: ./packaging/update/ci.sh make windows
 
       - name: Check the packaged app
         # The packaged app's own checker must find its Java, extensions folder and the bundled VLC.
@@ -139,6 +157,7 @@ jobs:
           files: |
             build/windows/*.zip
             build/windows/*.msi
+            build/update/*
 
       - name: Test build (pull requests)
         # Also on the "test-build" pre-release (see build.yml), next to the Android files.
@@ -153,3 +172,4 @@ jobs:
           files: |
             build/windows/*.zip
             build/windows/*.msi
+            build/update/*

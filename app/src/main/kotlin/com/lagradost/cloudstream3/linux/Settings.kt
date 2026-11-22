@@ -108,6 +108,11 @@ object Settings {
         get() = string("check_updates", "true") == "true"
         set(v) = put("check_updates", v)
 
+    /** Updates from the "test-build" pre-release instead of releases. */
+    var testBuilds: Boolean
+        get() = string("update_test_builds", "false") == "true"
+        set(v) = put("update_test_builds", v)
+
     /** Home: rotate the featured banner through the first catalog's top titles. */
     var heroSlider: Boolean
         get() = string("hero_slider", "true") == "true"

@@ -1062,8 +1062,10 @@ class SettingsPage : StackPane(), Refreshable {
                 button("Report", Icons.BUG, "btn-ghost", "btn-small") { GlitchWindow.reportWithoutPicture(Nav.window.stage) }),
         ),
         section("Updates",
-            row("Check for updates", "Looks for a newer release on GitHub.", updateButton()),
+            row("Check for updates", "Small updates (only Stream Goat's own code changed) install from here and apply when the app restarts; " +
+                "bigger ones open the download page. You have ${AppInfo.VERSION} (build ${Updates.build}).", updateButton()),
             row("Check automatically", "Once a day when the app starts.", Switch(Settings.checkUpdates) { Settings.checkUpdates = it }),
+            row("Test builds", "Get the newest test versions (may have bugs) instead of releases.", Switch(Settings.testBuilds) { Settings.testBuilds = it }),
             row("Release notes", Updates.RELEASES, button("Open", Icons.FILE, "btn-ghost", "btn-small") { openUrl(Updates.RELEASES) }),
         ),
     )
@@ -1071,6 +1073,7 @@ class SettingsPage : StackPane(), Refreshable {
     private fun updateButton(): Node {
         val status = label("", "muted", "small")
         val check = button("Check now", Icons.REFRESH, "btn-ghost", "btn-small") {}
+        val box = hbox(10.0, status, check)
         check.setOnAction {
             check.isDisable = true
             status.text = "Checking…"
@@ -1078,15 +1081,36 @@ class SettingsPage : StackPane(), Refreshable {
                 val result = runCatching { Updates.check(AppInfo.VERSION) }
                 check.isDisable = false
                 result.fold({ r ->
-                    if (r == null) status.text = "You have the latest version (${AppInfo.VERSION})"
-                    else {
-                        status.text = "Version ${r.version} is available"
-                        openUrl(r.url)
+                    when {
+                        r == null -> status.text = "You have the latest ${if (Settings.testBuilds) "test build" else "version"} (${AppInfo.VERSION})"
+                        r.patch != null -> {
+                            status.text = "${r.version}${r.build?.let { " ($it)" }.orEmpty()} is available: ${"%.1f".format(r.patch.size / 1048576.0)} MB"
+                            val update = button("Update", Icons.DOWNLOAD, "btn-primary", "btn-small") {}
+                            update.setOnAction {
+                                update.isDisable = true; check.isDisable = true
+                                ui.launch {
+                                    runCatching { Updates.install(r.patch) { f -> javafx.application.Platform.runLater { status.text = "Downloading… ${(f * 100).toInt()} %" } } }
+                                        .onSuccess {
+                                            status.text = "Installed. It's used from the next start."
+                                            box.children.setAll(status, button("Restart now", Icons.REFRESH, "btn-primary", "btn-small") { Updates.restart() })
+                                        }
+                                        .onFailure { e ->
+                                            status.text = "Couldn't update (${e.message ?: e}). Download it instead:"
+                                            box.children.setAll(status, button("Download", Icons.DOWNLOAD, "btn-ghost", "btn-small") { openUrl(r.url) })
+                                        }
+                                }
+                            }
+                            box.children.setAll(status, update, check)
+                        }
+                        else -> {
+                            status.text = "${r.version} is available (download the full version)"
+                            box.children.setAll(status, button("Download", Icons.DOWNLOAD, "btn-primary", "btn-small") { openUrl(r.url) }, check)
+                        }
                     }
                 }, { status.text = "Couldn't check: ${it.message ?: it}" })
             }
         }
-        return hbox(10.0, status, check)
+        return box
     }
 
     /** Every shortcut in one searchable list. */

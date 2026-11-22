@@ -46,7 +46,8 @@ dependencies {
 
 application {
     applicationName = "cloudstream-linux"
-    mainClass.set("com.lagradost.cloudstream3.linux.MainKt")
+    // Boot starts MainKt, with an installed update patch when there is one (Boot.java).
+    mainClass.set("com.lagradost.cloudstream3.linux.Boot")
     applicationDefaultJvmArgs = listOf(
         // Plugin bytecode comes from dex2jar and may reference Android classes we only stub.
         "-XX:+UnlockDiagnosticVMOptions",
@@ -225,4 +226,19 @@ val cloudConfig = tasks.register("cloudConfig") {
             .writeText("GOOGLE_CLIENT_ID=${id.get()}\nGOOGLE_CLIENT_SECRET=${secret.get()}\nWETRAKR_CLIENT_ID=${wetrakr.get()}\n")
     }
 }
-sourceSets.main { resources.srcDir(cloudConfig) }
+// Update patches (Boot.java, Updates): which build this is, and the certificate patches must be signed with
+// (the GitHub builds export it from the signing key: STREAMGOAT_UPDATE_CERT; without it patches are off).
+val updateConfig = tasks.register("updateConfig") {
+    val out = layout.buildDirectory.dir("generated/update")
+    val sha = providers.environmentVariable("GITHUB_SHA").orElse("dev")
+    val cert = providers.environmentVariable("STREAMGOAT_UPDATE_CERT").orElse("")
+    inputs.property("sha", sha)
+    inputs.property("cert", cert)
+    outputs.dir(out)
+    doLast {
+        val dir = out.get().asFile.apply { deleteRecursively(); mkdirs() }
+        dir.resolve("stream-goat-build.properties").writeText("build=${sha.get().take(12)}\n")
+        cert.get().takeIf { it.isNotBlank() }?.let(::file)?.takeIf { it.isFile }?.copyTo(dir.resolve("stream-goat-update.pem"))
+    }
+}
+sourceSets.main { resources.srcDir(cloudConfig); resources.srcDir(updateConfig) }
