@@ -6,6 +6,7 @@ import dev.chrisbanes.haze.hazeEffect
 import dev.chrisbanes.haze.hazeSource
 import kotlinx.coroutines.launch
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.background
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.CloudDownload
@@ -314,6 +315,19 @@ internal fun WideHome(state: HomeState) {
         // On a TV, Compose scrolls a list so the focused item sits a third of the way down (the TV "pivot"). With the
         // remote on the banner's Play button that pushed the banner's top (logo, title) up under the top bar. Here
         // the list only scrolls as far as needed, and the banner always shows whole when it has the focus.
+        // Moving down from the banner with the remote: the list used to scroll only as far as the row needed, leaving
+        // the banner's bottom strip (Play, More Info) under the see-through top bar. Now the banner goes all the way
+        // under the bar, and the row sits just below it.
+        val density = androidx.compose.ui.platform.LocalDensity.current
+        val barPx = with(density) { (androidx.compose.foundation.layout.WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 66.dp).toPx() }
+        fun hideBannerUnderBar() {
+            scope.launch {
+                kotlinx.coroutines.delay(60)   // after the focus scroll
+                val banner = list.layoutInfo.visibleItemsInfo.firstOrNull { it.key == "banner" } ?: return@launch
+                val bottom = banner.offset + banner.size
+                if (bottom > barPx) list.animateScrollBy(bottom - barPx)
+            }
+        }
         androidx.compose.runtime.CompositionLocalProvider(androidx.compose.foundation.gestures.LocalBringIntoViewSpec provides MinimalScroll) {
         LazyColumn(Modifier.fillMaxSize().then(if (Palette.isGlass) Modifier.hazeSource(topHaze) else Modifier), state = list, contentPadding = PaddingValues(bottom = 32.dp + LocalBottomInset.current)) {
             item(key = "banner") {
@@ -322,17 +336,19 @@ internal fun WideHome(state: HomeState) {
                 }) { WideBanner(state, focused, bannerHeight) }
             }
             if (state.continueWatching.isNotEmpty()) item(key = "continue") {
-                ContinueRow(state.continueWatching, 280.dp)
+                Box(Modifier.onFocusChanged { if (it.hasFocus) hideBannerUnderBar() }) { ContinueRow(state.continueWatching, 280.dp) }
             }
             uniqueItems(state.sections, key = { "${it.api.name}|${it.order}" }) { section ->
-                CatalogRow(section, 140.dp, onFocus = if (isTv) { item -> focused = item } else null)
+                Box(Modifier.onFocusChanged { if (it.hasFocus) hideBannerUnderBar() }) {
+                    CatalogRow(section, 140.dp, onFocus = if (isTv) { item -> focused = item } else null)
+                }
             }
             if (state.loading && state.sections.isEmpty()) item { Spinner(Modifier.fillMaxWidth().height(200.dp)) }
             if (state.offline && state.sections.isEmpty()) item { OfflineState(Modifier.fillMaxWidth()) { state.catalogVersion++ } }
         }
         }
-        // Fixed top bar; it gets a backdrop once the banner has scrolled away.
-        val scrolled = list.firstVisibleItemIndex > 0
+        // Fixed top bar; it gets a backdrop as soon as the page scrolls, so nothing shows through it.
+        val scrolled = list.firstVisibleItemIndex > 0 || list.firstVisibleItemScrollOffset > 0
         TopBar(
             when {
                 !scrolled -> Modifier
