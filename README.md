@@ -7,7 +7,7 @@ Created by <b>Syed Ali Hamza</b></p>
 
 ![Stream Goat: Home](docs/screenshots/home.jpg)
 
-> **Testing notes (10.0.0).** The Mac and Linux apps are built and checked automatically but haven't been tested by hand yet, so please report anything odd. On Windows the first launch after installing can be slow and laggy for a minute while the app sets itself up and loads an earlier backup; give it a moment and it runs smoothly after that.
+> **Testing notes (10.0.1).** The Mac and Linux apps are built and checked automatically but haven't been tested by hand yet, so please report anything odd. On Windows the first launch after installing can be slow and laggy for a minute while the app sets itself up and loads an earlier backup; give it a moment and it runs smoothly after that.
 
 > **Disclaimer.** Stream Goat is only a media player and organiser. It does not host, provide, link to or endorse any movies, shows, channels or other content, and it ships with no content sources. You add your own extensions, add-ons and playlists and are responsible for having the rights to whatever you play. Titles, posters and logos belong to their owners and appear in the screenshots only to show how the app looks.
 
@@ -33,10 +33,10 @@ library and downloads carry over.)*
 
 ## What it does
 
-> **New in 10.0.0:** updates inside the app, a **Sports** section with live scores, a **Music** section like YouTube
-> Music, **YouTube** (its TV app, ads removed), **ExoPlayer** next to VLC, and a much smoother TV app (tablet layout,
-> official-app remote, mouse support). Android: uninstall the old version once to install 10.0.0 (back up first);
-> later versions update from inside the app. [All changes](docs/releases/10.0.0.md)
+> **New in 10.0.1:** **mpv** is the new player on Windows, Mac and Linux (NetMirror plays with its real length and
+> audio languages), **small updates** install from inside every app, and Settings is back in the phone's bottom bar.
+> [All changes](docs/releases/10.0.1.md) · 10.0.0 brought updates inside the app, **Sports**, **Music**, **YouTube**,
+> ExoPlayer and a much smoother TV app ([10.0.0 changes](docs/releases/10.0.0.md)).
 
 - **One app on every screen:** Android phones, tablets and TV, Windows, Mac, Linux and the web, with the same look.
 - **Your own sources:** CloudStream extensions and repositories, Stremio add-ons, and Live TV from M3U playlists,
@@ -92,8 +92,8 @@ a newer `.msi` updates in place. [More: INSTALL.md → Windows](INSTALL.md)
 
 Open the `.apk` on the device and allow *Install unknown apps* when asked. On a TV (Fire TV Stick, Google TV, Android TV, TV boxes), install the **Downloader** app and
 type the code **3045910** (or `adb install`). The app has a touch layout for phones and a remote-friendly layout for TV (a mouse works too),
-ExoPlayer and VLC, and real **HDR** on HDR screens. **Updating to 10.0.0:** uninstall the old version once (back up
-first: Settings → Updates and backup, then restore); from then on new versions install from inside the app. [More: INSTALL.md → Android](INSTALL.md#android-phones-tablets-and-android-tv)
+ExoPlayer and VLC, and real **HDR** on HDR screens. **Updating:** 10.0.0 and later install new versions from inside the
+app (Settings → Updates and backup); coming from 9.x, uninstall once first (back up, then restore). [More: INSTALL.md → Android](INSTALL.md#android-phones-tablets-and-android-tv)
 
 ### Mac (Apple Silicon, from 9.0.1)
 
