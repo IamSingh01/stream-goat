@@ -332,6 +332,27 @@ object Metadata {
         hit?.optString("imdb_id")?.ifBlank { hit.optString("id") }?.takeIf { it.startsWith("tt") }?.let { Triple(null, it, movie) }
     }
 
+    /** A show's aired episodes (seasons 1+): episodes per season, the latest aired one and its date. */
+    data class Aired(val seasons: Map<Int, Int>, val lastSeason: Int, val lastEpisode: Int, val lastAirDate: String?)
+
+    /** [Aired] for a TMDB show, refreshed daily (new episodes appear). Null without a TMDB key or when unknown. */
+    suspend fun aired(tmdbId: Int): Aired? = withContext(Dispatchers.IO) {
+        if (!hasTmdb) return@withContext null
+        val o = cached(cacheKey("aired", tmdbId, java.time.LocalDate.now().toString())) { tmdb("/tv/$tmdbId") } ?: return@withContext null
+        val last = o.optJSONObject("last_episode_to_air") ?: return@withContext null
+        val seasons = o.optJSONArray("seasons")?.let { a -> (0 until a.length()).mapNotNull { a.optJSONObject(it) } }.orEmpty()
+            .associate { it.optInt("season_number") to it.optInt("episode_count") }.filterKeys { it > 0 }
+        val ls = last.optInt("season_number"); val le = last.optInt("episode_number")
+        if (ls <= 0 || le <= 0) return@withContext null
+        Aired(seasons, ls, le, last.optString("air_date").takeIf { it.isNotBlank() })
+    }
+
+    /** IMDb id → TMDB id (cached), for shows matched by IMDb id. */
+    suspend fun tmdbForImdb(imdb: String): Int? = withContext(Dispatchers.IO) {
+        if (!hasTmdb) return@withContext null
+        cached(cacheKey("find", imdb)) { findByImdb(imdb) }?.optInt("id")?.takeIf { it > 0 }
+    }
+
     // ---------- details ----------
 
     /** Everything known about a title from the enabled services, or null when nothing matched. */

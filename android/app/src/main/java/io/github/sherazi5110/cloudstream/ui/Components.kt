@@ -466,7 +466,13 @@ fun WatchedStamp(item: SearchResponse, modifier: Modifier = Modifier) {
     val stamp = androidx.compose.runtime.produceState<io.github.sherazi5110.cloudstream.WeTrakrSync.Stamp?>(null, item.url, version) {
         value = runCatching { io.github.sherazi5110.cloudstream.WeTrakrSync.stamp(item) }.getOrNull()
     }.value ?: return
-    StampMark(stamp.label, modifier)
+    if (stamp.big) StampMark(stamp.label, modifier)
+    else Box(modifier.fillMaxSize().padding(6.dp), contentAlignment = Alignment.TopEnd) {
+        val color = if (stamp == io.github.sherazi5110.cloudstream.WeTrakrSync.Stamp.NEW_EPISODES) Color(0xFFFF9F1C) else Palette.accent
+        Text((if (stamp == io.github.sherazi5110.cloudstream.WeTrakrSync.Stamp.CONTINUE) "▶ " else "") + stamp.label.uppercase(),
+            fontSize = 10.sp, fontWeight = FontWeight.Black, color = Color.White, maxLines = 1,
+            modifier = Modifier.background(color, RoundedCornerShape(6.dp)).padding(horizontal = 6.dp, vertical = 3.dp))
+    }
 }
 
 /** The stamp itself: [label] in a tilted double green frame over the whole poster. */

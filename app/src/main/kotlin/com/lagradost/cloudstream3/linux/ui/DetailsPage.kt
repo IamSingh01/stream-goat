@@ -187,7 +187,7 @@ class DetailsPage(
         playSlot.children.setAll(playButton())
         val watched = playables.isNotEmpty() && playables.all { Library.isWatched(api.name, it.data) }
         val watchedButton = button(if (watched) "Watched" else "Mark as watched", if (watched) Icons.CHECK else Icons.CHECK, "btn-ghost") {
-            if (watched) Library.markUnwatched(api.name, url, playables.map { it.data })
+            if (watched) { Library.markUnwatched(api.name, url, playables.map { it.data }); com.lagradost.cloudstream3.linux.WeTrakrSync.unmark(r, playables) }
             else {
                 Library.markWatched(api.name, url, r.name, r.posterUrl ?: poster, playables.map { it.data to (if (playables.size > 1) it.label else null) })
                 com.lagradost.cloudstream3.linux.WeTrakrSync.push(r, playables)

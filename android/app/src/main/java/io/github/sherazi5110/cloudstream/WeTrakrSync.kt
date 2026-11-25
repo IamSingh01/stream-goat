@@ -145,8 +145,9 @@ object WeTrakrSync {
      * and number. Returns how many were marked.
      */
     suspend fun apply(apiName: String, r: LoadResponse, playables: List<Playable>): Int {
-        if (!WeTrakr.available || !WeTrakr.connected) return 0
-        pull()
+        // What was watched in another extension (or on WeTrakr) is marked here too: kept by ids, signed in or not.
+        if (WeTrakr.available && WeTrakr.connected) pull()
+        if (movies().isEmpty() && episodes().isEmpty()) return 0
         val info = runCatching { Metadata.details(r) }.getOrNull()
         val tmdb = info?.tmdbId
         val imdb = info?.imdbId ?: runCatching { r.getImdbIdSafe() }.getOrNull()
@@ -162,33 +163,83 @@ object WeTrakrSync {
         return todo.size
     }
 
-    /** Sends titles marked watched by hand here to WeTrakr (an already watched title doesn't get a second play). */
-    fun push(r: LoadResponse, playables: List<Playable>) {
-        if (!WeTrakr.available || !WeTrakr.connected || playables.isEmpty()) return
+    private fun save() = synchronized(this) {
+        prefs.edit().putStringSet("movies", movies().toSet()).putStringSet("episodes", episodes().toSet())
+            .putStringSet("shows", shows().toSet()).apply()
+    }
+
+    /** The title's ids (TMDB, IMDb), or null when neither is known. */
+    private suspend fun idsOf(r: LoadResponse): Pair<Int?, String?>? {
+        val info = runCatching { Metadata.details(r) }.getOrNull()
+        val tmdb = info?.tmdbId
+        val imdb = info?.imdbId ?: r.getImdbIdSafe()
+        return if (tmdb == null && imdb == null) null else tmdb to imdb
+    }
+
+    /** Remembers here, by ids, that these were watched: every extension that lists the title shows it watched. */
+    private fun remember(tmdb: Int?, imdb: String?, isMovie: Boolean, eps: List<Pair<Int, Int>>) = synchronized(this) {
+        val k = keys(tmdb, imdb)
+        if (isMovie) k.forEach { movies() += it }
+        else eps.forEach { (s, e) -> k.forEach { key -> episodes() += "$key:$s:$e"; shows() += key } }
+        save()
+    }
+
+    /** A film or episode finished in the player (from 80%): remembered by ids for every extension. */
+    fun finished(r: LoadResponse, season: Int?, episode: Int?) {
         App.scope.launch(Dispatchers.IO) {
             runCatching {
-                val info = Metadata.details(r)
-                val tmdb = info?.tmdbId
-                val imdb = info?.imdbId ?: r.getImdbIdSafe()
-                val ids = JSONObject().apply { tmdb?.let { put("tmdb", it) }; imdb?.let { put("imdb", it) } }
-                if (ids.length() == 0) return@runCatching
+                val (tmdb, imdb) = idsOf(r) ?: return@runCatching
+                val isMovie = episode == null
+                remember(tmdb, imdb, isMovie, if (isMovie) emptyList() else listOf((season ?: 1) to episode!!))
+                changed()
+            }
+        }
+    }
+
+    /**
+     * Marked watched by hand: remembered by ids for every extension, and sent to WeTrakr when connected (an already
+     * watched title doesn't get a second play).
+     */
+    fun push(r: LoadResponse, playables: List<Playable>) {
+        if (playables.isEmpty()) return
+        App.scope.launch(Dispatchers.IO) {
+            runCatching {
+                val (tmdb, imdb) = idsOf(r) ?: return@runCatching
                 val isMovie = r.type == TvType.Movie || r.type == TvType.AnimeMovie || playables.all { it.episode == null }
+                val eps = playables.filter { it.episode != null }.map { (it.season ?: 1) to it.episode!! }
+                remember(tmdb, imdb, isMovie, eps)
+                changed()
+                if (!WeTrakr.available || !WeTrakr.connected) return@runCatching
+                val ids = JSONObject().apply { tmdb?.let { put("tmdb", it) }; imdb?.let { put("imdb", it) } }
                 val body = JSONObject().put("allow_rewatch", false)
-                if (isMovie) {
-                    body.put("movies", JSONArray().put(JSONObject().put("ids", ids).put("status", "watched")))
-                    synchronized(this@WeTrakrSync) { keys(tmdb, imdb).forEach { movies() += it } }
-                } else {
+                if (isMovie) body.put("movies", JSONArray().put(JSONObject().put("ids", ids).put("status", "watched")))
+                else {
                     val seasons = JSONArray()
-                    playables.filter { it.episode != null }.groupBy { it.season ?: 1 }.forEach { (s, eps) ->
+                    eps.groupBy { it.first }.forEach { (s, list) ->
                         seasons.put(JSONObject().put("number", s).put("episodes", JSONArray().apply {
-                            eps.forEach { put(JSONObject().put("number", it.episode).put("status", "watched")) }
+                            list.forEach { put(JSONObject().put("number", it.second).put("status", "watched")) }
                         }))
-                        eps.forEach { ep -> keys(tmdb, imdb).forEach { k -> episodes() += "$k:$s:${ep.episode}"; shows() += k } }
                     }
                     body.put("shows", JSONArray().put(JSONObject().put("ids", ids).put("seasons", seasons)))
                 }
                 WeTrakr.postAuthed("/sync/tracking", body)
-                withContext(Dispatchers.Main) { changed() }
+            }
+        }
+    }
+
+    /** Marked not watched by hand: forgotten here for every extension (WeTrakr keeps its own history). */
+    fun unmark(r: LoadResponse, playables: List<Playable>) {
+        App.scope.launch(Dispatchers.IO) {
+            runCatching {
+                val (tmdb, imdb) = idsOf(r) ?: return@runCatching
+                val k = keys(tmdb, imdb)
+                val isMovie = r.type == TvType.Movie || r.type == TvType.AnimeMovie || playables.all { it.episode == null }
+                synchronized(this@WeTrakrSync) {
+                    if (isMovie) k.forEach { movies() -= it }
+                    else playables.filter { it.episode != null }.forEach { p -> k.forEach { episodes() -= "$it:${p.season ?: 1}:${p.episode}" } }
+                    save()
+                }
+                changed()
             }
         }
     }
@@ -208,36 +259,63 @@ object WeTrakrSync {
     private fun changed() { App.scope.launch(Dispatchers.Main) { version++ } }
     init { Library.onChange { changed() } }
 
-    /** What a poster's green stamp says. */
-    enum class Stamp(val label: String) { WATCHED("Watched"), WATCHING("Watching") }
+    /**
+     * What a poster shows: a big green WATCHED stamp ([big]) for a film or a show whose aired episodes were all watched;
+     * a small CONTINUE badge for a show part-way through; NEW EPISODES when you had caught up and newer ones aired.
+     */
+    enum class Stamp(val label: String, val big: Boolean) {
+        WATCHED("Watched", true), CONTINUE("Continue", false), NEW_EPISODES("New episodes", false)
+    }
 
     /**
-     * The stamp for a poster: watched here (a film finished, or episodes of a show), or watched on WeTrakr, matched by
-     * the title's TMDB / IMDb id whichever extension lists it. Null: not watched.
+     * The stamp for a poster: watched here in any extension or on WeTrakr, matched by the title's TMDB / IMDb id.
+     * Null: not watched.
      */
     suspend fun stamp(item: com.lagradost.cloudstream3.SearchResponse): Stamp? {
         val movieType = when (item.type) {
-            com.lagradost.cloudstream3.TvType.Movie, com.lagradost.cloudstream3.TvType.AnimeMovie, com.lagradost.cloudstream3.TvType.Torrent -> true
-            com.lagradost.cloudstream3.TvType.TvSeries, com.lagradost.cloudstream3.TvType.Anime, com.lagradost.cloudstream3.TvType.Cartoon,
-            com.lagradost.cloudstream3.TvType.AsianDrama, com.lagradost.cloudstream3.TvType.OVA -> false
+            TvType.Movie, TvType.AnimeMovie, TvType.Torrent -> true
+            TvType.TvSeries, TvType.Anime, TvType.Cartoon, TvType.AsianDrama, TvType.OVA -> false
             else -> null
         }
-        Library.titleFinished(item.apiName, item.url)?.let { noEpisode ->
-            return if (movieType ?: noEpisode) Stamp.WATCHED else Stamp.WATCHING
-        }
-        if (!WeTrakr.available || !WeTrakr.connected) return null
-        if (movies().isEmpty() && shows().isEmpty()) return null
-        val (tmdb, imdb, isMovie) = Metadata.posterIds(item) ?: return null
+        // This extension's own history: a film finished, or a show with finished episodes.
+        val local = Library.titleFinished(item.apiName, item.url)
+        val localStamp = local?.let { noEpisode -> if (movieType ?: noEpisode) Stamp.WATCHED else Stamp.CONTINUE }
+        if (localStamp == Stamp.WATCHED) return localStamp
+        if (movies().isEmpty() && shows().isEmpty()) return localStamp
+        val (tmdb, imdb, isMovie) = Metadata.posterIds(item) ?: return localStamp
         val k = keys(tmdb, imdb)
-        val movie = k.any { it in movies() }
-        val show = k.any { it in shows() }
-        return when {
-            isMovie == true -> if (movie) Stamp.WATCHED else null
-            isMovie == false -> if (show) Stamp.WATCHING else null
-            movie -> Stamp.WATCHED
-            show -> Stamp.WATCHING
-            else -> null
+        val movie = isMovie ?: movieType
+        if (movie != false && k.any { it in movies() }) return Stamp.WATCHED
+        if (movie == true || k.none { it in shows() }) return localStamp
+        val watched = HashSet<Pair<Int, Int>>()
+        for (e in episodes()) {
+            val p = e.split(':')
+            if (p.size == 3 && p[0] in k) {
+                val s = p[1].toIntOrNull() ?: continue; val n = p[2].toIntOrNull() ?: continue
+                if (s > 0) watched += s to n
+            }
         }
+        if (watched.isEmpty()) return localStamp
+        val tv = tmdb ?: imdb?.let { Metadata.tmdbForImdb(it) }
+        val aired = tv?.let { Metadata.aired(it) } ?: return Stamp.CONTINUE
+        return seriesStamp(watched, aired)
+    }
+
+    /** All aired episodes watched → WATCHED; caught up with only the newest missing (recent) → NEW_EPISODES; else CONTINUE. */
+    internal fun seriesStamp(watched: Set<Pair<Int, Int>>, a: Metadata.Aired, today: java.time.LocalDate = java.time.LocalDate.now()): Stamp {
+        val aired = (1..a.lastSeason).flatMap { s ->
+            val count = if (s == a.lastSeason) a.lastEpisode else (a.seasons[s] ?: 0)
+            (1..count).map { s to it }
+        }
+        val missing = aired.filter { it !in watched }
+        if (missing.isEmpty()) return Stamp.WATCHED
+        val last = watched.maxWithOrNull(compareBy({ it.first }, { it.second })) ?: return Stamp.CONTINUE
+        val onlyNewer = missing.all { it.first > last.first || (it.first == last.first && it.second > last.second) }
+        val recent = a.lastAirDate?.let { runCatching { java.time.LocalDate.parse(it) }.getOrNull() }?.isAfter(today.minusDays(120)) == true
+        // Caught up means every earlier season was finished: only the latest season is (partly) missing.
+        val onlyLatestSeason = missing.all { it.first == a.lastSeason }
+        val newSeason = a.lastSeason > 1 && watched.none { it.first == a.lastSeason }
+        return if (onlyNewer && recent && onlyLatestSeason && (missing.size <= 3 || newSeason)) Stamp.NEW_EPISODES else Stamp.CONTINUE
     }
 
     private fun LoadResponse.getImdbIdSafe(): String? = runCatching { getImdbId() }.getOrNull()?.takeIf { it.startsWith("tt") }

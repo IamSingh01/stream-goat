@@ -192,7 +192,7 @@ private fun Details(api: MainAPI, r: LoadResponse) {
                 }
             }
             ActionButton(Icons.Filled.Check, if (allWatched) "Watched" else "Mark as watched", tint = if (allWatched) Palette.watched else Color.White) {
-                if (allWatched) Library.markUnwatched(api.name, r.url, playables.map { it.data })
+                if (allWatched) { Library.markUnwatched(api.name, r.url, playables.map { it.data }); io.github.sherazi5110.cloudstream.WeTrakrSync.unmark(r, playables) }
                 else { Library.markWatched(api.name, r.url, r.name, r.posterUrl, playables.map { it.data to it.label }); io.github.sherazi5110.cloudstream.WeTrakrSync.push(r, playables) }
             }
             ActionButton(if (bookmarked) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder, if (bookmarked) "In My list" else "Add to My list") {
@@ -457,7 +457,7 @@ private fun EpisodeMenu(open: Boolean, api: MainAPI, r: LoadResponse, ep: Playab
             leadingIcon = { Icon(DownloadsUi.icon(item), null) },
             onClick = { onDismiss(); if (item == null) DownloadsUi.start(context, api, r, ep) else dlMenu = true })
         if (watched) DropdownMenuItem(text = { Text("Mark as not watched") }, leadingIcon = { Icon(Icons.Filled.Refresh, null) },
-            onClick = { onDismiss(); Library.markUnwatched(api.name, r.url, listOf(ep.data)) })
+            onClick = { onDismiss(); Library.markUnwatched(api.name, r.url, listOf(ep.data)); io.github.sherazi5110.cloudstream.WeTrakrSync.unmark(r, listOf(ep)) })
         else DropdownMenuItem(text = { Text("Mark as watched") }, leadingIcon = { Icon(Icons.Filled.Check, null) },
             onClick = { onDismiss(); Library.markWatched(api.name, r.url, r.name, r.posterUrl, listOf(ep.data to ep.label)); io.github.sherazi5110.cloudstream.WeTrakrSync.push(r, listOf(ep)) })
         DropdownMenuItem(text = { Text("Choose source") }, leadingIcon = { Icon(Icons.AutoMirrored.Filled.List, null) },

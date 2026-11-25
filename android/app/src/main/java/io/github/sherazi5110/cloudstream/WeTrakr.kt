@@ -191,6 +191,10 @@ object WeTrakr {
         fun paused(progress: Double) { if (shareNowPlaying) send("pause", progress) }
         /** Every few minutes while playing, so WeTrakr's progress stays close. */
         fun tick(progress: Double) { if (shareNowPlaying && System.currentTimeMillis() - lastSent > 5 * 60_000L) send("start", progress) }
-        fun stopped(progress: Double) = send("stop", progress)
+        fun stopped(progress: Double) {
+            // Finished (from 80%): every extension shows it watched, signed in to WeTrakr or not.
+            if (progress >= 80.0) WeTrakrSync.finished(r, season, episode)
+            send("stop", progress)
+        }
     }
 }

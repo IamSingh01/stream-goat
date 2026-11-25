@@ -67,8 +67,8 @@ class PosterCard(
     height: Double = POSTER_H,
     /** Looks up a score (TMDB/AniList) once the card is on screen; shown at the bottom left. */
     rating: (suspend () -> String?)? = null,
-    /** Looks up whether the title was watched ("Watched" / "Watching") once on screen: a big stamp across it. */
-    stamp: (suspend () -> String?)? = null,
+    /** Looks up whether the title was watched once on screen: a big stamp across it, or a Continue / New episodes badge. */
+    stamp: (suspend () -> com.lagradost.cloudstream3.linux.WeTrakrSync.Stamp?)? = null,
     onOpen: () -> Unit,
 ) : VBox() {
     init {
@@ -107,7 +107,7 @@ class PosterCard(
             frame.sceneProperty().addListener { _, _, scene ->
                 if (scene == null || looked) return@addListener
                 looked = true
-                ui.launch { runCatching { stamp() }.getOrNull()?.let { frame.children += stampMark(it, width) } }
+                ui.launch { runCatching { stamp() }.getOrNull()?.let { frame.children += if (it.big) stampMark(it.label, width) else stampBadge(it) } }
             }
         }
         roundedClip(frame, 10.0)
@@ -130,10 +130,23 @@ class PosterCard(
                 (com.lagradost.cloudstream3.linux.Metadata.hasTmdb || com.lagradost.cloudstream3.linux.Metadata.anilist)) {
                 { com.lagradost.cloudstream3.linux.Metadata.posterRating(item) }
             } else null,
-            stamp = { com.lagradost.cloudstream3.linux.WeTrakrSync.stamp(item)?.label },
+            stamp = { com.lagradost.cloudstream3.linux.WeTrakrSync.stamp(item) },
             onOpen = onOpen,
         )
     }
+}
+
+/** A small badge at the top right: "▶ CONTINUE" (blue) or "NEW EPISODES" (orange). */
+fun stampBadge(stamp: com.lagradost.cloudstream3.linux.WeTrakrSync.Stamp): Node {
+    val newEps = stamp == com.lagradost.cloudstream3.linux.WeTrakrSync.Stamp.NEW_EPISODES
+    val label = Label((if (newEps) "" else "▶ ") + stamp.label.uppercase()).apply {
+        style = "-fx-background-color: ${if (newEps) "#FF9F1C" else "#3d7bfd"}; -fx-background-radius: 6; -fx-text-fill: white;" +
+            " -fx-font-weight: 900; -fx-font-size: 11px; -fx-padding: 3 7;"
+        isMouseTransparent = true
+    }
+    StackPane.setAlignment(label, Pos.TOP_RIGHT)
+    StackPane.setMargin(label, javafx.geometry.Insets(8.0))
+    return label
 }
 
 /**
