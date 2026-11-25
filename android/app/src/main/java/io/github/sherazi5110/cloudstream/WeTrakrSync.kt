@@ -48,40 +48,59 @@ object WeTrakrSync {
     fun episodeWatched(tmdb: Int?, imdb: String?, season: Int, episode: Int) =
         keys(tmdb, imdb).any { "$it:$season:$episode" in episodes() }
 
-    /** Reads WeTrakr's watch history: everything the first time, then the plays added since the last time. */
-    suspend fun pull(force: Boolean = false) = withContext(Dispatchers.IO) {
-        if (!WeTrakr.available || !WeTrakr.connected) return@withContext
+    /** What a full sync found: titles and episodes watched on WeTrakr. */
+    data class Summary(val films: Int, val episodes: Int)
+
+    /**
+     * Reads WeTrakr's watch history: everything the first time and on [full] (Sync now: rebuilt from scratch, so a
+     * play removed on WeTrakr goes here too), otherwise the plays added since the last time. [force] skips the
+     * 2-minute pause between reads. Returns the totals on a full read.
+     */
+    suspend fun pull(force: Boolean = false, full: Boolean = false): Summary? = withContext(Dispatchers.IO) {
+        if (!WeTrakr.available || !WeTrakr.connected) return@withContext null
         lock.withLock {
             val last = prefs.getLong("pulled_at", 0L)
-            if (!force && System.currentTimeMillis() - last < 2 * 60_000L) return@withLock
+            if (!force && !full && System.currentTimeMillis() - last < 2 * 60_000L) return@withLock null
             val started = System.currentTimeMillis()
+            val everything = full || last == 0L
             // Plays added a moment before the previous read could be missed by clock differences: overlap by an hour.
-            val since = if (last == 0L) null else java.time.Instant.ofEpochMilli(last - 3_600_000L).toString()
-            val m = movies(); val e = episodes()
+            val since = if (everything) null else java.time.Instant.ofEpochMilli(last - 3_600_000L).toString()
+            val m = if (everything) HashSet() else movies()
+            val e = if (everything) HashSet() else episodes()
+            val sh = if (everything) HashSet() else shows()
+            var films = 0
+            val eps = HashSet<String>()
             for (target in listOf("movies", "episodes")) {
                 var page = 1
                 while (page < 200) {
                     val q = "compact=true&limit=5000&page=$page" + (since?.let { "&from_date=$it" } ?: "")
-                    val (code, body) = WeTrakr.get("/sync/tracking/watched/history/$target?$q") ?: return@withLock
-                    if (code !in 200..299) return@withLock
+                    val (code, body) = WeTrakr.get("/sync/tracking/watched/history/$target?$q") ?: return@withLock null
+                    if (code !in 200..299) return@withLock null
                     val rows = runCatching { JSONArray(body) }.getOrNull() ?: break
                     for (i in 0 until rows.length()) {
                         val o = rows.optJSONObject(i) ?: continue
-                        if (target == "movies") keys(o.idsTmdb("ids"), o.idsImdb("ids")).forEach { m += it }
-                        else {
+                        if (target == "movies") {
+                            val k = keys(o.idsTmdb("ids"), o.idsImdb("ids"))
+                            if (k.isNotEmpty() && k.none { it in m }) films++
+                            k.forEach { m += it }
+                        } else {
                             val s = o.optInt("season_number", -1); val n = o.optInt("number", -1)
                             if (s < 0 || n < 0) continue
-                            keys(o.idsTmdb("show_ids"), o.idsImdb("show_ids")).forEach { e += "$it:$s:$n"; shows() += it }
+                            val k = keys(o.idsTmdb("show_ids"), o.idsImdb("show_ids"))
+                            k.firstOrNull()?.let { eps += "$it:$s:$n" }
+                            k.forEach { e += "$it:$s:$n"; sh += it }
                         }
                     }
                     if (rows.length() < 5000) break
                     page++
                 }
             }
-            prefs.edit().putStringSet("movies", m.toSet()).putStringSet("episodes", e.toSet()).putStringSet("shows", shows().toSet())
+            movies = m; episodes = e; shows = sh
+            prefs.edit().putStringSet("movies", m.toSet()).putStringSet("episodes", e.toSet()).putStringSet("shows", sh.toSet())
                 .putLong("pulled_at", started).apply()
             changed()
             Library.notifyChanged()
+            if (everything) Summary(films, eps.size) else null
         }
     }
 
@@ -141,12 +160,12 @@ object WeTrakrSync {
         }
     }
 
-    /** Keeps pulling every 30 minutes while the app runs. */
+    /** Keeps reading every 5 minutes while the app runs, so a title finished in another WeTrakr app shows soon. */
     fun start() {
         App.scope.launch(Dispatchers.IO) {
             while (true) {
                 runCatching { pull(force = true) }
-                delay(30 * 60_000L)
+                delay(5 * 60_000L)
             }
         }
     }

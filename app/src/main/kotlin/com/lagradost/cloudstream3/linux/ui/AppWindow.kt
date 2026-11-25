@@ -413,6 +413,10 @@ class AppWindow(val stage: Stage) : StackPane() {
             runCatching { com.lagradost.cloudstream3.linux.Downloads.init() }
             // WeTrakr: watched history in, every 30 minutes (posters and titles show what was watched elsewhere).
             runCatching { com.lagradost.cloudstream3.linux.WeTrakrSync.start() }
+            // Back in the window: what was finished meanwhile in another WeTrakr app shows here (at most every 2 minutes).
+            stage.focusedProperty().addListener { _, _, focused ->
+                if (focused) ui.launch(kotlinx.coroutines.Dispatchers.IO) { runCatching { com.lagradost.cloudstream3.linux.WeTrakrSync.pull() } }
+            }
             if (Settings.autoUpdateExtensions) {
                 val updated = withContext(Engine.dispatcher) { runCatching { PluginManager.updateAll() }.getOrDefault(emptyList()) }
                 if (updated.isNotEmpty()) Toasts.show("Updated ${updated.joinToString()}")

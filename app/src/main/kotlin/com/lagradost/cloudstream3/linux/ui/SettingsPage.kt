@@ -815,8 +815,9 @@ class SettingsPage : StackPane(), Refreshable {
     private fun wetrakr(): List<Node> = listOf(
         label("Each profile connects its own WeTrakr account. Only a sign-in token is kept on this computer, never a password.", "muted").apply { isWrapText = true; maxWidth = 860.0 },
             hubCard(label("WT"), "linear-gradient(to bottom right, #f43f5e, #7c3aed)", "WeTrakr sync",
-                "WeTrakr (wetrakr.com) is a free tracker for movies, shows and anime. Connected, what you watch here shows as now " +
-                    "watching there and is marked watched once you've seen 80% of it. Each profile connects its own account.",
+                "WeTrakr (wetrakr.com) is a free tracker for movies, shows and anime. Connected, it syncs both ways: what you watch here " +
+                    "is marked watched there (from 80%), and what you watched in other WeTrakr apps is marked watched here, with a stamp " +
+                    "on the posters. Checked when the app opens or comes back and every 5 minutes; Sync now imports your whole history.",
                 listOf(when {
                     !com.lagradost.cloudstream3.linux.WeTrakr.available -> label("Not available in this build yet", "status-warn")
                     com.lagradost.cloudstream3.linux.WeTrakr.connected -> label("✓ Connected", "status-ok")
@@ -827,6 +828,17 @@ class SettingsPage : StackPane(), Refreshable {
                     com.lagradost.cloudstream3.linux.WeTrakr.connected -> listOf(
                         Switch(com.lagradost.cloudstream3.linux.WeTrakr.shareNowPlaying) { com.lagradost.cloudstream3.linux.WeTrakr.shareNowPlaying = it }
                             .tooltip("Show what I'm watching on WeTrakr (off: only mark titles watched when they finish)"),
+                        button("Sync now", Icons.REFRESH, "btn-ghost", "btn-small") {}.also { b ->
+                            b.setOnAction {
+                                b.isDisable = true; b.text = "Syncing…"
+                                ui.launch {
+                                    val sum = runCatching { com.lagradost.cloudstream3.linux.WeTrakrSync.pull(full = true) }.getOrNull()
+                                    b.isDisable = false; b.text = "Sync now"
+                                    Toasts.show(if (sum == null) "Couldn't reach WeTrakr. Try again in a moment."
+                                        else "WeTrakr: ${sum.films} films and ${sum.episodes} episodes watched, marked here too")
+                                }
+                            }
+                        }.tooltip("Imports your whole WeTrakr watch history again"),
                         button("Disconnect", null, "btn-ghost", "btn-small") { com.lagradost.cloudstream3.linux.WeTrakr.disconnect(); open("wetrakr") })
                     else -> listOf(button("Connect WeTrakr", Icons.CHEVRON_RIGHT, "btn-accent", "btn-small") {
                         WeTrakrWindow.connect(Nav.window.stage) { open("wetrakr") }

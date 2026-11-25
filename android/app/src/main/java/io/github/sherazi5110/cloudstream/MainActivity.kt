@@ -1,5 +1,6 @@
 package io.github.sherazi5110.cloudstream
 
+import kotlinx.coroutines.launch
 import android.content.Intent
 import android.os.Bundle
 import android.graphics.Color
@@ -64,6 +65,8 @@ class MainActivity : com.lagradost.cloudstream3.MainActivity() {
     override fun onResume() {
         super.onResume()
         shake.start()
+        // Back in the app: what was finished meanwhile in another WeTrakr app shows here (at most every 2 minutes).
+        App.scope.launch { runCatching { WeTrakrSync.pull() } }
     }
 
     override fun onPause() {
