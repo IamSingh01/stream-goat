@@ -411,6 +411,8 @@ class AppWindow(val stage: Stage) : StackPane() {
             loading.join()
             // Carry on with downloads that were running when the app closed.
             runCatching { com.lagradost.cloudstream3.linux.Downloads.init() }
+            // WeTrakr: watched history in, every 30 minutes (posters and titles show what was watched elsewhere).
+            runCatching { com.lagradost.cloudstream3.linux.WeTrakrSync.start() }
             if (Settings.autoUpdateExtensions) {
                 val updated = withContext(Engine.dispatcher) { runCatching { PluginManager.updateAll() }.getOrDefault(emptyList()) }
                 if (updated.isNotEmpty()) Toasts.show("Updated ${updated.joinToString()}")

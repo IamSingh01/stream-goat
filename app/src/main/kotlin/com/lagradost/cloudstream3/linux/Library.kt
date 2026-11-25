@@ -113,6 +113,21 @@ object Library {
     /** Marks the episode a Continue Watching entry is on as watched. */
     fun markWatched(e: WatchEntry) = markWatched(e.apiName, e.url, e.name, e.posterUrl, listOf(e.episodeData to e.episodeLabel))
 
+    /** Tells the screens to redraw (after watched marks arrived from WeTrakr). */
+    fun notifyChanged() = listeners.forEach { it() }
+
+    /**
+     * For poster stamps: true when something of this title was finished here (a film, or an episode of a show), with
+     * whether that entry had no episode label (a film). Null when nothing was finished. Kept in memory per change.
+     */
+    fun titleFinished(apiName: String, url: String): Boolean? {
+        val index = stampIndex ?: history().filter { it.finished }.associate { e -> "${e.apiName}|${e.url}" to (e.episodeLabel == null) }
+            .also { stampIndex = it }
+        return index["$apiName|$url"]
+    }
+    @Volatile private var stampIndex: Map<String, Boolean>? = null
+    init { listeners += { stampIndex = null } }
+
     fun isWatched(apiName: String, episodeData: String) =
         progress(apiName, episodeData)?.let { it.duration > 0 && it.position / it.duration > 0.92 } == true
 

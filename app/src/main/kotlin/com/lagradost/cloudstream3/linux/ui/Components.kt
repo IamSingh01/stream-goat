@@ -67,6 +67,8 @@ class PosterCard(
     height: Double = POSTER_H,
     /** Looks up a score (TMDB/AniList) once the card is on screen; shown at the bottom left. */
     rating: (suspend () -> String?)? = null,
+    /** Looks up whether the title was watched ("Watched" / "Watching") once on screen: a big stamp across it. */
+    stamp: (suspend () -> String?)? = null,
     onOpen: () -> Unit,
 ) : VBox() {
     init {
@@ -100,6 +102,14 @@ class PosterCard(
             }
             children += Region().apply { styleClass += "poster-ring"; setMinSize(width, height) }
         }
+        if (stamp != null) {
+            var looked = false
+            frame.sceneProperty().addListener { _, _, scene ->
+                if (scene == null || looked) return@addListener
+                looked = true
+                ui.launch { runCatching { stamp() }.getOrNull()?.let { frame.children += stampMark(it, width) } }
+            }
+        }
         roundedClip(frame, 10.0)
         val name = label(title, "poster-title").apply {
             isWrapText = true
@@ -120,8 +130,36 @@ class PosterCard(
                 (com.lagradost.cloudstream3.linux.Metadata.hasTmdb || com.lagradost.cloudstream3.linux.Metadata.anilist)) {
                 { com.lagradost.cloudstream3.linux.Metadata.posterRating(item) }
             } else null,
+            stamp = { com.lagradost.cloudstream3.linux.WeTrakrSync.stamp(item)?.label },
             onOpen = onOpen,
         )
+    }
+}
+
+/**
+ * A big green rubber stamp across a watched poster: "WATCHED" (a film) or "WATCHING" (a show), tilted, in a double
+ * frame, over a slightly dimmed poster. Watched here or on WeTrakr, whichever extension lists the title.
+ */
+fun stampMark(label: String, width: Double): Node {
+    val green = "#2EE06A"
+    val size = width * if (label.length > 7) 0.115 else 0.135
+    val text = Label(label.uppercase()).apply {
+        style = "-fx-text-fill: $green; -fx-font-weight: 900; -fx-font-size: ${size}px; -fx-padding: ${width * 0.01} ${width * 0.06};" +
+            " -fx-border-color: $green; -fx-border-width: ${(width / 110).coerceIn(1.0, 2.0)}; -fx-border-radius: ${width * 0.035};" +
+            " -fx-background-color: rgba(0,0,0,0.25); -fx-background-radius: ${width * 0.035};"
+        minWidth = Region.USE_PREF_SIZE
+        textOverrun = javafx.scene.control.OverrunStyle.CLIP
+    }
+    val frame = StackPane(text).apply {
+        style = "-fx-border-color: $green; -fx-border-width: ${(width / 55).coerceIn(1.5, 3.5)}; -fx-border-radius: ${width * 0.05};" +
+            " -fx-padding: ${(width / 60).coerceIn(1.5, 3.0)};"
+        maxWidth = Region.USE_PREF_SIZE; maxHeight = Region.USE_PREF_SIZE
+        rotate = -18.0
+        isMouseTransparent = true
+    }
+    return StackPane(frame).apply {
+        style = "-fx-background-color: rgba(0,0,0,0.38);"
+        isMouseTransparent = true
     }
 }
 

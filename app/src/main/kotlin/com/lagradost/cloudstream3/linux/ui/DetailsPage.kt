@@ -81,6 +81,12 @@ class DetailsPage(
                 groupIndex = groups().indexOfFirst { g -> g.second.any { it.data == last?.episodeData } }.coerceAtLeast(0)
                 (r.backgroundPosterUrl ?: r.posterUrl)?.let { backdropLayer.children.setAll(backdrop(it, r.posterHeaders, 0.35)) }
                 render()
+                // Episodes (or the film) watched on WeTrakr show as watched here too.
+                val snapshot = playables
+                ui.launch {
+                    val marked = runCatching { com.lagradost.cloudstream3.linux.WeTrakrSync.apply(api.name, r, snapshot) }.getOrDefault(0)
+                    if (marked > 0 && scene != null && response === r) render()
+                }
                 // Start finding the sources of what Play would start, so pressing it starts sooner.
                 if (api !is com.lagradost.cloudstream3.linux.OfflineApi) target()?.let { t ->
                     kotlinx.coroutines.delay(1200)
@@ -182,7 +188,10 @@ class DetailsPage(
         val watched = playables.isNotEmpty() && playables.all { Library.isWatched(api.name, it.data) }
         val watchedButton = button(if (watched) "Watched" else "Mark as watched", if (watched) Icons.CHECK else Icons.CHECK, "btn-ghost") {
             if (watched) Library.markUnwatched(api.name, url, playables.map { it.data })
-            else Library.markWatched(api.name, url, r.name, r.posterUrl ?: poster, playables.map { it.data to (if (playables.size > 1) it.label else null) })
+            else {
+                Library.markWatched(api.name, url, r.name, r.posterUrl ?: poster, playables.map { it.data to (if (playables.size > 1) it.label else null) })
+                com.lagradost.cloudstream3.linux.WeTrakrSync.push(r, playables)
+            }
             Toasts.show(if (watched) "Marked as not watched" else "Marked as watched")
             render()
         }.apply {

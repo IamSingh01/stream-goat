@@ -77,8 +77,10 @@ class MpvPlaybackTest {
             val url = StreamProxy.wrap("$base/master.php", mapOf("User-Agent" to "test")).substringBeforeLast('/') + "/playlist.m3u8"
             assertTrue(engine.open(url, emptyList(), 30_000))
             assertTrue(playing.await(30, TimeUnit.SECONDS), "never started playing")
-            assertTrue(timeV.get() >= 29_000, "didn't start at the resume point: ${timeV.get()}")
+            // "Playing" can come a moment before the jump to the resume point lands (slower machines).
             val deadline = System.currentTimeMillis() + 10_000
+            while (timeV.get() < 29_000 && System.currentTimeMillis() < deadline) Thread.sleep(100)
+            assertTrue(timeV.get() >= 29_000, "didn't start at the resume point: ${timeV.get()}")
             while ((lengthV.get() == 0L || video.sourceW == 0) && System.currentTimeMillis() < deadline) Thread.sleep(100)
             assertTrue(lengthV.get() in 655_000..665_000, "length ${lengthV.get()} (VLC showed NetMirror as 27:46:39)")
             val audio = engine.audioTracks().filter { it.id() >= 0 }.map { it.description() }
