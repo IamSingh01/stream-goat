@@ -69,6 +69,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
@@ -206,7 +208,10 @@ fun MusicScreen() {
 
 @Composable
 private fun TopBar() {
-    Row(Modifier.fillMaxWidth().padding(horizontal = PageSide, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+    // Home · Explore · Library · Search: reached with ↑, never by a lost selection (it used to land on Home here
+    // when the song list changed as a song started).
+    NavArea("music tabs", listOf(androidx.compose.ui.focus.FocusDirection.Up)) { nav ->
+    Row(nav.fillMaxWidth().padding(horizontal = PageSide, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(30.dp).background(Color(0xFFFF0033), CircleShape), contentAlignment = Alignment.Center) {
             Icon(Icons.Filled.PlayArrow, null, tint = Color.White, modifier = Modifier.size(20.dp))
         }
@@ -218,6 +223,7 @@ private fun TopBar() {
             }
         }
         IconAction(Icons.Filled.Search, "Search") { MusicUi.searching = true }
+    }
     }
 }
 
@@ -486,9 +492,16 @@ private fun SongMenu(t: Music.Track) {
     val context = LocalContext.current
     val close = { MusicUi.menuFor = null }
     BackHandler { close() }
-    Box(Modifier.fillMaxSize().freshOkOnly().background(Color.Black.copy(alpha = 0.55f)).card(RoundedCornerShape(0.dp), focusScale = 1f) { close() },
+    // The remote stays in the menu, starts on "Play next" and, when the menu closes, goes back to the song.
+    val firstTile = remember { androidx.compose.ui.focus.FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { firstTile.requestFocus() } }
+    FocusOverlay("song menu") { trap ->
+    // A tap outside closes it (the dimmed backdrop isn't selectable: the remote's buttons are all in the menu).
+    Box(Modifier.fillMaxSize().freshOkOnly().background(Color.Black.copy(alpha = 0.55f))
+        .pointerInput(Unit) { detectTapGestures { close() } },
         contentAlignment = Alignment.BottomCenter) {
-        Column(Modifier.widthIn(max = 900.dp).fillMaxWidth().background(Color(0xFF212121), RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
+        Column(trap.widthIn(max = 900.dp).fillMaxWidth().background(Color(0xFF212121), RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
+            .pointerInput(Unit) { detectTapGestures { } }
             .padding(bottom = 12.dp + LocalBottomInset.current)) {
             Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                 NetImage(t.thumbnail, Modifier.size(48.dp).clip(RoundedCornerShape(4.dp)))
@@ -501,7 +514,7 @@ private fun SongMenu(t: Music.Track) {
             }
             Box(Modifier.fillMaxWidth().height(1.dp).background(Color.White.copy(alpha = 0.1f)))
             Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Tile(Icons.AutoMirrored.Filled.QueueMusic, "Play next", Modifier.weight(1f)) { Music.playNext(t); close() }
+                Tile(Icons.AutoMirrored.Filled.QueueMusic, "Play next", Modifier.weight(1f), firstTile) { Music.playNext(t); close() }
                 Tile(Icons.AutoMirrored.Filled.PlaylistAdd, "Save to playlist", Modifier.weight(1f)) { MusicUi.saveFor = t; close() }
                 Tile(Icons.Filled.Share, "Share", Modifier.weight(1f)) {
                     runCatching {
@@ -521,12 +534,13 @@ private fun SongMenu(t: Music.Track) {
             MusicUi.menuPlaylist?.let { p -> MenuLine(Icons.Filled.Close, "Remove from $p") { MusicLibrary.removeFromPlaylist(p, t); close() } }
         }
     }
+    }
 }
 
 @Composable
-private fun Tile(icon: ImageVector, label: String, modifier: Modifier, onClick: () -> Unit) {
+private fun Tile(icon: ImageVector, label: String, modifier: Modifier, focus: androidx.compose.ui.focus.FocusRequester? = null, onClick: () -> Unit) {
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
-        Box(Modifier.fillMaxWidth().height(64.dp).card(RoundedCornerShape(10.dp)) { onClick() }
+        Box(Modifier.fillMaxWidth().height(64.dp).then(if (focus != null) Modifier.focusRequester(focus) else Modifier).card(RoundedCornerShape(10.dp)) { onClick() }
             .background(Color.White.copy(alpha = 0.08f), RoundedCornerShape(10.dp)), contentAlignment = Alignment.Center) { Icon(icon, label, tint = Color.White) }
         Text(label, style = MaterialTheme.typography.labelLarge, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 8.dp))
     }

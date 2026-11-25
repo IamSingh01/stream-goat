@@ -198,6 +198,9 @@ fun PlayerScreen(screen: Screen.Player) {
         }
     }
     LaunchedEffect(controls, c.started) { if ((!controls || !c.started) && sheet == null) runCatching { rootFocus.requestFocus() } }
+    // With the controls hidden the picture holds the remote's selection (OK pauses, ←/→ seek): nothing to put back.
+    androidx.compose.runtime.SideEffect { FocusKeeper.paused = c.started && !controls && sheet == null }
+    androidx.compose.runtime.DisposableEffect(Unit) { onDispose { FocusKeeper.paused = false } }
 
     BackHandler {
         when {
@@ -211,6 +214,9 @@ fun PlayerScreen(screen: Screen.Player) {
     Box(
         Modifier.fillMaxSize().background(Color.Black)
             .focusRequester(rootFocus)
+            // A button that disappears (a panel closing, Next episode ending) drops the selection here: FocusKeeper
+            // then puts it on the nearest button instead of leaving the remote to start from the top-left.
+            .focusFallback()
             .focusable()
             .onPreviewKeyEvent { e ->
                 if (e.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
@@ -424,10 +430,15 @@ private fun RoundIcon(icon: ImageVector, label: String, modifier: Modifier = Mod
 private fun Controls(c: PlayerController, sheetOpen: Boolean = false, onSheet: (Sheet) -> Unit, onLock: () -> Unit, poke: () -> Unit) {
     val playFocus = remember { FocusRequester() }
     val inputMode = androidx.compose.ui.platform.LocalInputModeManager.current.inputMode
-    // When the controls appear, and again when a panel (Audio, Subtitles, Sources…) closes, the remote's selection
-    // goes to Play/pause instead of nowhere (it used to bounce to the back button or need an extra OK).
-    LaunchedEffect(sheetOpen) {
-        if (!sheetOpen && (isTv || inputMode == androidx.compose.ui.input.InputMode.Keyboard)) { delay(80); runCatching { playFocus.requestFocus() } }
+    // When the controls appear the remote's selection goes to Play/pause (it used to bounce to the back button or
+    // need an extra OK). When a panel (Audio, Subtitles, Sources…) closes, it goes back to the button that opened it
+    // (FocusKeeper), not to Play/pause.
+    LaunchedEffect(Unit) {
+        if (!sheetOpen && (isTv || inputMode == androidx.compose.ui.input.InputMode.Keyboard)) {
+            delay(80)
+            val onButton = FocusKeeper.current?.let { it.alive && it.focused } == true
+            if (!onButton) runCatching { playFocus.requestFocus() }
+        }
     }
     var now by remember { mutableStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) { while (true) { now = System.currentTimeMillis(); delay(15_000) } }
@@ -563,9 +574,15 @@ private fun LoadingOverlay(c: PlayerController, onChoose: () -> Unit) {
             if (c.searching || c.current != null) LinearProgressIndicator(Modifier.fillMaxWidth().padding(vertical = 10.dp), color = Palette.accent, trackColor = Color.White.copy(alpha = 0.15f))
             else Spacer(Modifier.height(24.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(top = 12.dp)) {
-                // While a source is starting, "Play now" would only restart it: offer the next one instead.
-                if (c.current != null) PillButton("Next source", Icons.Filled.SkipNext) { c.nextSource() }
-                else if (c.links.isNotEmpty()) PillButton(if (c.searching) "Play now (${c.links.size})" else "Play now", Icons.Filled.PlayArrow) { c.ranked().firstOrNull()?.let { c.play(it) } }
+                // While a source is starting, "Play now" would only restart it: offer the next one instead. One button
+                // that changes its words, so the remote's selection stays on it (two buttons swapped dropped it).
+                if (c.current != null || c.links.isNotEmpty()) {
+                    val starting = c.current != null
+                    PillButton(if (starting) "Next source" else if (c.searching) "Play now (${c.links.size})" else "Play now",
+                        if (starting) Icons.Filled.SkipNext else Icons.Filled.PlayArrow) {
+                        if (c.current != null) c.nextSource() else c.ranked().firstOrNull()?.let { c.play(it) }
+                    }
+                }
                 if (c.links.isNotEmpty()) PillButton("Choose source", Icons.AutoMirrored.Filled.List, primary = false) { onChoose() }
                 PillButton("Cancel", null, primary = false) { Nav.back() }
             }
@@ -595,8 +612,9 @@ private fun SheetPanel(sheet: Sheet, c: PlayerController, modifier: Modifier, on
     }
     Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.35f)).pointerInput(Unit) { detectTapGestures { onClose() } })
     val first = remember { FocusRequester() }
-    LaunchedEffect(sheet) { runCatching { first.requestFocus() } }
-    Column(modifier.fillMaxHeight().width(340.dp).glassPanel(androidx.compose.foundation.shape.RoundedCornerShape(topStart = 24.dp, bottomStart = 24.dp), blur = false).padding(vertical = 16.dp)) {
+    val empty = remember { FocusRequester() }
+    FocusOverlay("player panel") { trap ->
+    Column(trap.then(modifier).fillMaxHeight().width(340.dp).glassPanel(androidx.compose.foundation.shape.RoundedCornerShape(topStart = 24.dp, bottomStart = 24.dp), blur = false).padding(vertical = 16.dp)) {
         Text(sheet.title, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
         data class Option(val label: String, val detail: String?, val selected: Boolean, val action: () -> Unit)
         val options: List<Option> = when (sheet) {
@@ -654,17 +672,28 @@ private fun SheetPanel(sheet: Sheet, c: PlayerController, modifier: Modifier, on
             Sheet.QUALITY -> listOf(Option("Auto", "Changes with your connection", c.variant == null) { c.setQuality(null); onClose() }) +
                 c.variants.map { v -> Option(v.label, v.bandwidth?.let { "${it / 1000} kbps" }, v == c.variant) { c.setQuality(v); onClose() } }
         }
+        // The remote starts on what's chosen now (the subtitle or audio track playing, the speed…), not on the first
+        // line; while there's nothing to choose yet (online subtitles still searching) it waits on the message.
+        val chosen = remember(sheet) { options.indexOfFirst { it.selected }.coerceAtLeast(0) }
+        val listState = remember(sheet) { androidx.compose.foundation.lazy.LazyListState(chosen) }
+        LaunchedEffect(sheet, options.isEmpty()) {
+            delay(30)
+            runCatching { if (options.isEmpty()) empty.requestFocus() else first.requestFocus() }
+        }
         if (options.isEmpty()) Text(
             when (sheet) {
                 Sheet.SOURCES -> if (c.searching) "Looking for sources…" else "No sources found"
                 Sheet.ONLINE -> if (online == null) "Searching OpenSubtitles…" else onlineError ?: "No subtitles found"
                 else -> "Nothing to choose here"
             },
-            style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(20.dp))
-        LazyColumn(contentPadding = PaddingValues(horizontal = 8.dp)) {
-            items(options.size) { i ->
+            style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(20.dp).focusRequester(empty).focusable())
+        // Keyed by the option (not its place): a list that grows while open (subtitles still loading) keeps the
+        // selection on the same line.
+        val keys = run { val seen = HashMap<String, Int>(); options.map { o -> val k = o.label + "|" + o.detail; k + "#" + seen.merge(k, 1, Int::plus) } }
+        LazyColumn(state = listState, contentPadding = PaddingValues(horizontal = 8.dp)) {
+            items(options.size, key = { i -> keys[i] }) { i ->
                 val o = options[i]
-                Row(Modifier.fillMaxWidth().then(if (i == 0) Modifier.focusRequester(first) else Modifier)
+                Row(Modifier.fillMaxWidth().then(if (i == chosen.coerceAtMost(options.size - 1)) Modifier.focusRequester(first) else Modifier)
                     .card(RoundedCornerShape(8.dp), focusScale = 1.02f, onClick = o.action)
                     .padding(horizontal = 12.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
@@ -675,6 +704,7 @@ private fun SheetPanel(sheet: Sheet, c: PlayerController, modifier: Modifier, on
                 }
             }
         }
+    }
     }
 }
 

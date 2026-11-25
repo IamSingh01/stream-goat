@@ -1,6 +1,7 @@
 package io.github.sherazi5110.cloudstream.ui
 
 import androidx.compose.ui.focus.focusRestorer
+import androidx.compose.ui.layout.onPlaced
 import androidx.compose.foundation.focusGroup
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.input.pointer.pointerInput
@@ -98,10 +99,20 @@ private fun Modifier.cardImpl(
     val firstClickSelects = false
     val requester = remember { androidx.compose.ui.focus.FocusRequester() }
     val press = remember { PressState() }
+    // FocusKeeper: where this card is, so a lost selection can come back to it or to its neighbour.
+    val area = LocalFocusArea.current
+    val kept = remember(area) { FocusKeeper.Item(requester, area) }
+    androidx.compose.runtime.DisposableEffect(kept) {
+        FocusKeeper.register(kept)
+        onDispose { FocusKeeper.unregister(kept) }
+    }
     this
+        .watchDetach(kept)
+        .then(Modifier.onPlaced { FocusKeeper.placed(kept, it) })
         // Read while drawing (not composing): the zoom animation doesn't rebuild the card on every frame.
         .graphicsLayer { scaleX = scale; scaleY = scale }
-        .then(if (firstClickSelects) Modifier.focusRequester(requester).pointerInput(Unit) {
+        .focusRequester(requester)
+        .then(if (firstClickSelects) Modifier.pointerInput(Unit) {
             // Seen before the click handler: was it already selected when the button went down?
             awaitPointerEventScope {
                 while (true) {
@@ -116,6 +127,7 @@ private fun Modifier.cardImpl(
         .onFocusChanged {
             focused = it.isFocused
             press.focused = it.isFocused
+            FocusKeeper.focusChanged(kept, it.isFocused)
             if (it.isFocused) onFocus?.invoke()
         }
         .then(if (focused) Modifier.border(3.dp, Color.White, shape) else Modifier)
@@ -441,7 +453,9 @@ fun EmptyState(title: String, text: String, modifier: Modifier = Modifier, butto
 }
 
 /** Phone or TV, for layouts that differ. */
-val isTv: Boolean get() = App.isTv
+val isTv: Boolean get() = tvForTests ?: App.isTv
+/** The remote-control tests run the TV layout without an Android TV. */
+internal var tvForTests: Boolean? = null
 
 /** Minutes as "2h 4m". */
 fun formatMinutes(minutes: Int): String = if (minutes >= 60) "${minutes / 60}h ${minutes % 60}m" else "${minutes}m"

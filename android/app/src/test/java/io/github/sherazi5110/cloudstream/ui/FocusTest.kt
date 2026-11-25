@@ -1,0 +1,323 @@
+package io.github.sherazi5110.cloudstream.ui
+
+import android.os.Looper
+import androidx.compose.foundation.focusable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.focusRestorer
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.SemanticsNodeInteraction
+import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertIsFocused
+import androidx.compose.ui.test.assertIsNotFocused
+import androidx.compose.ui.test.hasAnyDescendant
+import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.isFocused
+import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.performKeyInput
+import androidx.compose.ui.test.pressKey
+import androidx.compose.ui.test.requestFocus
+import androidx.compose.ui.unit.dp
+import org.junit.After
+import org.junit.Before
+import org.junit.Rule
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
+import org.robolectric.annotation.Config
+import org.robolectric.annotation.ConscryptMode
+
+/**
+ * The remote control: the app's own building blocks (cards, rows, bars, panels) in a simulated Android, moved with
+ * D-pad key presses. Each test is a case where the selection used to jump away.
+ */
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
+@ConscryptMode(ConscryptMode.Mode.OFF)
+@OptIn(ExperimentalTestApi::class)
+class FocusTest {
+    @get:Rule val rule = createComposeRule()
+
+    @Before fun setUp() { FocusKeeper.reset(); FocusKeeper.settle = 0; tvForTests = true }
+    @After fun tearDown() { FocusKeeper.reset(); FocusKeeper.settle = 150; tvForTests = null }
+
+    private fun press(key: Key) {
+        rule.onRoot().performKeyInput { pressKey(key) }
+        settle()
+    }
+
+    /** Lets FocusKeeper (it waits a moment, for screens to choose their own selection) do its work. */
+    private fun settle() {
+        repeat(3) {
+            rule.waitForIdle()
+            shadowOf(Looper.getMainLooper()).idle()
+        }
+        rule.waitForIdle()
+    }
+
+    private fun focus(tag: String) { rule.onNodeWithTag(tag).requestFocus(); settle() }
+    private fun tag(t: String): SemanticsNodeInteraction = rule.onNodeWithTag(t)
+
+    @Composable
+    private fun Card(tag: String, modifier: Modifier = Modifier, w: Int = 60) {
+        Box(modifier.size(w.dp, 60.dp).card { }.testTag(tag))
+    }
+
+    /** The side bar on the left, a top bar with Search and the profile, a row of posters under it. */
+    @Composable
+    private fun Screen(cards: List<String>) {
+        FocusKeeperRoot { keeper ->
+            Row(keeper) {
+                NavArea("side bar", listOf(androidx.compose.ui.focus.FocusDirection.Left)) { nav ->
+                    Column(nav) { Card("home"); Card("music") }
+                }
+                Column {
+                    NavArea("top bar", listOf(androidx.compose.ui.focus.FocusDirection.Up)) { nav ->
+                        Row(nav.width(700.dp)) { Spacer(Modifier.width(560.dp)); Card("search"); Card("profile") }
+                    }
+                    TvRowScroll { state ->
+                        LazyRow(state = state, modifier = Modifier.width(500.dp)) {
+                            items(cards, key = { it }) { Card(it, w = 90) }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    @Test fun `right at the end of a row stays on the last poster`() {
+        rule.setContent { Screen(listOf("p1", "p2", "p3")) }
+        focus("p1")
+        press(Key.DirectionRight); press(Key.DirectionRight)
+        tag("p3").assertIsFocused()
+        press(Key.DirectionRight)
+        tag("p3").assertIsFocused()
+        tag("profile").assertIsNotFocused()
+        tag("search").assertIsNotFocused()
+    }
+
+    @Test fun `up from a row goes to the top bar, left from its start to the side bar`() {
+        rule.setContent { Screen(listOf("p1", "p2", "p3")) }
+        focus("p1")
+        press(Key.DirectionLeft)
+        rule.onNode(isFocused()).assertExists()
+        check(listOf("home", "music").any { runCatching { tag(it).assertIsFocused() }.isSuccess }) { "← didn't reach the side bar" }
+        focus("p3")
+        press(Key.DirectionUp)
+        check(listOf("search", "profile").any { runCatching { tag(it).assertIsFocused() }.isSuccess }) { "↑ didn't reach the top bar" }
+    }
+
+    @Test fun `a poster that disappears hands the selection to its neighbour, not the side bar`() {
+        val cards = mutableStateListOf("p1", "p2", "p3", "p4")
+        rule.setContent { Screen(cards) }
+        focus("p3")
+        cards.remove("p3")
+        settle()
+        val now = listOf("p2", "p4").firstOrNull { runCatching { tag(it).assertIsFocused() }.isSuccess }
+        check(now != null) { "the selection didn't go to a neighbour" }
+        tag("home").assertIsNotFocused()
+        // And the remote goes on from there.
+        press(Key.DirectionLeft)
+        rule.onNode(isFocused()).assertExists()
+    }
+
+    @Test fun `a whole list replaced (songs when one starts) keeps the selection in the list`() {
+        val cards = mutableStateListOf("a1", "a2", "a3")
+        rule.setContent { Screen(cards) }
+        focus("a2")
+        cards.clear(); cards.addAll(listOf("b1", "b2", "b3"))
+        settle()
+        check(listOf("b1", "b2", "b3").any { runCatching { tag(it).assertIsFocused() }.isSuccess }) { "selection left the list" }
+        tag("home").assertIsNotFocused(); tag("music").assertIsNotFocused()
+    }
+
+    @Test fun `the install button keeps the selection while installing and after`() {
+        var busy by mutableStateOf(false)
+        var installed by mutableStateOf(false)
+        rule.setContent {
+            Screen(emptyList())
+            FocusKeeperRoot { keeper ->
+                Row(keeper) {
+                    Card("before")
+                    Box(Modifier.testTag("action")) {
+                        StateAction(if (installed) Icons.Filled.Download else Icons.Filled.Download, if (installed) "Uninstall" else "Install", busy) { }
+                    }
+                }
+            }
+        }
+        rule.onNode(hasContentDescription("Install")).requestFocus(); settle()
+        busy = true; settle()
+        rule.onNode(isFocused()).assertExists()
+        busy = false; installed = true; settle()
+        rule.onNode(isFocused()).assert(hasContentDescription("Uninstall").or(hasAnyDescendant(hasContentDescription("Uninstall"))))
+    }
+
+    @Test fun `a panel keeps the remote inside and goes back to the button that opened it`() {
+        var open by mutableStateOf(false)
+        val first = FocusRequester()
+        rule.setContent {
+            FocusKeeperRoot { keeper ->
+                Column(keeper) {
+                    Row { Card("sources"); Card("subtitles"); Card("audio") }
+                    if (open) FocusOverlay("panel") { trap ->
+                        Column(trap) { Card("off", Modifier.focusRequester(first)); Card("english"); Card("hindi") }
+                    }
+                    Card("below")
+                }
+            }
+        }
+        focus("subtitles")
+        open = true; settle()
+        first.requestFocus(); settle()
+        tag("off").assertIsFocused()
+        press(Key.DirectionDown); press(Key.DirectionDown); press(Key.DirectionDown)
+        tag("hindi").assertIsFocused()
+        press(Key.DirectionUp); press(Key.DirectionUp); press(Key.DirectionUp)
+        tag("off").assertIsFocused()
+        press(Key.DirectionRight); press(Key.DirectionLeft)
+        tag("off").assertIsFocused()
+        open = false; settle()
+        tag("subtitles").assertIsFocused()
+    }
+
+    @Test fun `a panel opened from a panel goes back to the first button`() {
+        var panel by mutableStateOf(0)
+        rule.setContent {
+            FocusKeeperRoot { keeper ->
+                Column(keeper) {
+                    Row { Card("sources"); Card("subtitles") }
+                    when (panel) {
+                        1 -> FocusOverlay("subtitles") { trap -> Column(trap) { Card("sync") } }
+                        2 -> FocusOverlay("sync") { trap -> Column(trap) { Card("later") } }
+                    }
+                }
+            }
+        }
+        focus("subtitles")
+        panel = 1; settle(); focus("sync")
+        panel = 2; settle(); focus("later")
+        panel = 0; settle()
+        tag("subtitles").assertIsFocused()
+    }
+
+    @Test fun `in the player a vanished button returns to a button, and nothing moves while the controls are hidden`() {
+        var next by mutableStateOf(true)
+        var controls by mutableStateOf(true)
+        rule.setContent {
+            FocusKeeperRoot { keeper ->
+                Box(keeper.size(400.dp, 200.dp).focusFallback().focusable().testTag("picture")) {
+                    if (controls) Row { Card("sources"); Card("speed"); if (next) Card("next") }
+                }
+            }
+        }
+        focus("next")
+        next = false; settle()
+        tag("speed").assertIsFocused()
+        FocusKeeper.paused = true
+        focus("picture")
+        controls = false; settle()
+        tag("picture").assertIsFocused()
+    }
+
+    @Test fun `a search box or slider chosen on purpose is left alone`() {
+        var show by mutableStateOf(true)
+        rule.setContent {
+            FocusKeeperRoot { keeper ->
+                Column(keeper) {
+                    if (show) Card("button")
+                    Card("other")
+                    Box(Modifier.size(80.dp).focusable().testTag("field"))
+                }
+            }
+        }
+        focus("button")
+        focus("field")
+        show = false; settle()
+        tag("field").assertIsFocused()
+    }
+
+    @Test fun `a screen's own selection, made just after, is kept (real timing)`() {
+        FocusKeeper.settle = 150
+        var show by mutableStateOf(true)
+        val chosen = FocusRequester()
+        rule.setContent {
+            FocusKeeperRoot { keeper ->
+                Column(keeper) {
+                    Card("top")
+                    if (show) Card("x")
+                    Card("y")
+                    Card("chosen", Modifier.focusRequester(chosen))
+                }
+            }
+        }
+        focus("x")
+        // x goes away (Android drops the selection and may pick one by itself)…
+        show = false
+        rule.waitForIdle()
+        // …then, a moment later (as a screen's LaunchedEffect would), the screen chooses its own selection…
+        chosen.requestFocus()
+        rule.waitForIdle()
+        // …and FocusKeeper, looking 150 ms after the loss, leaves it there.
+        shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(400))
+        settle()
+        tag("chosen").assertIsFocused()
+    }
+
+    @Test fun `with real timing a vanished card still hands over to its neighbour`() {
+        FocusKeeper.settle = 150
+        val cards = mutableStateListOf("p1", "p2", "p3", "p4")
+        rule.setContent { Screen(cards) }
+        focus("p3")
+        cards.remove("p3")
+        rule.waitForIdle()
+        shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(400))
+        settle()
+        check(listOf("p2", "p4").any { runCatching { tag(it).assertIsFocused() }.isSuccess }) { "the selection didn't go to a neighbour" }
+    }
+
+    private fun link(name: String, q: Int) = kotlinx.coroutines.runBlocking {
+        com.lagradost.cloudstream3.utils.newExtractorLink("Test", name, "https://example.com/$name.m3u8") { quality = q }
+    }
+
+    @Test fun `sources - the one you're on keeps the selection when more sources arrive`() {
+        var all by mutableStateOf(listOf(link("Beta 720", 720), link("Gamma 480", 480)))
+        rule.setContent {
+            FocusKeeperRoot { keeper -> Box(keeper) { SourcesPanel(all, null, true, onPick = { }, onClose = { }) } }
+        }
+        rule.mainClock.advanceTimeBy(200)
+        settle()
+        // Down to the second source (Gamma).
+        rule.onNode(androidx.compose.ui.test.hasText("Beta 720")).assertExists()
+        rule.onNode(isFocused()).assert(androidx.compose.ui.test.hasText("Beta 720"))
+        press(Key.DirectionDown)
+        rule.onNode(isFocused()).assert(androidx.compose.ui.test.hasText("Gamma 480"))
+        // A better source is found and ranked first: the selection stays on Gamma.
+        all = listOf(link("Alpha 1080", 1080)) + all
+        settle()
+        rule.onNode(isFocused()).assert(androidx.compose.ui.test.hasText("Gamma 480"))
+    }
+}

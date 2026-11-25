@@ -214,6 +214,18 @@ fun IconAction(icon: androidx.compose.ui.graphics.vector.ImageVector, label: Str
     Icon(icon, label, tint = tint, modifier = Modifier.size(40.dp).card(RoundedCornerShape(50), onClick = onClick).padding(9.dp))
 }
 
+/**
+ * A round button whose icon changes with the state (Install, a spinner while it works, then Uninstall): the same
+ * button throughout, so the remote's selection never leaves it.
+ */
+@Composable
+internal fun StateAction(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, busy: Boolean, tint: Color = Color.White, onClick: () -> Unit) {
+    Box(Modifier.size(40.dp).card(RoundedCornerShape(50)) { if (!busy) onClick() }, contentAlignment = Alignment.Center) {
+        if (busy) androidx.compose.material3.CircularProgressIndicator(color = Palette.accent, strokeWidth = 3.dp, modifier = Modifier.size(24.dp))
+        else Icon(icon, label, tint = tint, modifier = Modifier.padding(9.dp))
+    }
+}
+
 @Composable
 private fun ListRow(
     title: String,
@@ -311,30 +323,27 @@ fun RepositoryScreen(screen: Screen.Repository) {
                         "v${p.version}",
                         p.description,
                     ).joinToString(" · ")
-                    // Install/Uninstall swap the button for a spinner and back: keep the remote's selection on this row
-                    // (it used to jump to the top of the list).
-                    val keep = remember { FocusRequester() }
-                    var pressed by remember { mutableStateOf(false) }
-                    LaunchedEffect(working[p.internalName], have) { if (pressed) { kotlinx.coroutines.delay(60); runCatching { keep.requestFocus() } } }
+                    // One button for Install → (spinner) → Uninstall / Update: only its icon changes, so the remote's
+                    // selection stays on it. (It used to be swapped for a spinner and back, which dropped the selection
+                    // to the side bar's Home icon.)
+                    val busy = working[p.internalName] == true
+                    val update = have != null && p.version > have.version
                     ListRow(p.name, detail, p.iconUrl?.replace("%size%", "64")) {
-                      Box(Modifier.focusRequester(keep).onFocusChanged { if (it.hasFocus) pressed = true }.focusGroup()) {
-                        when {
-                            working[p.internalName] == true -> Spinner(Modifier.size(40.dp).focusable())
-                            have == null -> IconAction(Icons.Filled.Download, "Install") {
+                        // A single call (not one per state), so it stays the same button when the state changes.
+                        StateAction(
+                            when { have == null -> Icons.Filled.Download; update -> Icons.Filled.Refresh; else -> Icons.Filled.Delete },
+                            when { have == null -> "Install"; update -> "Update"; else -> "Uninstall" },
+                            busy, if (update) Palette.accent else Color.White,
+                        ) {
+                            if (have == null || update) {
                                 working[p.internalName] = true
                                 scope.launch {
                                     val r = withContext(Dispatchers.IO) { PluginManager.install(w) }
                                     working.remove(p.internalName)
                                     r.onFailure { App.toast("${p.name}: ${it.message}") }
                                 }
-                            }
-                            p.version > have.version -> IconAction(Icons.Filled.Refresh, "Update", Palette.accent) {
-                                working[p.internalName] = true
-                                scope.launch { withContext(Dispatchers.IO) { PluginManager.install(w) }; working.remove(p.internalName) }
-                            }
-                            else -> IconAction(Icons.Filled.Delete, "Uninstall") { PluginManager.uninstall(p.internalName); PluginManager.bumpVersion() }
+                            } else { PluginManager.uninstall(p.internalName); PluginManager.bumpVersion() }
                         }
-                      }
                     }
                 }
             }

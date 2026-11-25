@@ -66,6 +66,9 @@ android {
         buildConfig = true
     }
 
+    // Robolectric (the remote-control tests) reads the app's resources and manifest.
+    testOptions { unitTests.isIncludeAndroidResources = true }
+
     packaging {
         resources.excludes += setOf("META-INF/*.kotlin_module", "META-INF/versions/**", "META-INF/DEPENDENCIES",
             "META-INF/LICENSE*", "META-INF/NOTICE*", "META-INF/INDEX.LIST")
@@ -163,6 +166,11 @@ dependencies {
     androidTestImplementation("androidx.test:runner:1.7.0")
     androidTestImplementation("androidx.test.ext:junit:1.3.0")
     testImplementation("junit:junit:4.13.2")
+    // Remote-control tests (FocusTest…): the app's screens in a simulated Android, driven with D-pad key presses.
+    testImplementation("org.robolectric:robolectric:4.16")
+    testImplementation(platform("androidx.compose:compose-bom:2026.03.00"))
+    testImplementation("androidx.compose.ui:ui-test-junit4")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
 }
 
 // Paparazzi (Android screenshots drawn on the computer: ./gradlew :app:recordPaparazziDebug) clashes with
@@ -173,7 +181,19 @@ tasks.withType<Test>().configureEach { reports.html.required.set(false) }
 // that process with Paparazzi's renderer: it gets a process of its own, right after the other unit tests.
 afterEvaluate {
     val unit = tasks.named<Test>("testDebugUnitTest")
-    unit.configure { filter { excludeTestsMatching("*TorrentStreamingTest"); isFailOnNoMatchingTests = false } }
+    unit.configure { filter { excludeTestsMatching("*TorrentStreamingTest"); excludeTestsMatching("*ui.FocusTest"); isFailOnNoMatchingTests = false } }
+    // The remote-control tests run in Robolectric's simulated Android, which leaves Paparazzi's renderer unable to
+    // start in the same process: they get one of their own too.
+    val focus = tasks.register<Test>("focusUnitTest") {
+        val base = unit.get()
+        testClassesDirs = base.testClassesDirs
+        classpath = base.classpath
+        jvmArgs(base.allJvmArgs.filter { it.startsWith("--add-opens") || it.startsWith("-D") })
+        systemProperties(base.systemProperties)
+        filter { includeTestsMatching("*ui.FocusTest"); isFailOnNoMatchingTests = false }
+        dependsOn(base.dependsOn)
+    }
+    unit.configure { finalizedBy(focus) }
     val torrent = tasks.register<Test>("torrentUnitTest") {
         val base = unit.get()
         testClassesDirs = base.testClassesDirs
