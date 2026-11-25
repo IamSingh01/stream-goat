@@ -70,6 +70,21 @@ object WeTrakr {
         return runCatching { app.baseClient.newCall(request).execute().use { r -> r.code to r.body.string() } }.getOrNull()
     }
 
+    /** A page of a list WeTrakr walks with a cursor: status, body, and the X-Pagination-Next cursor (null at the end). */
+    internal suspend fun getPage(path: String): Triple<Int, String, String?>? {
+        val token = token() ?: return null
+        val request = okhttp3.Request.Builder().url(api + path)
+            .header("wetrakr-api-version", "1")
+            .header("wetrakr-api-key", clientId)
+            .header("User-Agent", userAgent)
+            .header("Authorization", "Bearer $token").get().build()
+        return runCatching {
+            app.baseClient.newCall(request).execute().use { r ->
+                Triple(r.code, r.body.string(), r.header("X-Pagination-Next")?.takeIf { it.isNotBlank() })
+            }
+        }.getOrNull()
+    }
+
     /** An authorised POST (sync writes). */
     internal suspend fun postAuthed(path: String, body: JSONObject): Int? {
         val token = token() ?: return null

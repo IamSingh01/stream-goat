@@ -70,15 +70,21 @@ object WeTrakrSync {
             val sh = if (everything) HashSet() else shows()
             var films = 0
             val eps = HashSet<String>()
+            var rowsSeen = 0
+            var sample: String? = null
             lastError = null
             var limit = 5000
             for (target in listOf("movies", "episodes")) {
+                // Compact pages are walked with a cursor: none on the first call, then each answer's X-Pagination-Next as
+                // "after", until there is none.
+                var after: String? = null
                 var page = 1
                 while (page < 2000) {
-                    val q = "compact=true&limit=$limit&page=$page" + (since?.let { "&from_date=$it" } ?: "")
-                    val answer = WeTrakr.get("/sync/tracking/watched/history/$target?$q")
+                    val q = "compact=true&limit=$limit" + (since?.let { "&from_date=${java.net.URLEncoder.encode(it, "UTF-8")}" } ?: "") +
+                        (after?.let { "&after=${java.net.URLEncoder.encode(it, "UTF-8")}" } ?: "")
+                    val answer = WeTrakr.getPage("/sync/tracking/watched/history/$target?$q")
                     if (answer == null) { lastError = "WeTrakr couldn't be reached (offline, or signed out: connect again)"; return@withLock null }
-                    val (code, body) = answer
+                    val (code, body, next) = answer
                     if (code !in 200..299) {
                         // A smaller page size first (the server may cap it), then give up with WeTrakr's own words.
                         if (limit > 100 && code in 400..499 && code != 401 && code != 403) { limit = 100; continue }
@@ -93,6 +99,8 @@ object WeTrakrSync {
                     if (rows == null) { lastError = "WeTrakr's answer wasn't a list: ${body.take(120)}"; android.util.Log.w("wetrakr", lastError!!); return@withLock null }
                     for (i in 0 until rows.length()) {
                         val o = rows.optJSONObject(i) ?: continue
+                        rowsSeen++
+                        if (sample == null) sample = o.toString().take(200)
                         if (target == "movies") {
                             val k = keys(o.idsTmdb("ids"), o.idsImdb("ids"))
                             if (k.isNotEmpty() && k.none { it in m }) films++
@@ -105,9 +113,16 @@ object WeTrakrSync {
                             k.forEach { e += "$it:$s:$n"; sh += it }
                         }
                     }
-                    if (rows.length() < limit) break
+                    if (next == null || next == after || rows.length() == 0) break
+                    after = next
                     page++
                 }
+            }
+            if (rowsSeen > 0 && films == 0 && eps.isEmpty() && m.isEmpty() && e.isEmpty()) {
+                // Rows came but none could be read: say what they look like instead of importing nothing.
+                lastError = "WeTrakr sent $rowsSeen entries in a form Stream Goat doesn't read yet: $sample"
+                android.util.Log.w("wetrakr", lastError!!)
+                return@withLock null
             }
             movies = m; episodes = e; shows = sh
             prefs.edit().putStringSet("movies", m.toSet()).putStringSet("episodes", e.toSet()).putStringSet("shows", sh.toSet())
