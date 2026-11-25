@@ -700,7 +700,7 @@ private fun WeTrakrSection() {
                         syncScope.launch {
                             val sum = runCatching { io.github.sherazi5110.cloudstream.WeTrakrSync.pull(full = true) }.getOrNull()
                             syncing = false
-                            App.toast(if (sum == null) "Couldn't reach WeTrakr. Try again in a moment."
+                            App.toast(if (sum == null) (io.github.sherazi5110.cloudstream.WeTrakrSync.lastError ?: "Couldn't reach WeTrakr. Try again in a moment.")
                                 else "WeTrakr: ${sum.films} films and ${sum.episodes} episodes watched, marked here too")
                         }
                     }

@@ -48,6 +48,10 @@ object WeTrakrSync {
     fun episodeWatched(tmdb: Int?, imdb: String?, season: Int, episode: Int) =
         keys(tmdb, imdb).any { "$it:$season:$episode" in episodes() }
 
+    /** Why the last read failed, in WeTrakr's own words (shown by Sync now), or null. */
+    @Volatile var lastError: String? = null
+        private set
+
     /** What a full sync found: titles and episodes watched on WeTrakr. */
     data class Summary(val films: Int, val episodes: Int)
 
@@ -70,13 +74,27 @@ object WeTrakrSync {
             val sh = if (everything) HashSet() else shows()
             var films = 0
             val eps = HashSet<String>()
+            lastError = null
+            var limit = 5000
             for (target in listOf("movies", "episodes")) {
                 var page = 1
-                while (page < 200) {
-                    val q = "compact=true&limit=5000&page=$page" + (since?.let { "&from_date=$it" } ?: "")
-                    val (code, body) = WeTrakr.get("/sync/tracking/watched/history/$target?$q") ?: return@withLock null
-                    if (code !in 200..299) return@withLock null
-                    val rows = runCatching { JSONArray(body) }.getOrNull() ?: break
+                while (page < 2000) {
+                    val q = "compact=true&limit=$limit&page=$page" + (since?.let { "&from_date=$it" } ?: "")
+                    val answer = WeTrakr.get("/sync/tracking/watched/history/$target?$q")
+                    if (answer == null) { lastError = "WeTrakr couldn't be reached (offline, or signed out: connect again)"; return@withLock null }
+                    val (code, body) = answer
+                    if (code !in 200..299) {
+                        // A smaller page size first (the server may cap it), then give up with WeTrakr's own words.
+                        if (limit > 100 && code in 400..499 && code != 401 && code != 403) { limit = 100; continue }
+                        val said = runCatching { JSONObject(body).let { it.optString("message").ifBlank { it.optString("error") } } }.getOrNull()
+                            ?.takeIf { it.isNotBlank() } ?: body.take(160)
+                        lastError = "WeTrakr answered $code" + (if (code == 401) " (sign-in expired: disconnect and connect again)" else "") + ": $said"
+                        android.util.Log.w("wetrakr", "history $target page $page: $code $said")
+                        return@withLock null
+                    }
+                    val rows = runCatching { JSONArray(body) }.getOrNull()
+                        ?: runCatching { JSONObject(body).let { o -> o.optJSONArray("items") ?: o.optJSONArray("data") ?: o.optJSONArray("results") } }.getOrNull()
+                    if (rows == null) { lastError = "WeTrakr's answer wasn't a list: ${body.take(120)}"; android.util.Log.w("wetrakr", lastError!!); return@withLock null }
                     for (i in 0 until rows.length()) {
                         val o = rows.optJSONObject(i) ?: continue
                         if (target == "movies") {
@@ -91,7 +109,7 @@ object WeTrakrSync {
                             k.forEach { e += "$it:$s:$n"; sh += it }
                         }
                     }
-                    if (rows.length() < 5000) break
+                    if (rows.length() < limit) break
                     page++
                 }
             }

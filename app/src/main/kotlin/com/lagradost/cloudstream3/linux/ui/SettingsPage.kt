@@ -834,7 +834,7 @@ class SettingsPage : StackPane(), Refreshable {
                                 ui.launch {
                                     val sum = runCatching { com.lagradost.cloudstream3.linux.WeTrakrSync.pull(full = true) }.getOrNull()
                                     b.isDisable = false; b.text = "Sync now"
-                                    Toasts.show(if (sum == null) "Couldn't reach WeTrakr. Try again in a moment."
+                                    Toasts.show(if (sum == null) (com.lagradost.cloudstream3.linux.WeTrakrSync.lastError ?: "Couldn't reach WeTrakr. Try again in a moment.")
                                         else "WeTrakr: ${sum.films} films and ${sum.episodes} episodes watched, marked here too")
                                 }
                             }
