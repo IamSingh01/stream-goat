@@ -388,6 +388,30 @@ fun Pill(text: String, modifier: Modifier = Modifier, label: String? = null, lab
     }
 }
 
+/**
+ * A row you open with OK that has buttons at its end (delete, ⋮…). The buttons sit beside the row's main part, not
+ * inside it: the remote can't reach a button inside a selectable row, so → goes from the row to its buttons.
+ * [modifier] and [background] are for the whole row, [padding] for its main part.
+ */
+@Composable
+fun ActionRow(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    shape: Shape = RoundedCornerShape(10.dp),
+    background: Color = Color.Transparent,
+    padding: androidx.compose.foundation.layout.PaddingValues = androidx.compose.foundation.layout.PaddingValues(10.dp),
+    focusScale: Float = 1.02f,
+    onLongClick: (() -> Unit)? = null,
+    actions: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit,
+    content: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit,
+) {
+    Row(modifier.background(background, shape), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.weight(1f).card(shape, focusScale, onLongClick = onLongClick, onClick = onClick).padding(padding),
+            verticalAlignment = Alignment.CenterVertically, content = content)
+        Row(Modifier.padding(end = 4.dp), verticalAlignment = Alignment.CenterVertically, content = actions)
+    }
+}
+
 /** The big rounded buttons ("Play", "More Info", "Resume S1 E2"). */
 @Composable
 fun PillButton(

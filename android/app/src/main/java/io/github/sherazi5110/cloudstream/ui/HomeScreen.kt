@@ -417,7 +417,7 @@ private fun BannerPage(item: SearchResponse, rank: Int?, rowName: String?, heigh
     val art = io.github.sherazi5110.cloudstream.Metadata.artwork
     val scope = rememberCoroutineScope()
     val playFocus = remember { FocusRequester() }
-    LaunchedEffect(Unit) { if (isTv && rank == 0) runCatching { playFocus.requestFocus() } }
+    LaunchedEffect(Unit) { if (isTv && rank == 0 && !FocusKeeper.returning) runCatching { playFocus.requestFocus() } }
     Box(Modifier.fillMaxWidth().heightIn(min = height)) {
         NetImage(info?.backdrop?.takeIf { art } ?: details?.backgroundPosterUrl ?: details?.posterUrl ?: item.posterUrl, Modifier.matchParentSize(),
             details?.posterHeaders ?: item.posterHeaders)

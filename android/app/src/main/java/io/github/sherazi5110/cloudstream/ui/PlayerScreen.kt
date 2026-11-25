@@ -265,7 +265,7 @@ fun PlayerScreen(screen: Screen.Player) {
                     }
                 }
                 Row(Modifier.padding(top = 10.dp).card(RoundedCornerShape(8.dp)) { remember = !remember }.padding(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                    androidx.compose.material3.Checkbox(remember, { remember = it })
+                    androidx.compose.material3.Checkbox(remember, null)
                     Text("Always use it for ${kind.label.lowercase()}", style = MaterialTheme.typography.bodyMedium)
                 }
             }

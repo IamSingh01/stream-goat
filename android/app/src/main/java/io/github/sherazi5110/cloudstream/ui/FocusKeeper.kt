@@ -6,6 +6,8 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
@@ -13,6 +15,11 @@ import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.input.InputMode
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.platform.LocalInputModeManager
@@ -177,6 +184,8 @@ object FocusKeeper {
     /** The selection was lost: put it back (if nothing else has taken it in the meantime). */
     internal fun restore() {
         if (!active() || paused) { waiting = false; return }
+        if (returnBounds != null) return   // Back is bringing the remembered item back
+
         if (!windowFocused()) { waiting = true; return }
         waiting = false
         val closed = returnTo
@@ -218,6 +227,66 @@ object FocusKeeper {
         }.first
     }
 
+    // ---------- Back: the same item selected again ----------
+
+    /** Where the selected item was on each screen you left (by tab and depth, see Nav). */
+    private val places = HashMap<String, Rect>()
+    private var returnBounds: Rect? = null
+    private var returnTry = 0
+    private val returnDelays = longArrayOf(120, 300, 600, 1000, 1600)
+    private val returnLater = Runnable { tryReturn() }
+
+    /** Back is on its way to a screen that will get its selected item back: screens leave their own first choice. */
+    val returning: Boolean get() = returnBounds != null
+
+    /** Leaving a screen for another one on top: remember its selected item. */
+    internal fun leaving(place: String) {
+        val c = current
+        val b = if (c != null && c.alive && c.focused && !c.area.nav && !c.area.overlay) c.bounds() else null
+        if (b != null) places[place] = b else places.remove(place)
+    }
+
+    /** Back on a screen left before: select its item again once it's drawn (its scroll position comes back too). */
+    internal fun returning(place: String) {
+        handler.removeCallbacks(returnLater)
+        returnBounds = places.remove(place)
+        returnTry = 0
+        if (returnBounds != null) handler.postDelayed(returnLater, returnDelays[0])
+    }
+
+    /** Another tab: the remembered places were for the screens just closed. */
+    internal fun forgetPlaces() {
+        places.clear()
+        cancelReturn()
+    }
+
+    /** A key was pressed: you're moving yourself, so nothing is brought back any more. */
+    internal fun keyPressed() { if (returnBounds != null) cancelReturn() }
+
+    private fun cancelReturn() {
+        returnBounds = null
+        runCatching { handler.removeCallbacks(returnLater) }
+    }
+
+    private fun tryReturn() {
+        val target = returnBounds ?: return
+        if (!active()) { cancelReturn(); return }
+        val pool = items.filter { !it.area.overlay && !it.area.nav }.mapNotNull { i -> i.bounds()?.let { i to it } }
+        // The item at the same place (the screen and its scroll position are back as they were).
+        val c = target.center
+        val there = pool.filter { (_, b) -> b.contains(c) }.minByOrNull { (_, b) -> b.width * b.height }?.first
+        val last = returnTry >= returnDelays.size - 1
+        val pick = there ?: if (last) nearest(target, pool.map { it.first }) else null
+        if (pick != null && windowFocused()) {
+            returnBounds = null
+            tryFocus(pick)
+            return
+        }
+        if (last) { returnBounds = null; return }
+        returnTry++
+        handler.postDelayed(returnLater, returnDelays[returnTry] - returnDelays[returnTry - 1])
+    }
+
     /** Set while this puts the selection back itself (that's not a jump, and the card it leaves isn't lost). */
     private var restoring = false
 
@@ -232,6 +301,7 @@ object FocusKeeper {
     internal fun reset() {
         runCatching { handler.removeCallbacks(restoreLater) }; items.clear(); overlays.clear(); current = null; currentBounds = null; returnTo = null
         rootHasFocus = false; fallbackFocused = false; paused = false; waiting = false
+        places.clear(); returnBounds = null; runCatching { handler.removeCallbacks(returnLater) }
         justLost = false; autoPicked = null; lostBounds = null; lostArea = null
     }
 }
@@ -255,7 +325,12 @@ fun FocusKeeperRoot(modifier: Modifier = Modifier, content: @Composable (Modifie
     }
     val inFront = window.isWindowFocused
     androidx.compose.runtime.LaunchedEffect(inFront) { FocusKeeper.windowFocusChanged(inFront) }
-    content(modifier.onFocusChanged { FocusKeeper.rootHasFocus = it.hasFocus })
+    content(modifier.onFocusChanged { FocusKeeper.rootHasFocus = it.hasFocus }
+        .onPreviewKeyEvent { e ->
+            // Back itself is how a return starts; any other key means you're moving yourself.
+            if (e.type == KeyEventType.KeyDown && e.key != Key.Back) FocusKeeper.keyPressed()
+            false
+        })
 }
 
 private val arrows = setOf(FocusDirection.Left, FocusDirection.Right, FocusDirection.Up, FocusDirection.Down)
@@ -318,4 +393,19 @@ private class DetachWatch(var item: FocusKeeper.Item) : Modifier.Node() {
 private data class DetachWatchElement(val item: FocusKeeper.Item) : androidx.compose.ui.node.ModifierNodeElement<DetachWatch>() {
     override fun create() = DetachWatch(item)
     override fun update(node: DetachWatch) { node.item = item }
+}
+
+/**
+ * Back one step at a time: with the selection inside a page's content (a Settings section, the Downloads list),
+ * Back first goes to the page's own tabs or section list ([header]); only from there does it leave the page.
+ * Returns the modifier for the content.
+ */
+@Composable
+fun backToHeader(header: FocusRequester): Modifier {
+    var inside by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    androidx.activity.compose.BackHandler(enabled = inside) {
+        runCatching { header.requestFocus() }
+        if (inside) Nav.back()   // the header couldn't take it: leave as before
+    }
+    return Modifier.onFocusChanged { inside = it.hasFocus }
 }

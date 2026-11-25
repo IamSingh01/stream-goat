@@ -92,6 +92,9 @@ fun TvScale(content: @Composable () -> Unit) {
 @Composable
 fun AppRoot() {
     val top = Nav.top
+    // What each screen remembers (the Library tab you were on, the Settings section, scroll positions): kept here,
+    // above the player, so playing a video and coming back doesn't reset it (it used to: Downloads → My list).
+    val saved = rememberSaveableStateHolder()
     BackHandler(enabled = Nav.stack.isNotEmpty() || Nav.tab != Tab.HOME) { Nav.back() }
     // Leaving the Music section stops the music (it keeps playing with the screen off or the app in the background).
     androidx.compose.runtime.LaunchedEffect(Nav.tab) {
@@ -113,7 +116,7 @@ fun AppRoot() {
             if (wide) Row(Modifier.fillMaxSize()) {
                 Rail()
                 Box(Modifier.weight(1f).fillMaxHeight()) {
-                    Content(top)
+                    Content(top, saved)
                     if (top == null) MiniPlayer(Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp).widthIn(max = 720.dp))
                 }
             } else if (Palette.isGlass && top == null) {
@@ -121,14 +124,14 @@ fun AppRoot() {
                 val haze = dev.chrisbanes.haze.rememberHazeState()
                 Box(Modifier.fillMaxSize()) {
                     CompositionLocalProvider(LocalBottomInset provides 88.dp) {
-                        Box(Modifier.fillMaxSize().hazeSource(haze)) { Content(top) }
+                        Box(Modifier.fillMaxSize().hazeSource(haze)) { Content(top, saved) }
                     }
                     CompositionLocalProvider(Glass.LocalHaze provides haze) {
                         Column(Modifier.align(Alignment.BottomCenter)) { MiniPlayer(); BottomBar() }
                     }
                 }
             } else Column(Modifier.fillMaxSize()) {
-                Box(Modifier.weight(1f)) { Content(top) }
+                Box(Modifier.weight(1f)) { Content(top, saved) }
                 if (top == null) { MiniPlayer(Modifier.padding(top = 6.dp)); BottomBar() }
             }
             ProfileOverlays()
@@ -142,9 +145,8 @@ fun AppRoot() {
 }
 
 @Composable
-private fun Content(top: Screen?) {
-    // Each tab keeps its scroll position when you come back to it.
-    val holder = rememberSaveableStateHolder()
+private fun Content(top: Screen?, holder: androidx.compose.runtime.saveable.SaveableStateHolder) {
+    // Each tab and screen keeps its state (scroll position, chosen tab or section) when you come back to it.
     when (top) {
         null -> holder.SaveableStateProvider(Nav.tab.name) {
             when (Nav.tab) {
@@ -160,11 +162,11 @@ private fun Content(top: Screen?) {
             }
         }
         is Screen.Details -> holder.SaveableStateProvider("details|${top.apiName}|${top.url}") { DetailsScreen(top) }
-        is Screen.Catalog -> CatalogScreen(top)
-        is Screen.Repository -> RepositoryScreen(top)
+        is Screen.Catalog -> holder.SaveableStateProvider("catalog|${top.apiName}|${top.sectionName}") { CatalogScreen(top) }
+        is Screen.Repository -> holder.SaveableStateProvider("repo|${top.url}") { RepositoryScreen(top) }
         is Screen.ProviderTests -> ProviderTestsScreen()
         is Screen.AddFromPhone -> AddFromPhoneScreen()
-        is Screen.SettingsPage -> SettingsPageScreen(top)
+        is Screen.SettingsPage -> holder.SaveableStateProvider("settings|${top.section}") { SettingsPageScreen(top) }
         is Screen.Player, is Screen.WebPlayer -> Unit
     }
 }

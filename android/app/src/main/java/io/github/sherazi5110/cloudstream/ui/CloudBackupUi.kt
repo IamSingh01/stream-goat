@@ -215,22 +215,23 @@ private fun BackupPicker(list: List<CloudBackup.Remote>) {
     SimpleDialog("Restore a backup", { CloudUi.choosing = null }) {
         Hint("Each device that's signed in keeps its own backup. Pick the one to copy to this device.")
         backups.forEach { r ->
-            Row(
-                Modifier.padding(top = 6.dp).fillMaxWidth().card(RoundedCornerShape(12.dp), focusScale = 1.02f) { CloudUi.choosing = null; CloudUi.confirm = r }
-                    .background(Palette.surfaceHigh, RoundedCornerShape(12.dp)).padding(horizontal = 14.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
+            // Delete sits beside the backup (→ from it), not inside it, where the remote couldn't reach it.
+            ActionRow(onClick = { CloudUi.choosing = null; CloudUi.confirm = r }, modifier = Modifier.padding(top = 6.dp).fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp), background = Palette.surfaceHigh,
+                padding = androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp, vertical = 10.dp),
+                actions = {
+                    Icon(Icons.Filled.Delete, "Delete this backup", tint = Palette.muted, modifier = Modifier.size(36.dp).card(RoundedCornerShape(50)) {
+                        App.scope.launch {
+                            runCatching { CloudBackup.delete(r) }.onSuccess { backups = backups - r; App.toast("Backup deleted") }
+                                .onFailure { App.toast("Couldn't delete: ${it.message}") }
+                        }
+                    }.padding(7.dp))
+                }) {
                 Icon(Icons.Filled.Devices, null, tint = Palette.muted, modifier = Modifier.size(24.dp))
-                Column(Modifier.weight(1f)) {
+                Column(Modifier.weight(1f).padding(start = 12.dp)) {
                     Text((r.device ?: "A device") + if (r.mine) " (this device)" else "", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
                     Text(r.describe(), style = MaterialTheme.typography.bodySmall, color = Palette.muted)
                 }
-                Icon(Icons.Filled.Delete, "Delete this backup", tint = Palette.muted, modifier = Modifier.size(36.dp).card(RoundedCornerShape(50)) {
-                    App.scope.launch {
-                        runCatching { CloudBackup.delete(r) }.onSuccess { backups = backups - r; App.toast("Backup deleted") }
-                            .onFailure { App.toast("Couldn't delete: ${it.message}") }
-                    }
-                }.padding(7.dp))
             }
         }
         if (backups.isEmpty()) Hint("No backups left in this Google account.")

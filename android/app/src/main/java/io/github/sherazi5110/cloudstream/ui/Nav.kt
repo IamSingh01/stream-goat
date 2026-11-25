@@ -60,6 +60,7 @@ object Nav {
     /** Searches every extension for [text] (an actor's name from the Cast row). */
     fun search(text: String) {
         stack.clear()
+        FocusKeeper.forgetPlaces()
         select(Tab.SEARCH)
         searchScope = null
         searchQuery = text
@@ -68,9 +69,16 @@ object Nav {
 
     val top: Screen? get() = stack.lastOrNull()
 
+    /** Which screen of which tab is showing: [FocusKeeper] remembers the selected item of each one you leave. */
+    private fun place(): String = "${tab.name}:${stack.size}"
+
     fun open(screen: Screen) {
         // Opening the same title twice in a row (double tap) shouldn't stack it.
-        if (stack.lastOrNull() != screen) { stack.add(screen); io.github.sherazi5110.cloudstream.GlitchReport.step("Opened " + io.github.sherazi5110.cloudstream.GlitchReport.describe(screen)) }
+        if (stack.lastOrNull() != screen) {
+            FocusKeeper.leaving(place())
+            stack.add(screen)
+            io.github.sherazi5110.cloudstream.GlitchReport.step("Opened " + io.github.sherazi5110.cloudstream.GlitchReport.describe(screen))
+        }
     }
 
     fun replace(screen: Screen) {
@@ -83,6 +91,8 @@ object Nav {
     fun back(): Boolean {
         if (stack.isNotEmpty()) {
             stack.removeAt(stack.lastIndex)
+            // Back where you were: the same item selected (the episode, the download, the poster you opened).
+            FocusKeeper.returning(place())
             io.github.sherazi5110.cloudstream.GlitchReport.step("Back to " + io.github.sherazi5110.cloudstream.GlitchReport.describe(top))
             return true
         }
@@ -98,7 +108,7 @@ object Nav {
         if (tab == Tab.SEARCH) searchScope = null
         // Kids profiles have no Settings or Extensions pages unless a parent unlocks them.
         io.github.sherazi5110.cloudstream.GlitchReport.step("Tab ${tab.label}")
-        if (tab == Tab.EXTENSIONS || tab == Tab.MORE) ProfileUi.guarded { stack.clear(); this.tab = tab }
-        else { stack.clear(); this.tab = tab }
+        if (tab == Tab.EXTENSIONS || tab == Tab.MORE) ProfileUi.guarded { stack.clear(); FocusKeeper.forgetPlaces(); this.tab = tab }
+        else { stack.clear(); FocusKeeper.forgetPlaces(); this.tab = tab }
     }
 }

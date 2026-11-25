@@ -235,18 +235,22 @@ private fun ListRow(
     onClick: (() -> Unit)? = null,
     trailing: @Composable () -> Unit = {},
 ) {
-    Row(
-        Modifier.fillMaxWidth()
-            .then(if (onClick != null) Modifier.card(RoundedCornerShape(12.dp), focusScale = 1.02f, onClick = onClick) else Modifier)
-            .background(Palette.surface, RoundedCornerShape(12.dp)).padding(12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
+    val body: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit = {
         if (iconUrl != null) NetImage(iconUrl, Modifier.size(40.dp).background(Palette.surfaceHigh, RoundedCornerShape(8.dp)), contentScale = androidx.compose.ui.layout.ContentScale.Fit)
         else if (warning) Icon(Icons.Filled.Warning, null, tint = Color(0xFFF59E0B), modifier = Modifier.size(28.dp))
         Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
             Text(title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
             detail?.let { Text(it, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis) }
         }
+    }
+    // A row that opens (a repository) keeps its buttons (delete) beside it, where → reaches them.
+    if (onClick != null) ActionRow(onClick, Modifier.fillMaxWidth(), RoundedCornerShape(12.dp), Palette.surface,
+        androidx.compose.foundation.layout.PaddingValues(12.dp), actions = { trailing() }, content = body)
+    else Row(
+        Modifier.fillMaxWidth().background(Palette.surface, RoundedCornerShape(12.dp)).padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        body()
         trailing()
     }
 }

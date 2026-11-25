@@ -38,6 +38,8 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performKeyInput
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToKey
 import androidx.compose.ui.test.pressKey
 import androidx.compose.ui.test.requestFocus
 import androidx.compose.ui.unit.dp
@@ -60,7 +62,7 @@ import org.robolectric.annotation.ConscryptMode
 @ConscryptMode(ConscryptMode.Mode.OFF)
 @OptIn(ExperimentalTestApi::class)
 class FocusTest {
-    @get:Rule val rule = createComposeRule()
+    @get:Rule val rule = androidx.compose.ui.test.junit4.createAndroidComposeRule<androidx.activity.ComponentActivity>()
 
     @Before fun setUp() { FocusKeeper.reset(); FocusKeeper.settle = 0; tvForTests = true }
     @After fun tearDown() { FocusKeeper.reset(); FocusKeeper.settle = 150; tvForTests = null }
@@ -319,5 +321,94 @@ class FocusTest {
         all = listOf(link("Alpha 1080", 1080)) + all
         settle()
         rule.onNode(isFocused()).assert(androidx.compose.ui.test.hasText("Gamma 480"))
+    }
+
+    /** A tab with a long list (Downloads), the player on top of it, and Back, as AppRoot does it. */
+    @Composable
+    private fun TabWithPlayer(playing: Boolean, items: Int = 30) {
+        val holder = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
+        FocusKeeperRoot { keeper ->
+            Row(keeper) {
+                if (playing) {
+                    Box(Modifier.size(400.dp).focusFallback().focusable().testTag("player"))
+                    return@Row
+                }
+                NavArea("side bar", listOf(androidx.compose.ui.focus.FocusDirection.Left)) { nav ->
+                    Column(nav) { Card("home"); Card("library") }
+                }
+                holder.SaveableStateProvider("LIBRARY") {
+                    var tab by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(0) }
+                    Column {
+                        Row { Card("my list", Modifier.focusProperties { }, 80); Box(Modifier.size(80.dp, 60.dp).card { tab = 1 }.testTag("downloads")) }
+                        androidx.compose.foundation.lazy.LazyColumn(Modifier.size(300.dp, 300.dp).testTag("list")) {
+                            items((0 until items).map { "${if (tab == 1) "dl" else "fav"}$it" }, key = { it }) { Card(it, w = 200) }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    @Test fun `back from the player returns to the same tab and the same item`() {
+        var playing by mutableStateOf(false)
+        rule.setContent { TabWithPlayer(playing) }
+        focus("downloads"); rule.onNodeWithTag("downloads").performClick(); settle()
+        rule.onNodeWithTag("list").performScrollToKey("dl12"); settle(); focus("dl12")
+        // Play it (Nav.open), then Back (Nav.back).
+        FocusKeeper.leaving("LIBRARY:0"); playing = true; settle(); focus("player")
+        playing = false; FocusKeeper.returning("LIBRARY:0")
+        rule.waitForIdle()
+        shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(2000))
+        settle()
+        // Still on Downloads (not My list), on the same download.
+        tag("dl12").assertIsFocused()
+    }
+
+    private fun back() {
+        rule.runOnUiThread { rule.activity.onBackPressedDispatcher.onBackPressed() }
+        settle()
+    }
+
+    @Test fun `right from a repository reaches its delete button, and OK still opens it`() {
+        var opened = 0; var deleted = 0
+        rule.setContent {
+            FocusKeeperRoot { keeper ->
+                Column(keeper.width(500.dp)) {
+                    ActionRow(onClick = { opened++ }, modifier = Modifier.testTag("repo"),
+                        actions = { Box(Modifier.size(40.dp).card { deleted++ }.testTag("delete")) }) {
+                        Box(Modifier.size(200.dp, 40.dp).testTag("name"))
+                    }
+                    Card("next")
+                }
+            }
+        }
+        rule.onNode(androidx.compose.ui.test.hasAnyDescendant(androidx.compose.ui.test.hasTestTag("name")).and(androidx.compose.ui.test.hasClickAction()), useUnmergedTree = true)
+            .requestFocus(); settle()
+        press(Key.DirectionCenter)
+        check(opened == 1) { "OK didn't open the repository" }
+        press(Key.DirectionRight)
+        tag("delete").assertIsFocused()
+        press(Key.DirectionCenter)
+        check(deleted == 1) { "OK on delete didn't delete" }
+    }
+
+    @Test fun `back inside a settings section goes to the section list first`() {
+        val selected = FocusRequester()
+        var left = 0
+        rule.setContent {
+            androidx.activity.compose.BackHandler { left++ }   // what AppRoot does: leave the page
+            FocusKeeperRoot { keeper ->
+                Row(keeper) {
+                    Column { Card("profiles"); Card("player", Modifier.focusRequester(selected)); Card("about") }
+                    Column(backToHeader(selected)) { Card("option1"); Card("option2") }
+                }
+            }
+        }
+        focus("option2")
+        back()
+        tag("player").assertIsFocused()
+        check(left == 0) { "Back left the page instead of going to the list" }
+        back()
+        check(left == 1) { "Back from the list didn't leave the page" }
     }
 }
