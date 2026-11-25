@@ -315,6 +315,7 @@ fun PosterCard(
             }
             NetImage(item.posterUrl, Modifier.fillMaxSize(), item.posterHeaders)
             item.scoreText()?.let { ScoreBadge(it, Modifier.align(Alignment.TopStart).padding(6.dp)) }
+            WatchedStamp(item)
             PosterRating(item, Modifier.align(Alignment.BottomStart).padding(6.dp))
         }
         Text(
@@ -452,6 +453,42 @@ fun rememberMetadata(r: com.lagradost.cloudstream3.LoadResponse?, version: Int =
         value = r?.let { runCatching { io.github.sherazi5110.cloudstream.Metadata.details(it) }.getOrNull() }
     }
     return state.value
+}
+
+/**
+ * A big green rubber stamp across a watched poster: "WATCHED" (a film) or "WATCHING" (a show), watched here or on
+ * WeTrakr (matched by the title's ids, so it shows whichever extension lists it). The poster is dimmed a little so the
+ * stamp reads. Redraws when watched marks change.
+ */
+@Composable
+fun WatchedStamp(item: SearchResponse, modifier: Modifier = Modifier) {
+    val version = io.github.sherazi5110.cloudstream.WeTrakrSync.version
+    val stamp = androidx.compose.runtime.produceState<io.github.sherazi5110.cloudstream.WeTrakrSync.Stamp?>(null, item.url, version) {
+        value = runCatching { io.github.sherazi5110.cloudstream.WeTrakrSync.stamp(item) }.getOrNull()
+    }.value ?: return
+    StampMark(stamp.label, modifier)
+}
+
+/** The stamp itself: [label] in a tilted double green frame over the whole poster. */
+@Composable
+fun StampMark(label: String, modifier: Modifier = Modifier) {
+    val green = Color(0xFF2EE06A)
+    androidx.compose.foundation.layout.BoxWithConstraints(modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.38f)), contentAlignment = Alignment.Center) {
+        val w = maxWidth
+        val text = label.uppercase()
+        Box(
+            Modifier.graphicsLayer { rotationZ = -18f }
+                .border((w.value / 55f).coerceIn(1.5f, 3.5f).dp, green, RoundedCornerShape(w * 0.05f))
+                .padding((w.value / 60f).coerceIn(1.5f, 3f).dp)
+                .border((w.value / 110f).coerceIn(1f, 2f).dp, green.copy(alpha = 0.85f), RoundedCornerShape(w * 0.035f))
+                .background(Color.Black.copy(alpha = 0.25f), RoundedCornerShape(w * 0.035f))
+                .padding(horizontal = w * 0.06f, vertical = w * 0.02f),
+        ) {
+            Text(text, color = green, fontWeight = FontWeight.Black, maxLines = 1, softWrap = false,
+                fontSize = (w.value * if (text.length > 7) 0.135f else 0.16f).sp,
+                letterSpacing = (w.value * 0.008f).sp)
+        }
+    }
 }
 
 /** "TMDB 8.4" on a poster (when a TMDB key is set and poster ratings are on). */

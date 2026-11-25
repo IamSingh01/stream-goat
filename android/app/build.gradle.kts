@@ -15,12 +15,13 @@ android {
         minSdk = 23
         targetSdk = 36
         // CI passes the release tag (-PappVersion=7.0.0); local builds use the numbers below.
-        val tagVersion = (findProperty("appVersion") as String?)?.removePrefix("v")?.removePrefix("V")
-        versionName = tagVersion ?: "10.0.1"
-        versionCode = tagVersion?.let { v ->
+        // Test builds use this version: it must be above the latest release, or Android won't install it over it.
+        val version = (findProperty("appVersion") as String?)?.removePrefix("v")?.removePrefix("V") ?: "11.0.0"
+        versionName = version
+        versionCode = version.let { v ->
             val (major, minor, patch) = (v.substringBefore('-').split('.').map { it.toIntOrNull() ?: 0 } + listOf(0, 0, 0)).take(3)
             major * 10000 + minor * 100 + patch
-        } ?: 100000
+        }
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // Google Drive backup: the project's Google sign-in client (GitHub secrets, docs/google-drive-setup.md).
         // For an installed app Google doesn't treat the client secret as secret; it ships in the app.

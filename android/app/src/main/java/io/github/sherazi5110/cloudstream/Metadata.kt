@@ -295,6 +295,43 @@ object Metadata {
         return null
     }
 
+    /**
+     * A poster's title as ids (tmdb, imdb, isMovie) without opening it, for the "Watched" stamp: an IMDb id in its
+     * address (Stremio), the TMDB entry chosen by hand or found the way its rating is (cached), else Cinemeta's
+     * search (IMDb ids, no key needed). Null when nothing matched.
+     */
+    suspend fun posterIds(item: SearchResponse): Triple<Int?, String?, Boolean?>? = withContext(Dispatchers.IO) {
+        val kind = kindOf(item.type)
+        val movie: Boolean? = kind?.let { it == "movie" }
+        Regex("tt\\d{5,}").find(item.url)?.value?.let { return@withContext Triple(null, it, movie) }
+        val (title, year) = cleanTitle(item.name)
+        val y = year ?: (item as? com.lagradost.cloudstream3.MovieSearchResponse)?.year ?: (item as? com.lagradost.cloudstream3.TvSeriesSearchResponse)?.year
+        if (hasTmdb) {
+            val chosen = chosenMatch(item.apiName, item.url)
+            if (chosen != null) return@withContext chosen.first?.let { Triple(chosen.second, null, it == "movie") }
+            val hit = cached(cacheKey("search", title, y, kind, language)) { searchTmdb(title, y, kind) }
+            if (hit != null) {
+                val type = hit.optString("media_type").ifBlank { kind ?: "" }
+                return@withContext Triple(hit.optInt("id").takeIf { it > 0 }, null, if (type.isBlank()) movie else type == "movie")
+            }
+        }
+        if (!cinemeta || kind == null) return@withContext null
+        val type = if (kind == "movie") "movie" else "series"
+        val hit = cached(cacheKey("cinemeta-search", type, title, y)) {
+            runCatching {
+                val enc = java.net.URLEncoder.encode(title, "UTF-8")
+                val metas = JSONObject(app.get("$cinemetaBase/catalog/$type/top/search=$enc.json", timeout = 8).text).optJSONArray("metas")
+                val list = (0 until (metas?.length() ?: 0)).mapNotNull { metas!!.optJSONObject(it) }
+                val wanted = normalize(title)
+                list.firstOrNull { o ->
+                    normalize(o.optString("name")) == wanted &&
+                        (y == null || o.optString("releaseInfo").take(4).toIntOrNull()?.let { kotlin.math.abs(it - y) <= 1 } != false)
+                }
+            }.getOrNull()
+        }
+        hit?.optString("imdb_id")?.ifBlank { hit.optString("id") }?.takeIf { it.startsWith("tt") }?.let { Triple(null, it, movie) }
+    }
+
     // ---------- details ----------
 
     /** Everything known about a title from the enabled services, or null when nothing matched. */

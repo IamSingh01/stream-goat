@@ -2,7 +2,7 @@ name: Build
 
 on:
   push:
-    branches: [main]
+    branches: [main, picture-keys]
     tags: ["v*", "V*", "[0-9]*"]
   pull_request:
 
@@ -101,11 +101,11 @@ jobs:
 
       - name: Test build (pull requests)
         # The Linux update patch for the test build (Linux packages themselves come with releases).
-        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'picture-keys'
+        if: (github.event_name == 'push' && github.ref == 'refs/heads/picture-keys') || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'picture-keys')
         uses: softprops/action-gh-release@v2
         with:
           tag_name: test-build
-          target_commitish: ${{ github.event.pull_request.head.sha }}
+          target_commitish: ${{ github.event.pull_request.head.sha || github.sha }}
           name: Test build (not a release)
           prerelease: true
           make_latest: false
@@ -174,7 +174,7 @@ jobs:
         # Small in-app updates: a bsdiff patch from the previous build's APK to this one, per CPU type (not the
         # universal APK), named after the old APK's SHA-256 so each phone finds the one for the copy it has. The app
         # rebuilds the new APK from its own and checks it against GitHub's SHA-256 before installing.
-        if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'picture-keys')
+        if: startsWith(github.ref, 'refs/tags/') || ((github.event_name == 'push' && github.ref == 'refs/heads/picture-keys') || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'picture-keys'))
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -184,13 +184,20 @@ jobs:
           else
             FROM=test-build
           fi
-          mkdir -p build/old build/patches
+          mkdir -p build/old build/old-release build/patches
           [ -n "$FROM" ] && gh release download "$FROM" -R "$GITHUB_REPOSITORY" -p 'streamgoat-android-*.apk' -D build/old || true
+          # A test build also patches from the latest release, so a phone on the release updates in a few MB too.
+          if [[ "$FROM" == test-build ]]; then
+            gh release download -R "$GITHUB_REPOSITORY" -p 'streamgoat-android-*.apk' -D build/old-release || true
+          fi
           for new in build/apk/streamgoat-android-*.apk; do
-            name=$(basename "$new"); old="build/old/$name"
-            if [[ "$name" == *universal* || ! -f "$old" ]]; then continue; fi
-            sha=$(sha256sum "$old" | cut -c1-16)
-            bsdiff "$old" "$new" "build/patches/$name.from-$sha.patch" &
+            name=$(basename "$new")
+            [[ "$name" == *universal* ]] && continue
+            for old in "build/old/$name" "build/old-release/$name"; do
+              [ -f "$old" ] || continue
+              sha=$(sha256sum "$old" | cut -c1-16)
+              [ -f "build/patches/$name.from-$sha.patch" ] || bsdiff "$old" "$new" "build/patches/$name.from-$sha.patch" &
+            done
           done
           wait
           ls -la build/patches
@@ -213,16 +220,16 @@ jobs:
         # A pull request's APKs also go to the "test-build" pre-release, for direct download links (e.g. typed into
         # Downloader on a TV). A pre-release never counts as the latest release: the apps' update check and the
         # website's download buttons don't see it.
-        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'picture-keys'  # only the test branch, not small fixes
+        if: (github.event_name == 'push' && github.ref == 'refs/heads/picture-keys') || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'picture-keys')  # only the test branch, not small fixes
         uses: softprops/action-gh-release@v2
         with:
           tag_name: test-build
-          target_commitish: ${{ github.event.pull_request.head.sha }}
+          target_commitish: ${{ github.event.pull_request.head.sha || github.sha }}
           name: Test build (not a release)
           prerelease: true
           make_latest: false
           body: |
-            For testing only: pull request #${{ github.event.pull_request.number }} "${{ github.event.pull_request.title }}", commit ${{ github.event.pull_request.head.sha }}.
+            For testing only: commit ${{ github.event.pull_request.head.sha || github.sha }} of the picture-keys branch.
             Android TV / Fire TV with Downloader: `https://github.com/${{ github.repository }}/releases/download/test-build/streamgoat-android-armeabi-v7a.apk` (or `...-arm64-v8a.apk`, or `...-universal.apk` if unsure).
           files: |
             build/apk/*.apk

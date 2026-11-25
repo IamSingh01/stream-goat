@@ -3,6 +3,8 @@ package io.github.sherazi5110.cloudstream
 import com.lagradost.cloudstream3.LoadResponse
 import com.lagradost.cloudstream3.LoadResponse.Companion.getImdbId
 import com.lagradost.cloudstream3.TvType
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -25,11 +27,18 @@ object WeTrakrSync {
     private val lock = Mutex()
     @Volatile private var movies: MutableSet<String>? = null
     @Volatile private var episodes: MutableSet<String>? = null
+    @Volatile private var shows: MutableSet<String>? = null
+
+    /** Bumped whenever watched marks change (here or from WeTrakr), so posters redraw their stamps. */
+    var version by androidx.compose.runtime.mutableIntStateOf(0)
+        private set
 
     private fun loadSet(key: String): MutableSet<String> = prefs.getStringSet(key, emptySet())!!.toMutableSet()
 
     private fun movies() = movies ?: loadSet("movies").also { movies = it }
     private fun episodes() = episodes ?: loadSet("episodes").also { episodes = it }
+    /** Shows with at least one watched episode (by the same keys), for the posters. */
+    private fun shows() = shows ?: (loadSet("shows").ifEmpty { episodes().mapTo(HashSet()) { it.substringBefore(':') } }).also { shows = it }
 
     /** Keys for one title: by TMDB and by IMDb id, whichever is known. */
     internal fun keys(tmdb: Int?, imdb: String?): List<String> =
@@ -62,14 +71,16 @@ object WeTrakrSync {
                         else {
                             val s = o.optInt("season_number", -1); val n = o.optInt("number", -1)
                             if (s < 0 || n < 0) continue
-                            keys(o.idsTmdb("show_ids"), o.idsImdb("show_ids")).forEach { e += "$it:$s:$n" }
+                            keys(o.idsTmdb("show_ids"), o.idsImdb("show_ids")).forEach { e += "$it:$s:$n"; shows() += it }
                         }
                     }
                     if (rows.length() < 5000) break
                     page++
                 }
             }
-            prefs.edit().putStringSet("movies", m.toSet()).putStringSet("episodes", e.toSet()).putLong("pulled_at", started).apply()
+            prefs.edit().putStringSet("movies", m.toSet()).putStringSet("episodes", e.toSet()).putStringSet("shows", shows().toSet())
+                .putLong("pulled_at", started).apply()
+            changed()
             Library.notifyChanged()
         }
     }
@@ -120,11 +131,12 @@ object WeTrakrSync {
                         seasons.put(JSONObject().put("number", s).put("episodes", JSONArray().apply {
                             eps.forEach { put(JSONObject().put("number", it.episode).put("status", "watched")) }
                         }))
-                        eps.forEach { ep -> keys(tmdb, imdb).forEach { k -> episodes() += "$k:$s:${ep.episode}" } }
+                        eps.forEach { ep -> keys(tmdb, imdb).forEach { k -> episodes() += "$k:$s:${ep.episode}"; shows() += k } }
                     }
                     body.put("shows", JSONArray().put(JSONObject().put("ids", ids).put("seasons", seasons)))
                 }
                 WeTrakr.postAuthed("/sync/tracking", body)
+                withContext(Dispatchers.Main) { changed() }
             }
         }
     }
@@ -139,7 +151,42 @@ object WeTrakrSync {
         }
     }
 
-    fun forget() { movies = null; episodes = null; prefs.edit().clear().apply() }
+    fun forget() { movies = null; episodes = null; shows = null; prefs.edit().clear().apply(); changed() }
+
+    private fun changed() { App.scope.launch(Dispatchers.Main) { version++ } }
+    init { Library.onChange { changed() } }
+
+    /** What a poster's green stamp says. */
+    enum class Stamp(val label: String) { WATCHED("Watched"), WATCHING("Watching") }
+
+    /**
+     * The stamp for a poster: watched here (a film finished, or episodes of a show), or watched on WeTrakr, matched by
+     * the title's TMDB / IMDb id whichever extension lists it. Null: not watched.
+     */
+    suspend fun stamp(item: com.lagradost.cloudstream3.SearchResponse): Stamp? {
+        val movieType = when (item.type) {
+            com.lagradost.cloudstream3.TvType.Movie, com.lagradost.cloudstream3.TvType.AnimeMovie, com.lagradost.cloudstream3.TvType.Torrent -> true
+            com.lagradost.cloudstream3.TvType.TvSeries, com.lagradost.cloudstream3.TvType.Anime, com.lagradost.cloudstream3.TvType.Cartoon,
+            com.lagradost.cloudstream3.TvType.AsianDrama, com.lagradost.cloudstream3.TvType.OVA -> false
+            else -> null
+        }
+        Library.titleFinished(item.apiName, item.url)?.let { noEpisode ->
+            return if (movieType ?: noEpisode) Stamp.WATCHED else Stamp.WATCHING
+        }
+        if (!WeTrakr.available || !WeTrakr.connected) return null
+        if (movies().isEmpty() && shows().isEmpty()) return null
+        val (tmdb, imdb, isMovie) = Metadata.posterIds(item) ?: return null
+        val k = keys(tmdb, imdb)
+        val movie = k.any { it in movies() }
+        val show = k.any { it in shows() }
+        return when {
+            isMovie == true -> if (movie) Stamp.WATCHED else null
+            isMovie == false -> if (show) Stamp.WATCHING else null
+            movie -> Stamp.WATCHED
+            show -> Stamp.WATCHING
+            else -> null
+        }
+    }
 
     private fun LoadResponse.getImdbIdSafe(): String? = runCatching { getImdbId() }.getOrNull()?.takeIf { it.startsWith("tt") }
 }
