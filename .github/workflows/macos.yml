@@ -1,7 +1,7 @@
 name: macOS
 
-# The Mac app (Apple Silicon): Stream Goat.app with its own Java runtime and VLC, in a .dmg.
-# Built and tested on a real Apple Silicon Mac; on a version tag the .dmg is attached to the release.
+# Native builds for Apple Silicon (arm64) and Intel (x86_64). Each app image contains matching
+# Java, JavaFX, VLC and mpv binaries. Separate DMGs are used because the native runtimes are architecture-specific.
 on:
   push:
     branches: [main, macos]
@@ -10,10 +10,30 @@ on:
 
 jobs:
   macos:
-    runs-on: macos-15   # Apple Silicon
+    strategy:
+      fail-fast: false
+      # Serialize the two release uploads so both architectures can attach assets to the same GitHub release.
+      max-parallel: 1
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-15
+            vlc_arch: arm64
+            fx_classifier: mac-aarch64
+            update_key: mac
+          - arch: x86_64
+            runner: macos-15-intel
+            vlc_arch: intel64
+            fx_classifier: mac
+            update_key: mac-x86_64
+    runs-on: ${{ matrix.runner }}
     permissions:
       contents: write
     env:
+      MACOS_ARCH: ${{ matrix.arch }}
+      VLC_ARCH: ${{ matrix.vlc_arch }}
+      FX_CLASSIFIER: ${{ matrix.fx_classifier }}
+      UPDATE_KEY: ${{ matrix.update_key }}
       VLC_VERSION: "3.0.21"
     steps:
       - uses: actions/checkout@v4
@@ -22,6 +42,17 @@ jobs:
         with:
           distribution: temurin
           java-version: "21"
+
+      - name: Verify native build architecture
+        run: |
+          actual="$(uname -m)"
+          java_arch="$(java -XshowSettings:properties -version 2>&1 | awk '/^[[:space:]]*os.arch =/ {print $3}')"
+          [ "$actual" = "$MACOS_ARCH" ] || { echo "::error::Expected $MACOS_ARCH runner, got $actual"; exit 1; }
+          case "$MACOS_ARCH:$java_arch" in
+            arm64:aarch64|x86_64:x86_64|x86_64:amd64) ;;
+            *) echo "::error::Expected a $MACOS_ARCH JDK, got os.arch=$java_arch"; exit 1 ;;
+          esac
+          echo "Building natively: macOS $actual; Java os.arch=$java_arch"
 
       - uses: gradle/actions/setup-gradle@v4
 
@@ -32,13 +63,14 @@ jobs:
       - name: Fetch pinned upstream sources
         run: ./scripts/fetch-upstream.sh
 
-      - name: VLC for Apple Silicon
-        # VideoLAN's arm64 build; only the engine (lib/ and plugins/ from VLC.app) is kept, not VLC's own interface.
+      - name: VLC for ${{ matrix.arch }}
+        # VideoLAN publishes matching arm64 and intel64 builds; only VLC's engine (lib/ and plugins/) is bundled.
         run: |
           base="https://download.videolan.org/pub/videolan/vlc/$VLC_VERSION/macosx"
-          curl -fsSL --retry 3 -o vlc.dmg "$base/vlc-$VLC_VERSION-arm64.dmg"
+          vlc_file="vlc-$VLC_VERSION-$VLC_ARCH.dmg"
+          curl -fsSL --retry 3 -o vlc.dmg "$base/$vlc_file"
           actual=$(shasum -a 256 vlc.dmg | cut -d' ' -f1)
-          if curl -fsSL --retry 3 -o vlc.dmg.sha256 "$base/vlc-$VLC_VERSION-arm64.dmg.sha256"; then
+          if curl -fsSL --retry 3 -o vlc.dmg.sha256 "$base/$vlc_file.sha256"; then
             expected=$(cut -d' ' -f1 vlc.dmg.sha256)
             [ "$expected" = "$actual" ] || { echo "::error::VLC download checksum mismatch ($actual, expected $expected)"; exit 1; }
             echo "VLC checksum OK: $actual"
@@ -59,7 +91,7 @@ jobs:
           du -sh vlc
           echo "VLC_DIR=$PWD/vlc" >> "$GITHUB_ENV"
 
-      - name: mpv for Apple Silicon
+      - name: mpv for ${{ matrix.arch }}
         # libmpv (FFmpeg inside), the main player: Homebrew's, with the libraries it needs copied beside it.
         run: |
           brew install mpv dylibbundler > /dev/null
@@ -71,6 +103,23 @@ jobs:
           ls mpv | head -40
           du -sh mpv
           echo "MPV_DIR=$PWD/mpv" >> "$GITHUB_ENV"
+
+      - name: Verify bundled VLC and mpv architectures
+        run: |
+          verify_dylibs() {
+            local dir="$1"
+            local found=0
+            while IFS= read -r -d '' library; do
+              found=1
+              if ! lipo -verify_arch "$MACOS_ARCH" "$library" >/dev/null 2>&1; then
+                echo "::error file=$library::Expected $MACOS_ARCH native library"
+                exit 1
+              fi
+            done < <(find "$dir" -type f -name '*.dylib' -print0)
+            [ "$found" -eq 1 ] || { echo "::error::No dylibs found under $dir"; exit 1; }
+          }
+          verify_dylibs "$VLC_DIR"
+          verify_dylibs "$MPV_DIR"
 
       - name: Update signing certificate
         # Built into the app, so it can check the signature of small updates (packaging/update/ci.sh).
@@ -106,16 +155,51 @@ jobs:
         run: |
           ./gradlew :app:packageMac -PvlcDir="$VLC_DIR" -PmpvDir="$MPV_DIR"
           app="app/build/jpackage-mac/Stream Goat.app"
-          # No Apple developer certificate: sign it "ad hoc" so Apple Silicon runs it (macOS then asks once, in
-          # System Settings → Privacy & Security → Open Anyway).
+          # No Apple developer certificate: sign it "ad hoc"; macOS asks once under Privacy & Security → Open Anyway.
           codesign --force --deep --sign - "$app"
           codesign --verify --deep --strict "$app" && echo "signature OK"
           ./gradlew :app:packageMac -PvlcDir="$VLC_DIR" -PmpvDir="$MPV_DIR" -PjpackageType=dmg
           VERSION=$(grep -o 'VERSION = "[^"]*"' app/src/main/kotlin/com/lagradost/cloudstream3/linux/ui/AppWindow.kt | cut -d'"' -f2)
           mkdir -p build/macos
-          cp app/build/jpackage-mac/Stream\ Goat-*.dmg "build/macos/streamgoat-macos-arm64-$VERSION.dmg"
+          cp app/build/jpackage-mac/Stream\ Goat-*.dmg "build/macos/streamgoat-macos-$MACOS_ARCH-$VERSION.dmg"
           ls -la build/macos
           du -sh "$app"
+
+      - name: Check packaged macOS architecture
+        # Confirm the launcher, bundled JDK, JavaFX native libraries and both media engines match this build.
+        run: |
+          app="app/build/jpackage-mac/Stream Goat.app"
+          lipo -verify_arch "$MACOS_ARCH" "$app/Contents/MacOS/Stream Goat"
+          runtime="$app/Contents/runtime/Contents/Home"
+          lipo -verify_arch "$MACOS_ARCH" "$runtime/bin/java"
+          while IFS= read -r -d '' library; do
+            lipo -verify_arch "$MACOS_ARCH" "$library" >/dev/null || {
+              echo "::error file=$library::Bundled runtime has the wrong architecture"; exit 1;
+            }
+          done < <(find "$runtime" -type f -name '*.dylib' -print0)
+          fx_dir="$app/Contents/app"
+          fx_count=$(find "$fx_dir" -maxdepth 1 -type f -name "javafx-*-21.0.8-$FX_CLASSIFIER.jar" | wc -l | tr -d ' ')
+          [ "$fx_count" = "3" ] || {
+            echo "::error::Expected three JavaFX 21.0.8 $FX_CLASSIFIER jars; found $fx_count"
+            ls "$fx_dir"/javafx-*.jar || true
+            exit 1
+          }
+          tmp=$(mktemp -d)
+          for jar in "$fx_dir"/javafx-*-21.0.8-"$FX_CLASSIFIER".jar; do
+            while IFS= read -r entry; do
+              case "$entry" in
+                *.dylib)
+                  extracted="$tmp/$(basename "$jar")-$(basename "$entry")"
+                  unzip -p "$jar" "$entry" > "$extracted"
+                  lipo -verify_arch "$MACOS_ARCH" "$extracted" >/dev/null || {
+                    echo "::error file=$jar::$entry is not $MACOS_ARCH"; exit 1;
+                  }
+                  ;;
+              esac
+            done < <(jar tf "$jar")
+          done
+          rm -rf "$tmp"
+          echo "Verified $MACOS_ARCH app launcher, JDK and JavaFX native libraries."
 
       - name: Update patch
         # Stream Goat's own jars, signed: what the app downloads for a small update (Settings → Updates).
@@ -124,7 +208,7 @@ jobs:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: ./packaging/update/ci.sh make mac
+        run: ./packaging/update/ci.sh make "$UPDATE_KEY"
 
       - name: Check the packaged app
         # The packaged app's own checker must find its Java, extensions folder and the bundled VLC.
@@ -177,7 +261,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: streamgoat-macos
+          name: streamgoat-macos-${{ matrix.arch }}
           path: |
             build/macos/*.dmg
             shots/*.png
