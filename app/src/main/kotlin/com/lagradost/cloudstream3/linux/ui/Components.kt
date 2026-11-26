@@ -203,8 +203,14 @@ class Shelf(title: String, private val onViewAll: (() -> Unit)? = null, trailing
     // The viewport is as tall as its row (measured, not bound: a binding lags one layout pass,
     // which left rows squashed when their cards arrived after the first layout).
     private val viewport = object : Pane(row) {
+        // Keep the long poster row clipped to the available page width.
+        override fun computeMinWidth(height: Double) = 0.0
+        override fun computePrefWidth(height: Double) = 0.0
         override fun computeMinHeight(width: Double) = row.prefHeight(-1.0)
         override fun computePrefHeight(width: Double) = row.prefHeight(-1.0)
+    }.apply {
+        minWidth = 0.0
+        isPickOnBounds = true
     }
     private var target = 0.0
     private var animation: Timeline? = null
@@ -231,10 +237,17 @@ class Shelf(title: String, private val onViewAll: (() -> Unit)? = null, trailing
         row.translateXProperty().addListener { _, _, _ -> if (stack.isHover) updateArrows(left, right, true) }
 
         viewport.addEventFilter(ScrollEvent.SCROLL) { e ->
-            val dx = if (e.isShiftDown) e.deltaY else e.deltaX
-            if (dx == 0.0) return@addEventFilter
-            move(target + dx * 2.5)
-            e.consume()
+            // Route sideways trackpad and mouse-wheel gestures to this shelf only.
+            val delta = when {
+                e.isShiftDown -> e.deltaY
+                kotlin.math.abs(e.deltaX) > 0.5 -> e.deltaX
+                kotlin.math.abs(e.deltaY) > 0.5 -> e.deltaY
+                else -> 0.0
+            }
+            if (delta != 0.0) {
+                move(target + delta * 2.5)
+                e.consume()
+            }
         }
         children.addAll(header, stack)
     }
