@@ -1,6 +1,7 @@
 package com.lagradost.cloudstream3.linux.ui
 
 import com.lagradost.cloudstream3.MainAPI
+import com.lagradost.cloudstream3.linux.ContentFilter
 import com.lagradost.cloudstream3.linux.Engine
 import com.lagradost.cloudstream3.linux.PluginManager
 import com.lagradost.cloudstream3.linux.SearchHistory
