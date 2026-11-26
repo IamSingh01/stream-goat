@@ -74,6 +74,7 @@ class ExtensionsPage : StackPane(), Refreshable {
     private var loadingRepos = false
     private var installingAll = false
     private lateinit var pageScroller: ScrollPane
+    private var renderGeneration = 0
 
     init {
         val header = hbox(12.0,
@@ -207,6 +208,7 @@ class ExtensionsPage : StackPane(), Refreshable {
 
     /** Renders cards a page at a time: big repositories list hundreds of extensions. */
     private fun renderGrid() {
+        val generation = ++renderGeneration
         val scrollTop = if (::pageScroller.isInitialized) {
             val content = pageScroller.content as? javafx.scene.layout.Region
             content?.let {
@@ -223,8 +225,13 @@ class ExtensionsPage : StackPane(), Refreshable {
         grid.children.setAll(nodes)
         if (::pageScroller.isInitialized) {
             Platform.runLater {
+                // Several plugin-state notifications can trigger renders in quick
+                // succession. Only the newest render should restore the viewport.
+                if (generation != renderGeneration) return@runLater
                 pageScroller.applyCss()
+                pageScroller.layout()
                 val content = pageScroller.content as? javafx.scene.layout.Region
+                content?.applyCss()
                 content?.layout()
                 pageScroller.layout()
                 if (content != null) {
