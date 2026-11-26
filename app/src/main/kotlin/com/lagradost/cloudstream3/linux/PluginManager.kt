@@ -15,6 +15,8 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 
@@ -86,17 +88,29 @@ object PluginManager {
         Platform.init()
         val all = installed()
         _progress.value = LoadProgress(0, all.size)
+
+        // Dex2jar translation can use substantial memory. Loading every .cs3 at once
+        // overwhelmed low-memory machines; one-at-a-time keeps startup predictable.
+        val loadPermit = Semaphore(1)
         all.map { data ->
             async(Engine.dispatcher) {
-                val file = File(data.filePath)
-                if (file.exists()) loadPlugin(file, data)
-                else {
-                    // A restored backup (maybe from another device) lists extensions without their files: download them.
-                    runCatching { redownload(data) }
-                        .onSuccess { (f, d) -> failures.remove(data.internalName); loadPlugin(f, d) }
-                        .onFailure { failures[data.internalName] = IllegalStateException("Its file is missing and couldn't be downloaded again (${it.message ?: it}). Use Reinstall.") }
+                loadPermit.withPermit {
+                    val started = System.currentTimeMillis()
+                    System.err.println("I/plugins: starting ${data.internalName}")
+                    try {
+                        val file = File(data.filePath)
+                        if (file.exists()) loadPlugin(file, data)
+                        else {
+                            // A restored backup (maybe from another device) lists extensions without their files: download them.
+                            runCatching { redownload(data) }
+                                .onSuccess { (f, d) -> failures.remove(data.internalName); loadPlugin(f, d) }
+                                .onFailure { failures[data.internalName] = IllegalStateException("Its file is missing and couldn't be downloaded again (${it.message ?: it}). Use Reinstall.") }
+                        }
+                    } finally {
+                        _progress.value = _progress.value.let { it.copy(done = it.done + 1) }
+                        System.err.println("I/plugins: finished ${data.internalName} in ${System.currentTimeMillis() - started} ms")
+                    }
                 }
-                _progress.value = _progress.value.let { it.copy(done = it.done + 1) }
             }
         }.awaitAll()
         System.err.println("I/plugins: loaded ${loaded.size}/${all.size} extensions")
@@ -109,7 +123,9 @@ object PluginManager {
         loaded[file.absolutePath]?.let { return@runCatching it }
 
         // .jar = cross-platform build, already JVM bytecode. .cs3 = Dalvik, translate first.
+        if (file.extension != "jar") System.err.println("I/plugins: translating ${file.name}")
         val jar = if (file.extension == "jar") file else DexTranslator.translate(file)
+        System.err.println("I/plugins: registering ${file.name}")
         val loader = PluginClassLoader(jar, file)
 
         val manifest = loader.getResourceAsStream("manifest.json")?.use {
