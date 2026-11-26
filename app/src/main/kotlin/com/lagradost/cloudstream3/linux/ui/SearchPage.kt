@@ -27,7 +27,7 @@ class SearchPage : StackPane(), Refreshable {
         styleClass += "source-selector"
         promptText = "All sources"
         prefWidth = 260.0
-        setOnAction { promptText(); run() }
+        setOnAction { if (!changingSource) { promptText(); run() } }
     }
     private var apis: List<MainAPI> = emptyList()
     private val status = hbox(10.0)
@@ -41,6 +41,7 @@ class SearchPage : StackPane(), Refreshable {
     private val debounce = PauseTransition(Duration.millis(220.0)).apply { setOnFinished { suggest() } }
     private var lastQuery = ""
     private var picking = false
+    private var changingSource = false
 
     init {
         val searchIcon = icon(Icons.SEARCH, 20.0).apply { styleClass += "faint-icon" }
@@ -76,7 +77,9 @@ class SearchPage : StackPane(), Refreshable {
     /** Search only [provider] (Home's Search button), or every extension (null). Runs again if there's a search. */
     fun scopeTo(provider: String?) {
         val index = provider?.let { name -> apis.indexOfFirst { it.name == name } }?.takeIf { it >= 0 }
+        changingSource = true
         sourceSelector.selectionModel.select((index ?: -1) + 1)
+        changingSource = false
         promptText()
         if (field.text.trim().length >= 2 && lastQuery.isNotEmpty()) run()
         javafx.application.Platform.runLater { focusField() }
@@ -157,8 +160,10 @@ class SearchPage : StackPane(), Refreshable {
         apis = Engine.providers()
         val selected = sourceSelector.selectionModel.selectedIndex.coerceAtLeast(0)
         val names = listOf("All sources") + apis.map { it.name }
+        changingSource = true
         sourceSelector.items.setAll(names)
         sourceSelector.selectionModel.select(selected.coerceAtMost(names.lastIndex))
+        changingSource = false
         promptText()
     }
 
