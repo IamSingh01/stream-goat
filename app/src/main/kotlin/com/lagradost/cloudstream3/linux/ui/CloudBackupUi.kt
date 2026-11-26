@@ -67,17 +67,17 @@ class CloudSignInSheet(private val onDone: () -> Unit) : StackPane(), Disposable
     }
 
     companion object {
-        /** Backups of other devices (the phone's, the TV's) are offered; otherwise this computer's is saved there. */
+        /** This computer joins the shared backup: what the other devices have comes here, what's here goes there. */
         fun afterSignIn(onDone: () -> Unit) {
             ui.launch {
-                val list = runCatching { CloudBackup.backups() }.getOrDefault(emptyList())
-                if (list.any { !it.mine }) offerRestore(list, onDone)
-                else runCatching { CloudBackup.backupNow() }.onSuccess { Toasts.show("Backed up to Google Drive"); onDone() }
+                runCatching { CloudBackup.backupNow() }.onSuccess { Toasts.show("Synced with your other devices") }
+                    .onFailure { Toasts.show("Couldn't sync: ${it.message}") }
+                onDone()
             }
         }
 
         private fun label(r: CloudBackup.Remote): String =
-            (r.device ?: "A device") + (if (r.mine) " (this computer)" else "") + " · saved " +
+            (if (r.shared) "All your devices" + (r.device?.let { " (last from $it)" } ?: "") else (r.device ?: "A device") + (if (r.mine) " (this computer, old)" else " (old)")) + " · saved " +
                 (if (r.time > 0) java.time.Instant.ofEpochMilli(r.time).atZone(java.time.ZoneId.systemDefault())
                     .format(java.time.format.DateTimeFormatter.ofPattern("d MMM, HH:mm")) else r.modified) +
                 (r.app?.let { " · Stream Goat $it" } ?: "")
@@ -87,11 +87,11 @@ class CloudSignInSheet(private val onDone: () -> Unit) : StackPane(), Disposable
             val labels = list.map(::label)
             val pick = javafx.scene.control.ChoiceDialog(labels.first(), labels).apply {
                 headerText = "Restore a backup"
-                contentText = "Each signed-in device keeps its own backup. Restore:"
+                contentText = "Every signed-in device shares one backup and stays in sync with it. Restore:"
             }.showAndWait().orElse(null) ?: return
             val remote = list[labels.indexOf(pick)]
             val alert = javafx.scene.control.Alert(javafx.scene.control.Alert.AlertType.CONFIRMATION,
-                "${label(remote)}.\n\nRestore it? This replaces this computer's settings, profiles, " +
+                "${label(remote)}.\n\nRestore it? This replaces this computer's " + (if (remote.shared) "" else "settings, ") + "profiles, " +
                     "My list, history, repositories and extensions with the backup's.",
                 javafx.scene.control.ButtonType.OK, javafx.scene.control.ButtonType.CANCEL).apply { headerText = "Restore this backup?" }
             if (alert.showAndWait().orElse(null) != javafx.scene.control.ButtonType.OK) return
@@ -111,18 +111,19 @@ fun cloudBackupRows(row: (String, String?, Node) -> Node, refresh: () -> Unit): 
     if (!CloudBackup.configured) return listOf(row("Google Drive backup", "Google sign-in isn't set up in this build of the app.", javafx.scene.layout.Region()))
     val s = CloudBackup.state.value
     if (!s.signedIn) return listOf(row("Google Drive backup",
-        "Sign in with your Google account to keep this backup in your Google Drive, automatically, and restore it on another device " +
-            "or after reinstalling. It goes in a \"Stream Goat backups\" folder: Stream Goat only sees the files it made, never your other files.",
+        "Sign in with the same Google account on every device (phone, TV, computer) and they stay in sync: My list, history, where you " +
+            "stopped, watched marks, extensions, Live TV and playlists. One backup in a \"Stream Goat backups\" folder in your Google Drive: " +
+            "Stream Goat only sees the files it made, never your other files.",
         button("Sign in with Google", Icons.CLOUD_UPLOAD, "btn-accent", "btn-small") { Nav.window.showOverlay(CloudSignInSheet(refresh)) }))
     val last = if (s.lastBackup <= 0) "not yet" else java.time.Instant.ofEpochMilli(s.lastBackup).atZone(java.time.ZoneId.systemDefault())
         .format(java.time.format.DateTimeFormatter.ofPattern("d MMM, HH:mm"))
     return listOf(
-        row("Google Drive: ${s.email ?: "signed in"}", "Last backup: $last" + (s.error?.let { ". Problem: $it" } ?: ""),
+        row("Google Drive: ${s.email ?: "signed in"}", "Last sync: $last" + (s.error?.let { ". Problem: $it" } ?: ""),
             hbox(8.0,
-                button("Back up now", Icons.CLOUD_UPLOAD, "btn-ghost", "btn-small") {
+                button("Sync now", Icons.CLOUD_UPLOAD, "btn-ghost", "btn-small") {
                     ui.launch {
-                        runCatching { CloudBackup.backupNow() }.onSuccess { Toasts.show("Backed up to Google Drive") }
-                            .onFailure { Toasts.show("Couldn't back up: ${it.message}") }
+                        runCatching { CloudBackup.backupNow() }.onSuccess { Toasts.show("Synced with Google Drive") }
+                            .onFailure { Toasts.show("Couldn't sync: ${it.message}") }
                         refresh()
                     }
                 },
@@ -137,6 +138,7 @@ fun cloudBackupRows(row: (String, String?, Node) -> Node, refresh: () -> Unit): 
                     ui.launch { CloudBackup.signOut(); Toasts.show("Signed out. The backup stays in your Google Drive."); refresh() }
                 },
             )),
-        row("Back up automatically", "When something changed, every 5 minutes. Each device keeps its own backup.", Switch(CloudBackup.auto) { CloudBackup.auto = it }),
+        row("Keep in sync automatically", "Every device signed in to this account shares one backup: changes from each are merged, when " +
+            "the app starts or comes back, every 5 minutes and when you leave it. Each device keeps its own settings.", Switch(CloudBackup.auto) { CloudBackup.auto = it }),
     )
 }

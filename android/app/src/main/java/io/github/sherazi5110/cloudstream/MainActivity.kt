@@ -67,6 +67,8 @@ class MainActivity : com.lagradost.cloudstream3.MainActivity() {
         shake.start()
         // Back in the app: what was finished meanwhile in another WeTrakr app shows here (at most every 2 minutes).
         App.scope.launch { runCatching { WeTrakrSync.pull() } }
+        // And what changed on the other devices (the shared Google Drive backup).
+        CloudBackup.soon()
     }
 
     override fun onPause() {
@@ -84,7 +86,7 @@ class MainActivity : com.lagradost.cloudstream3.MainActivity() {
         // Leaving the app during the intro: come back to the app itself.
         endIntro()
         // Google Drive backup: save what changed before the app is put away.
-        CloudBackup.soon()
+        CloudBackup.soon(always = true)
         super.onStop()
     }
 

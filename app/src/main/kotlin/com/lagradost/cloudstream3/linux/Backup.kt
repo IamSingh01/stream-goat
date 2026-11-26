@@ -55,23 +55,57 @@ object Backup {
         var n = 0
         for (name in stores.keys()) {
             if (skip.containsMatchIn(name)) continue
-            val values = stores.getJSONObject(name)
             val edit = prefs(name).edit().clear()
-            for (k in values.keys()) {
-                val o = values.getJSONObject(k)
-                when {
-                    o.has("s") -> edit.putString(k, o.getString("s"))
-                    o.has("b") -> edit.putBoolean(k, o.getBoolean("b"))
-                    o.has("i") -> edit.putInt(k, o.getInt("i"))
-                    o.has("l") -> edit.putLong(k, o.getLong("l"))
-                    o.has("f") -> edit.putFloat(k, o.getDouble("f").toFloat())
-                    o.has("set") -> o.getJSONArray("set").let { a -> edit.putStringSet(k, (0 until a.length()).map { a.getString(it) }.toSet()) }
-                }
-            }
+            putAll(edit, stores.getJSONObject(name))
             edit.commit()
             n++
         }
         return n
+    }
+
+    private fun putAll(edit: SharedPreferences.Editor, values: JSONObject) {
+        for (k in values.keys()) {
+            val o = values.getJSONObject(k)
+            when {
+                o.has("s") -> edit.putString(k, o.getString("s"))
+                o.has("b") -> edit.putBoolean(k, o.getBoolean("b"))
+                o.has("i") -> edit.putInt(k, o.getInt("i"))
+                o.has("l") -> edit.putLong(k, o.getLong("l"))
+                o.has("f") -> edit.putFloat(k, o.getDouble("f").toFloat())
+                o.has("set") -> o.getJSONArray("set").let { a -> edit.putStringSet(k, (0 until a.length()).map { a.getString(it) }.toSet()) }
+            }
+        }
+    }
+
+    /** The settings stores of a backup file (name → key → value). */
+    fun stores(json: String): JSONObject {
+        val root = JSONObject(json)
+        require(root.optString("format") == FORMAT) { "This isn't a Stream Goat backup file" }
+        return root.getJSONObject("stores")
+    }
+
+    /** A backup file holding [stores] (the shared Google Drive backup: content only, see BackupMerge). */
+    fun document(stores: JSONObject): String = JSONObject().put("format", FORMAT).put("version", 1).put("app", AppInfo.VERSION)
+        .put("created", System.currentTimeMillis()).put("stores", stores).toString(1)
+
+    /**
+     * Writes the synced stores of [merged] that differ from [current] (both content only, see BackupMerge); a
+     * store gone from [merged] is emptied. This device's own settings are never touched. Returns the changed stores.
+     */
+    fun applyContent(merged: JSONObject, current: JSONObject): Set<String> {
+        val changed = mutableSetOf<String>()
+        for (name in (merged.keys().asSequence() + current.keys().asSequence()).toSet()) {
+            if (skip.containsMatchIn(name) || BackupMerge.deviceOnly.containsMatchIn(name)) continue
+            val m = merged.optJSONObject(name)
+            val c = current.optJSONObject(name)
+            if (m != null && c != null && BackupMerge.canon(m) == BackupMerge.canon(c)) continue
+            if (m == null && c == null) continue
+            val edit = prefs(name).edit().clear()
+            if (m != null) putAll(edit, m)
+            edit.commit()
+            changed += name
+        }
+        return changed
     }
 
     fun fileName(): String = "cloudstream-backup-" + java.time.LocalDate.now() + ".json"

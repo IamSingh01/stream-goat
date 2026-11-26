@@ -416,6 +416,9 @@ class AppWindow(val stage: Stage) : StackPane() {
             // Back in the window: what was finished meanwhile in another WeTrakr app shows here (at most every 2 minutes).
             stage.focusedProperty().addListener { _, _, focused ->
                 if (focused) ui.launch(kotlinx.coroutines.Dispatchers.IO) { runCatching { com.lagradost.cloudstream3.linux.WeTrakrSync.pull() } }
+                // And what changed on the other devices (the shared Google Drive backup; at most once a minute).
+                // Leaving the window: what changed here goes up now (like a phone app going to the background).
+                com.lagradost.cloudstream3.linux.CloudBackup.soon(always = !focused)
             }
             if (Settings.autoUpdateExtensions) {
                 val updated = withContext(Engine.dispatcher) { runCatching { PluginManager.updateAll() }.getOrDefault(emptyList()) }
