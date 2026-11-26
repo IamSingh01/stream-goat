@@ -195,14 +195,14 @@ class WideCard(
 }
 
 /**
- * A titled horizontal row. Horizontal gestures can be captured by this shelf when
- * explicitly enabled; normal vertical wheel scrolling always remains with the page.
+ * A titled horizontal row. Wheel and trackpad gestures over the cards scroll this row,
+ * while scrolling outside the shelf continues to move the page.
  */
 class Shelf(
     title: String,
     private val onViewAll: (() -> Unit)? = null,
     trailing: Node? = null,
-    private val captureHorizontalWheel: Boolean = false,
+    private val captureHorizontalWheel: Boolean = true,
 ) : VBox(12.0) {
     val row = HBox(14.0).apply { alignment = Pos.TOP_LEFT }
     // The viewport is as tall as its row (measured, not bound: a binding lags one layout pass,
@@ -224,7 +224,7 @@ class Shelf(
         val header = HBox(10.0, label(title, "shelf-title"), spacer()).apply { styleClass += "shelf-header" }
         trailing?.let { header.children += it }
         onViewAll?.let { action ->
-            header.children += button("View all", null, "btn-ghost", "btn-small", action = action)
+            header.children += button("View all", Icons.CHEVRON_RIGHT, "btn-accent", "btn-small", action = action)
         }
         val clip = Rectangle()
         clip.widthProperty().bind(viewport.widthProperty())
@@ -245,9 +245,13 @@ class Shelf(
 
         if (captureHorizontalWheel) {
             viewport.addEventFilter(ScrollEvent.SCROLL) { e ->
-                // Only sideways trackpad gestures (or Shift+wheel) belong to this shelf.
-                // A regular vertical wheel gesture must continue scrolling the whole page.
-                val delta = if (e.isShiftDown) e.deltaY else e.deltaX
+                // Prefer the trackpad's horizontal axis. A conventional vertical mouse wheel
+                // over the shelf also scrolls the row, without requiring Shift.
+                val delta = when {
+                    e.isShiftDown -> e.deltaY
+                    kotlin.math.abs(e.deltaX) > 0.5 -> e.deltaX
+                    else -> e.deltaY
+                }
                 if (kotlin.math.abs(delta) > 0.5) {
                     move(target + delta * 2.0)
                     e.consume()
