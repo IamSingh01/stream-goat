@@ -14,6 +14,7 @@ import javafx.geometry.Pos
 import javafx.scene.Node
 import javafx.scene.control.ProgressIndicator
 import javafx.scene.control.ScrollPane
+import javafx.scene.control.TextField
 import javafx.scene.effect.GaussianBlur
 import javafx.scene.image.ImageView
 import javafx.scene.layout.FlowPane
@@ -99,24 +100,48 @@ class HomePage : StackPane(), Refreshable, TopBarActions {
     }
 
     private fun showSourceMenu() {
-        val rows = sources.map { src ->
-            val row = Popover.row(if (src.key == FEED) icon(Icons.APPS, 18.0) else label(src.label.filter { it.isLetterOrDigit() }.take(2).uppercase(), "provider-badge", "small-badge"),
-                src.label, if (src.key == FEED) "${src.apis.size} extensions" else null, selected = src == current) { select(src) }
-            if (Profiles.isKids) return@map row
-            // Edit this extension's catalogs (or the feed) right from the menu.
-            val tune = StackPane(icon(Icons.TUNE, 16.0)).apply {
-                styleClass += "popover-tune"
-                tooltip(if (src.key == FEED) "Choose the feed's extensions and catalogs" else "Choose ${src.label}'s catalogs")
-                setOnMouseClicked {
-                    it.consume()
-                    Nav.window.closeOverlay()
-                    Nav.window.showOverlay(HomeManager(providers, src.apis.singleOrNull().takeIf { src.key != FEED }))
+        val search = TextField().apply {
+            promptText = "Search sources…"
+            styleClass += "text-field"
+            prefWidth = 240.0
+            maxWidth = Double.MAX_VALUE
+        }
+        fun sourceRows(query: String): List<Node> = sources
+            .filter { it.label.contains(query.trim(), ignoreCase = true) }
+            .map { src ->
+                val unavailable = src.apis.isEmpty()
+                val row = Popover.row(
+                    if (src.key == FEED) icon(Icons.APPS, 18.0) else label(src.label.filter { it.isLetterOrDigit() }.take(2).uppercase(), "provider-badge", "small-badge"),
+                    src.label,
+                    when {
+                        src.key == FEED -> "${src.apis.size} extensions"
+                        unavailable && PluginManager.failures.containsKey(src.key) -> "Failed to load"
+                        unavailable -> "No source"
+                        else -> null
+                    },
+                    selected = src == current
+                ) { if (!unavailable) select(src) }
+                if (!unavailable && !Profiles.isKids) {
+                    val tune = StackPane(icon(Icons.TUNE, 16.0)).apply {
+                        styleClass += "popover-tune"
+                        tooltip(if (src.key == FEED) "Choose the feed's extensions and catalogs" else "Choose ${src.label}'s catalogs")
+                        setOnMouseClicked {
+                            it.consume()
+                            Nav.window.closeOverlay()
+                            Nav.window.showOverlay(HomeManager(providers, src.apis.singleOrNull().takeIf { src.key != FEED }))
+                        }
+                    }
+                    (row as javafx.scene.layout.HBox).children += tune
                 }
-            }
-            (row as javafx.scene.layout.HBox).children += tune
-            row
-        }.toMutableList()
-        if (rows.isNotEmpty()) rows += Popover.separator()
+                row
+            }.ifEmpty { listOf(label("No matching sources", "muted").pad(8.0)) }
+
+        val rows = mutableListOf<Node>()
+        rows += search
+        val dynamicRows = VBox(2.0).apply { children.setAll(sourceRows("")) }
+        search.textProperty().addListener { _, _, value -> dynamicRows.children.setAll(sourceRows(value ?: "")) }
+        rows += dynamicRows
+        rows += Popover.separator()
         if (!Profiles.isKids) rows += Popover.row(icon(Icons.TUNE, 18.0), "Customize home…") { Nav.window.showOverlay(HomeManager(providers, null)) }
         rows += Popover.row(icon(Icons.REFRESH, 18.0), "Reload") { current?.let { select(it, force = true) } }
         Popover.show(sourceButton, Popover.panel(*rows.toTypedArray()))
@@ -125,12 +150,23 @@ class HomePage : StackPane(), Refreshable, TopBarActions {
     private fun refreshProviders(force: Boolean = false) {
         val fresh = Engine.providers().filter { it.hasMainPage }
         val feed = Catalogs.feedProviders(fresh).takeIf { Catalogs.multiFeed && it.isNotEmpty() }
-        val fresher = listOfNotNull(feed?.let { Source(FEED, "My feed", it) }) + fresh.map { Source(it.name, it.name, listOf(it)) }
+        val available = fresh.map { Source(it.name, it.name, listOf(it)) }
+        val unavailable = PluginManager.installed()
+            .filter { installed ->
+                val loaded = PluginManager.loaded.values.firstOrNull { it.data.internalName == installed.internalName }
+                loaded == null || loaded.providers.none { provider -> fresh.any { it.name == provider.name } }
+            }
+            .map { installed -> Source(installed.internalName, installed.name ?: installed.internalName, emptyList()) }
+        val fresher = listOfNotNull(feed?.let { Source(FEED, "My feed", it) }) + available +
+            unavailable.filter { missing ->
+                available.none { it.key.equals(missing.key, ignoreCase = true) || it.label.equals(missing.label, ignoreCase = true) }
+            }
         if (!force && fresher == sources && current != null) return
         providers = fresh
         sources = fresher
         val wanted = current?.key ?: Settings.lastHomeProvider
-        val preferred = sources.indexOfFirst { it.key == wanted }.coerceAtLeast(0)
+        val preferred = sources.indexOfFirst { it.key == wanted && it.apis.isNotEmpty() }
+            .takeIf { it >= 0 } ?: sources.indexOfFirst { it.apis.isNotEmpty() }
         sources.getOrNull(preferred)?.let { select(it, force = true) } ?: run {
             current = null; job?.cancel(); sections.clear(); hero?.stop(); hero = null; loading = false
             sourceButton.isVisible = false
