@@ -223,7 +223,9 @@ class Shelf(
     init {
         val header = HBox(10.0, label(title, "shelf-title"), spacer()).apply { styleClass += "shelf-header" }
         trailing?.let { header.children += it }
-        onViewAll?.let { header.children += label("View all", "link-button").onClick(it) }
+        onViewAll?.let { action ->
+            header.children += button("View all", null, "btn-ghost", "btn-small", action = action)
+        }
         val clip = Rectangle()
         clip.widthProperty().bind(viewport.widthProperty())
         clip.heightProperty().bind(viewport.heightProperty().add(30))
