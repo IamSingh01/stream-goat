@@ -149,7 +149,7 @@ val packageWindows by tasks.registering(Exec::class) {
     }
     commandLine(buildList {
         addAll(listOf("jpackage", "--type", type, "--name", "Stream Goat", "--app-version", version))
-        addAll(listOf("--vendor", "Syed Ali Hamza", "--dest", out.get().asFile.path))
+        addAll(listOf("--vendor", "Aman Singh", "--dest", out.get().asFile.path))
         addAll(listOf("--description", "Stream Goat: movies, series, anime and Live TV from CloudStream extensions"))
         if (type == "app-image") {
             addAll(listOf("--input", input.get().asFile.path, "--main-jar", "app.jar", "--main-class", application.mainClass.get()))
@@ -198,7 +198,7 @@ val packageMac by tasks.registering(Exec::class) {
     }
     commandLine(buildList {
         addAll(listOf("jpackage", "--type", type, "--name", "Stream Goat", "--app-version", version))
-        addAll(listOf("--vendor", "Syed Ali Hamza", "--dest", out.get().asFile.path))
+        addAll(listOf("--vendor", "Aman Singh", "--dest", out.get().asFile.path))
         addAll(listOf("--description", "Stream Goat: movies, series, anime and Live TV from CloudStream extensions"))
         if (type == "app-image") {
             addAll(listOf("--input", input.get().asFile.path, "--main-jar", "app.jar", "--main-class", application.mainClass.get()))
