@@ -8,6 +8,7 @@ import javafx.animation.PauseTransition
 import javafx.geometry.Pos
 import javafx.scene.control.ProgressIndicator
 import javafx.scene.control.TextField
+import javafx.scene.layout.FlowPane
 import javafx.scene.layout.StackPane
 import javafx.scene.layout.VBox
 import javafx.util.Duration
@@ -188,7 +189,11 @@ class SearchPage : StackPane(), Refreshable {
                     empty += batch.api.name
                 } else {
                     found += batch.results.size
-                    results.children += Shelf(batch.api.name, trailing = label("${batch.results.size}", "tag")).apply {
+                    results.children += Shelf(
+                        batch.api.name,
+                        onViewAll = { Nav.window.push(SearchResultsPage(batch.api, query, batch.results)) },
+                        trailing = label("${batch.results.size}", "tag"),
+                    ).apply {
                         batch.results.forEach { item -> add(PosterCard.of(item) { Nav.open(batch.api, item) }) }
                     }
                 }
@@ -198,5 +203,101 @@ class SearchPage : StackPane(), Refreshable {
                 if (!com.lagradost.cloudstream3.linux.Network.online()) offlineState { run(query) }
                 else emptyState(Icons.SEARCH, "No results for \"$query\"", "Try a different spelling, or check that the extensions' sites are reachable (Settings → DNS)."))
         }
+    }
+}
+ 
+/** Full, paginated search results for one provider. */
+private class SearchResultsPage(
+    private val api: MainAPI,
+    private val query: String,
+    firstPage: List<com.lagradost.cloudstream3.SearchResponse>,
+) : StackPane(), Disposable {
+    private val grid = FlowPane(18.0, 22.0)
+    private val seen = HashSet<String>()
+    private var page = 1
+    private var loading = false
+    private var finished = false
+    private var job: Job? = null
+    private val spinner = ProgressIndicator().apply { setPrefSize(22.0, 22.0); setMaxSize(22.0, 22.0) }
+    private val status = label("", "muted")
+    private val retry = button("Try again", Icons.REFRESH, "btn-ghost") { loadMore() }.apply {
+        isVisible = false
+        isManaged = false
+    }
+    private val footer = hbox(10.0, spinner, status, retry).apply { alignment = Pos.CENTER; minHeight = 44.0 }
+    private val scroll: javafx.scene.control.ScrollPane
+
+    init {
+        firstPage.forEach { add(it) }
+        val header = hbox(14.0,
+            button(null, Icons.BACK, "btn-ghost") { Nav.window.back() },
+            label(query, "h2"),
+            label(api.name, "tag"),
+        )
+        scroll = pageScroll(vbox(24.0, header, grid, footer).pad(22.0, 36.0, 40.0, 36.0))
+        children += scroll
+        idle()
+        scroll.vvalueProperty().addListener { _, _, _ -> maybeLoad() }
+        scroll.viewportBoundsProperty().addListener { _, _, _ -> maybeLoad() }
+        grid.heightProperty().addListener { _, _, _ -> maybeLoad() }
+        javafx.application.Platform.runLater { maybeLoad() }
+    }
+
+    private fun add(item: com.lagradost.cloudstream3.SearchResponse): Boolean {
+        if (!seen.add(item.url)) return false
+        grid.children += PosterCard.of(item) { Nav.open(api, item) }
+        return true
+    }
+
+    private fun maybeLoad() {
+        if (loading || finished || retry.isVisible || scene == null) return
+        val content = (scroll.content as? javafx.scene.layout.Region)?.height ?: return
+        val viewport = scroll.viewportBounds.height
+        if (viewport > 0 && content - viewport * (1 + scroll.vvalue) < viewport * 1.5) {
+            javafx.application.Platform.runLater { if (!loading && !finished) loadMore() }
+        }
+    }
+
+    private fun loadMore() {
+        if (loading || finished) return
+        loading = true
+        retry.isVisible = false
+        retry.isManaged = false
+        spinner.isVisible = true
+        spinner.isManaged = true
+        status.text = "Loading more from ${api.name}…"
+        job = ui.launch {
+            val next = runCatching {
+                api.search(query, page + 1)?.items.orEmpty().let(ContentFilter::filter)
+            }.getOrNull()
+            loading = false
+            if (next == null) {
+                spinner.isVisible = false
+                spinner.isManaged = false
+                status.text = "Couldn't load more results."
+                retry.isVisible = true
+                retry.isManaged = true
+                return@launch
+            }
+            if (next.isEmpty()) {
+                finished = true
+            } else {
+                val added = next.count { add(it) }
+                page++
+                if (added == 0) finished = true
+            }
+            idle()
+            if (!finished) maybeLoad()
+        }
+    }
+
+    private fun idle() {
+        spinner.isVisible = false
+        spinner.isManaged = false
+        status.text = if (finished) "That's everything · ${grid.children.size} titles" else ""
+    }
+
+    override fun dispose() {
+        job?.cancel()
     }
 }
