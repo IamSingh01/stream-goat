@@ -75,8 +75,29 @@ class ExtensionsPage : StackPane(), Refreshable {
     private var installingAll = false
     private lateinit var pageScroller: ScrollPane
     private var renderGeneration = 0
-    // Keep the pre-mutation offset across every render triggered by uninstall.
+    // Hold the original viewport offset while an install/uninstall triggers multiple
+    // plugin-state renders. Rebuilding cards must not move the user's viewport.
     private var preservedScrollTop: Double? = null
+    private var holdPreservedScroll = false
+
+    private fun preserveCurrentScroll() {
+        if (!::pageScroller.isInitialized) return
+        val content = pageScroller.content as? javafx.scene.layout.Region
+        preservedScrollTop = content?.let {
+            (pageScroller.vvalue * (it.height - pageScroller.viewportBounds.height)).coerceAtLeast(0.0)
+        } ?: 0.0
+        holdPreservedScroll = true
+    }
+
+    private fun releasePreservedScrollAfterRender() {
+        val generation = renderGeneration
+        Platform.runLater {
+            if (generation == renderGeneration) {
+                holdPreservedScroll = false
+                preservedScrollTop = null
+            }
+        }
+    }
 
     init {
         val header = hbox(12.0,
@@ -240,7 +261,7 @@ class ExtensionsPage : StackPane(), Refreshable {
                     val maxScroll = (content.height - pageScroller.viewportBounds.height).coerceAtLeast(0.0)
                     pageScroller.vvalue = if (maxScroll == 0.0) 0.0 else (scrollTop / maxScroll).coerceIn(0.0, 1.0)
                 }
-                if (generation == renderGeneration && preservedScrollTop != null) {
+                if (generation == renderGeneration && preservedScrollTop != null && !holdPreservedScroll) {
                     preservedScrollTop = null
                 }
             }
@@ -286,15 +307,20 @@ class ExtensionsPage : StackPane(), Refreshable {
     private fun install(wrapper: PluginWrapper) {
         val name = wrapper.plugin.internalName
         if (!busy.add(name)) return
+        preserveCurrentScroll()
         renderGrid()
         ui.launch {
-            val result = withContext(Engine.dispatcher) { PluginManager.install(wrapper) }
-            busy.remove(name)
-            result.fold(
-                { Toasts.show("Installed ${wrapper.plugin.name}" + it.providers.takeIf { p -> p.isNotEmpty() }?.let { p -> " · ${p.joinToString { a -> a.name }}" }.orEmpty()) },
-                { Toasts.show("${wrapper.plugin.name} failed: ${it.message ?: it}", seconds = 8.0) },
-            )
-            applyFilter(resetPagination = false)
+            try {
+                val result = withContext(Engine.dispatcher) { PluginManager.install(wrapper) }
+                result.fold(
+                    { Toasts.show("Installed ${wrapper.plugin.name}" + it.providers.takeIf { p -> p.isNotEmpty() }?.let { p -> " · ${p.joinToString { a -> a.name }}" }.orEmpty()) },
+                    { Toasts.show("${wrapper.plugin.name} failed: ${it.message ?: it}", seconds = 8.0) },
+                )
+            } finally {
+                busy.remove(name)
+                applyFilter(resetPagination = false)
+                releasePreservedScrollAfterRender()
+            }
         }
     }
 
@@ -307,6 +333,7 @@ class ExtensionsPage : StackPane(), Refreshable {
             return
         }
 
+        preserveCurrentScroll()
         installingAll = true
         ui.launch {
             var succeeded = 0
@@ -330,6 +357,7 @@ class ExtensionsPage : StackPane(), Refreshable {
                 pending.forEach { busy.remove(it.plugin.internalName) }
                 installingAll = false
                 applyFilter(resetPagination = false)
+                releasePreservedScrollAfterRender()
             }
 
             val summary = "Installed $succeeded of ${pending.size} extensions"
@@ -340,12 +368,7 @@ class ExtensionsPage : StackPane(), Refreshable {
     private fun uninstall(row: ExtRow) {
         // Capture before unloading: PluginManager emits a version update while
         // uninstalling, which can trigger an intermediate render and clamp vvalue.
-        if (::pageScroller.isInitialized) {
-            val content = pageScroller.content as? javafx.scene.layout.Region
-            preservedScrollTop = content?.let {
-                (pageScroller.vvalue * (it.height - pageScroller.viewportBounds.height)).coerceAtLeast(0.0)
-            } ?: 0.0
-        }
+        preserveCurrentScroll()
         PluginManager.uninstall(row.internalName)
         Toasts.show("Uninstalled ${row.name}")
         applyFilter(resetPagination = false)
