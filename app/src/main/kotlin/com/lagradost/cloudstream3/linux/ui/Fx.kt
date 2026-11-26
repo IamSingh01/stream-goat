@@ -140,27 +140,15 @@ fun animate(property: DoubleProperty, to: Double, millis: Double = 220.0) {
  */
 fun pageScroll(
     content: Node,
-    scrollMultiplier: Double = 3.2,
-    animationMillis: Double = 160.0,
+    @Suppress("UNUSED_PARAMETER") scrollMultiplier: Double = 3.2,
+    @Suppress("UNUSED_PARAMETER") animationMillis: Double = 160.0,
 ): ScrollPane = ScrollPane(content).apply {
+    // Let JavaFX handle native wheel and trackpad gestures. Intercepting every
+    // scroll event and starting a new Timeline makes scrolling stutter under
+    // continuous trackpad input, and affects every screen using this helper.
     isFitToWidth = true
     hbarPolicy = ScrollPane.ScrollBarPolicy.NEVER
     vbarPolicy = ScrollPane.ScrollBarPolicy.AS_NEEDED
-    var target = 0.0
-    var animation: Timeline? = null
-    vvalueProperty().addListener { _, _, v -> if (animation == null) target = v.toDouble() }
-    addEventFilter(ScrollEvent.SCROLL) { e ->
-        if (e.deltaY == 0.0 || e.isShiftDown) return@addEventFilter
-        val contentHeight = (this.content as Region).height - viewportBounds.height
-        if (contentHeight <= 0) return@addEventFilter
-        target = (target - e.deltaY * scrollMultiplier / contentHeight).coerceIn(0.0, 1.0)
-        animation?.stop()
-        animation = Timeline(KeyFrame(Duration.millis(animationMillis), KeyValue(vvalueProperty(), target, Interpolator.EASE_OUT))).apply {
-            setOnFinished { animation = null }
-            play()
-        }
-        e.consume()
-    }
 }
 
 /** Opens a web page in the default browser. */
