@@ -138,7 +138,11 @@ fun animate(property: DoubleProperty, to: Double, millis: Double = 220.0) {
  * Vertical page scrolling. JavaFX scrolls very little per wheel notch on Linux, so this
  * scrolls ~one card row per notch with a short ease, which feels like a browser.
  */
-fun pageScroll(content: Node): ScrollPane = ScrollPane(content).apply {
+fun pageScroll(
+    content: Node,
+    scrollMultiplier: Double = 3.2,
+    animationMillis: Double = 160.0,
+): ScrollPane = ScrollPane(content).apply {
     isFitToWidth = true
     hbarPolicy = ScrollPane.ScrollBarPolicy.NEVER
     vbarPolicy = ScrollPane.ScrollBarPolicy.AS_NEEDED
@@ -149,9 +153,9 @@ fun pageScroll(content: Node): ScrollPane = ScrollPane(content).apply {
         if (e.deltaY == 0.0 || e.isShiftDown) return@addEventFilter
         val contentHeight = (this.content as Region).height - viewportBounds.height
         if (contentHeight <= 0) return@addEventFilter
-        target = (target - e.deltaY * 3.2 / contentHeight).coerceIn(0.0, 1.0)
+        target = (target - e.deltaY * scrollMultiplier / contentHeight).coerceIn(0.0, 1.0)
         animation?.stop()
-        animation = Timeline(KeyFrame(Duration.millis(160.0), KeyValue(vvalueProperty(), target, Interpolator.EASE_OUT))).apply {
+        animation = Timeline(KeyFrame(Duration.millis(animationMillis), KeyValue(vvalueProperty(), target, Interpolator.EASE_OUT))).apply {
             setOnFinished { animation = null }
             play()
         }
