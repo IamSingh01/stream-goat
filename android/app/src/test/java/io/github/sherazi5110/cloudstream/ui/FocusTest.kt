@@ -411,4 +411,46 @@ class FocusTest {
         back()
         check(left == 1) { "Back from the list didn't leave the page" }
     }
+
+    /** The remote's Back key as the TV sends it: down and up through the activity (not straight to the app's code). */
+    private fun backKey() {
+        rule.runOnUiThread {
+            rule.activity.dispatchKeyEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_BACK))
+            rule.activity.dispatchKeyEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_UP, android.view.KeyEvent.KEYCODE_BACK))
+        }
+        settle()
+    }
+
+    @Test fun `one press of back closes a player panel`() {
+        var open by mutableStateOf(true)
+        val first = FocusRequester()
+        rule.setContent {
+            FocusKeeperRoot { keeper ->
+                Box(keeper.size(600.dp).focusFallback().focusable()) {
+                    if (open) androidx.activity.compose.BackHandler { open = false }
+                    Column {
+                        Row { Card("sources"); Card("subtitles") }
+                        if (open) FocusOverlay("panel") { trap ->
+                            Column(trap) { Card("off", Modifier.focusRequester(first)); Card("english") }
+                        }
+                    }
+                }
+            }
+        }
+        focus("subtitles"); first.requestFocus(); settle(); focus("english")
+        backKey()
+        check(!open) { "the first Back didn't close the panel" }
+    }
+
+    @Test fun `one press of back leaves the side bar and a row`() {
+        var backs = 0
+        rule.setContent {
+            androidx.activity.compose.BackHandler { backs++ }
+            Screen(listOf("p1", "p2"))
+        }
+        focus("p2"); backKey()
+        check(backs == 1) { "Back on a poster row was swallowed" }
+        focus("music"); backKey()
+        check(backs == 2) { "Back in the side bar was swallowed" }
+    }
 }

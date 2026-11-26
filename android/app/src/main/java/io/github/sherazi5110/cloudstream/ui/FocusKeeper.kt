@@ -325,10 +325,22 @@ fun FocusKeeperRoot(modifier: Modifier = Modifier, content: @Composable (Modifie
     }
     val inFront = window.isWindowFocused
     androidx.compose.runtime.LaunchedEffect(inFront) { FocusKeeper.windowFocusChanged(inFront) }
+    val dispatcher = androidx.activity.compose.LocalOnBackPressedDispatcherOwner.current?.onBackPressedDispatcher
+    var backDown by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
     content(modifier.onFocusChanged { FocusKeeper.rootHasFocus = it.hasFocus }
         .onPreviewKeyEvent { e ->
-            // Back itself is how a return starts; any other key means you're moving yourself.
-            if (e.type == KeyEventType.KeyDown && e.key != Key.Back) FocusKeeper.keyPressed()
+            if (e.key == Key.Back && dispatcher != null) {
+                // The remote's Back goes straight to the app's Back (close the panel, leave the page…). Left to
+                // itself, Android first uses Back to move the selection out of each group it's in (a panel, a list),
+                // so it took 2, 3, 4 presses before a panel closed.
+                when (e.type) {
+                    KeyEventType.KeyDown -> backDown = true
+                    KeyEventType.KeyUp -> if (backDown) { backDown = false; dispatcher.onBackPressed() }
+                }
+                return@onPreviewKeyEvent true
+            }
+            // Any other key means you're moving yourself: nothing is brought back for you any more.
+            if (e.type == KeyEventType.KeyDown) FocusKeeper.keyPressed()
             false
         })
 }
