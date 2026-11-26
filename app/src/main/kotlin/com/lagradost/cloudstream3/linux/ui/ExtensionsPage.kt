@@ -372,6 +372,7 @@ class ExtensionsPage : StackPane(), Refreshable {
         PluginManager.uninstall(row.internalName)
         Toasts.show("Uninstalled ${row.name}")
         applyFilter(resetPagination = false)
+        releasePreservedScrollAfterRender()
     }
 
     private fun updateAll() {
