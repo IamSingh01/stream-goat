@@ -2,7 +2,8 @@ package io.github.sherazi5110.cloudstream.player
 
 /**
  * How subtitles look (Settings → the player's "Subtitle style") and the clean-up applied to subtitle files:
- * closed captions, ads and capitals. libVLC draws the subtitles, so the look becomes libVLC options.
+ * closed captions, ads and capitals. The look becomes libVLC options for VLC, and a styled subtitle view for
+ * ExoPlayer (ExoEngine.restyle).
  */
 object SubtitleStyle {
     /** A snapshot of the style settings (plain values, so it can be tested and compared). */
@@ -54,6 +55,12 @@ object SubtitleStyle {
 
     /** The preview's font size in sp for a ~1080-line picture shown on a phone or TV. */
     fun previewSp(size: String) = when (size) { "TINY" -> 13f; "SMALL" -> 16f; "LARGE" -> 23f; "HUGE" -> 30f; else -> 19f }
+
+    /** ExoPlayer: the text's height as a share of the picture's, for [Look.size] (Normal = ExoPlayer's own). */
+    fun exoTextSize(size: String) = when (size) { "TINY" -> 0.038f; "SMALL" -> 0.045f; "LARGE" -> 0.066f; "HUGE" -> 0.085f; else -> 0.0533f }
+
+    /** ExoPlayer: the space under the subtitles as a share of the picture's height, for [Look.height]. */
+    fun exoBottom(height: Int) = when (height) { 1 -> 0.14f; 2 -> 0.22f; 3 -> 0.30f; else -> 0.08f }
 
     /** Pixels from the bottom for [Look.height]. */
     fun margin(height: Int) = when (height) { 1 -> 40; 2 -> 90; 3 -> 150; else -> 0 }

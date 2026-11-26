@@ -63,6 +63,9 @@ class ExoEngine(context: Context) : PlaybackEngine {
         val renderers = DefaultRenderersFactory(appContext).setEnableDecoderFallback(true)
         ExoPlayer.Builder(appContext, renderers).setLoadControl(load).build().apply {
             addListener(object : Player.Listener {
+                // The subtitles go to this app's own subtitle view, in the chosen style (see createView).
+                override fun onCues(cueGroup: androidx.media3.common.text.CueGroup) { styledSubs?.setCues(styled(cueGroup.cues)) }
+
                 override fun onPlaybackStateChanged(state: Int) {
                     when (state) {
                         Player.STATE_BUFFERING -> listener?.onBuffering(true)
@@ -237,8 +240,56 @@ class ExoEngine(context: Context) : PlaybackEngine {
         useController = false
         setShutterBackgroundColor(android.graphics.Color.BLACK)
         setKeepContentOnPlayerReset(true)
-        subtitleView?.setApplyEmbeddedStyles(true)
-        subtitleView?.setFractionalTextSize(0.0533f * (io.github.sherazi5110.cloudstream.Settings.textScale.coerceIn(0.8f, 1.5f)))
+        // ExoPlayer's own subtitle view always drew plain white text (Settings → Subtitle style only reached VLC):
+        // this app's view draws them instead, in the chosen size, colour, font, edge, background, height and side.
+        subtitleView?.visibility = View.GONE
+        val own = androidx.media3.ui.SubtitleView(context)
+        overlayFrameLayout?.addView(own, android.widget.FrameLayout.LayoutParams(
+            android.widget.FrameLayout.LayoutParams.MATCH_PARENT, android.widget.FrameLayout.LayoutParams.MATCH_PARENT))
+        styledSubs = own
+        restyle()
+    }
+
+    /** This app's subtitle view, styled (see [restyle]). */
+    private var styledSubs: androidx.media3.ui.SubtitleView? = null
+    private var look = SubtitleStyle.current()
+
+    /** Applies Settings → Subtitle style to the subtitles at once (no reopening, unlike VLC). */
+    fun restyle() {
+        look = SubtitleStyle.current()
+        val v = styledSubs ?: return
+        val l = look
+        val shadow = l.edge == "SHADOW"
+        val edge = when (l.edge) {
+            "NONE" -> androidx.media3.ui.CaptionStyleCompat.EDGE_TYPE_NONE
+            "SHADOW" -> androidx.media3.ui.CaptionStyleCompat.EDGE_TYPE_DROP_SHADOW
+            else -> androidx.media3.ui.CaptionStyleCompat.EDGE_TYPE_OUTLINE
+        }
+        val family = when (l.font) { "SERIF" -> "serif"; "MONO" -> "monospace"; "CONDENSED" -> "sans-serif-condensed"; else -> "sans-serif" }
+        val alpha = (l.backgroundOpacity.coerceIn(0, 100) * 255 / 100) shl 24
+        v.setStyle(androidx.media3.ui.CaptionStyleCompat(
+            0xff000000.toInt() or SubtitleStyle.rgb(l.color),
+            if (l.background) alpha or SubtitleStyle.rgb(l.backgroundColor) else android.graphics.Color.TRANSPARENT,
+            android.graphics.Color.TRANSPARENT,
+            edge,
+            if (shadow) 0xff000000.toInt() else 0xff000000.toInt() or SubtitleStyle.rgb(l.outlineColor),
+            android.graphics.Typeface.create(family, if (l.bold) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL),
+        ))
+        // The stream's own sizes and colours would win over the chosen ones; its italics stay.
+        v.setApplyEmbeddedFontSizes(false)
+        v.setFractionalTextSize(SubtitleStyle.exoTextSize(l.size) * io.github.sherazi5110.cloudstream.Settings.textScale.coerceIn(0.8f, 1.5f))
+        v.setBottomPaddingFraction(SubtitleStyle.exoBottom(l.height))
+        player.currentCues.cues.let { v.setCues(styled(it)) }
+    }
+
+    /** The chosen side (left, centre, right) for text subtitles (pictures, as on some Blu-rays, stay where they are). */
+    private fun styled(cues: List<androidx.media3.common.text.Cue>): List<androidx.media3.common.text.Cue> {
+        val align = when (look.align) {
+            "LEFT" -> android.text.Layout.Alignment.ALIGN_NORMAL
+            "RIGHT" -> android.text.Layout.Alignment.ALIGN_OPPOSITE
+            else -> return cues
+        }
+        return cues.map { c -> if (c.bitmap != null) c else c.buildUpon().setTextAlignment(align).build() }
     }
 
     override fun attach(view: View, hdr: Boolean) {
