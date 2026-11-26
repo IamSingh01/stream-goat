@@ -6,6 +6,8 @@ your device:
 | Your device | File | Section |
 |---|---|---|
 | Windows 10 or 11 | `streamgoat-windows-<version>.msi` (or the portable `.zip`) | [Windows](#windows-10-and-11) |
+| Mac with Apple Silicon | `streamgoat-macos-arm64-<version>.dmg` | [macOS](#macos-apple-silicon-and-intel) |
+| Mac with Intel processor | `streamgoat-macos-x86_64-<version>.dmg` | [macOS](#macos-apple-silicon-and-intel) |
 | Ubuntu, Debian, Mint, Pop!_OS, Zorin, elementary, ChromeOS (Linux) | `streamgoat-linux_<version>_amd64.deb` | [.deb](#ubuntu-debian-linux-mint-popos-zorin-elementary-os-chromeos-linux) |
 | Any Linux distro with Flatpak (Fedora, Arch, openSUSE, Steam Deck…) | `streamgoat-linux.flatpak` | [Flatpak](#flatpak-any-distro) |
 | Other x86-64 Linux without Flatpak | the `.deb` (unpacked by hand) | [Other Linux](#fedora-arch-manjaro-opensuse-and-other-x86-64-linux-without-flatpak) |
