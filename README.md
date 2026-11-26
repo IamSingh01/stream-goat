@@ -3,7 +3,7 @@
 <p align="center"><img src="packaging/linux/cloudstream-linux.png" width="128" alt="Stream Goat logo: a white goat head on black"></p>
 
 <p align="center"><b>Movies, series, anime and Live TV on Android phones, tablets and TV, Windows, Mac, Linux and the web.</b><br>
-Created by <b>Syed Ali Hamza</b></p>
+Created by <b>Aman Singh</b></p>
 
 ![Stream Goat: Home](docs/screenshots/home.jpg)
 
@@ -146,4 +146,4 @@ GPL-3.0, the same as CloudStream, whose library sources this project compiles.
 
 The built-in player uses [libVLC](https://www.videolan.org/vlc/libvlc.html) (LGPL-2.1, from your system's VLC packages) through [vlcj](https://github.com/caprica/vlcj) (GPL-3.0). Online subtitles come from the OpenSubtitles Stremio addon.
 
-Made by Tennant Creek.
+Made by Aman Singh.
