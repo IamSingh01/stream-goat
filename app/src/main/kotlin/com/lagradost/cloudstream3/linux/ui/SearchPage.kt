@@ -207,7 +207,7 @@ class SearchPage : StackPane(), Refreshable {
                     found += batch.results.size
                     results.children += Shelf(
                         batch.api.name,
-                        onViewAll = { Nav.window.push(SearchResultsPage(batch.api, query, batch.results)) },
+                        onViewAll = { Nav.window.push(SearchResultsPage(batch.api, query, batch.results, batch.hasNext)) },
                         trailing = label("${batch.results.size}", "tag"),
                         captureHorizontalWheel = true,
                     ).apply {
@@ -228,12 +228,14 @@ private class SearchResultsPage(
     private val api: MainAPI,
     private val query: String,
     firstPage: List<com.lagradost.cloudstream3.SearchResponse>,
+    firstHasNext: Boolean,
 ) : StackPane(), Disposable {
     private val grid = FlowPane(18.0, 22.0)
     private val seen = HashSet<String>()
     private var page = 1
     private var loading = false
-    private var finished = false
+    private var hasNext = firstHasNext
+    private var finished = !firstHasNext
     private var job: Job? = null
     private val spinner = ProgressIndicator().apply { setPrefSize(22.0, 22.0); setMaxSize(22.0, 22.0) }
     private val status = label("", "muted")
@@ -254,9 +256,8 @@ private class SearchResultsPage(
         scroll = pageScroll(vbox(24.0, header, grid, footer).pad(22.0, 36.0, 40.0, 36.0))
         children += scroll
         idle()
-        // View All means the complete provider result set, not just the first batch
-        // visible in Global Search. Fetch subsequent provider pages until exhausted.
-        javafx.application.Platform.runLater { loadMore() }
+        // Fetch every page the provider advertises through SearchResponseList.hasNext.
+        if (hasNext) javafx.application.Platform.runLater { loadMore() }
     }
 
     private fun add(item: com.lagradost.cloudstream3.SearchResponse): Boolean {
@@ -274,13 +275,11 @@ private class SearchResultsPage(
         spinner.isManaged = true
         status.text = "Loading more from ${api.name}…"
         job = ui.launch {
-            val next = runCatching {
-                withTimeout(api.searchTimeoutMs ?: 45_000L) {
-                    api.search(query, page + 1)?.items.orEmpty().let(ContentFilter::filter)
-                }
+            val response = runCatching {
+                withTimeout(api.searchTimeoutMs ?: 45_000L) { api.search(query, page + 1) }
             }.getOrNull()
             loading = false
-            if (next == null) {
+            if (response == null) {
                 spinner.isVisible = false
                 spinner.isManaged = false
                 status.text = "Couldn't load more results."
@@ -288,15 +287,12 @@ private class SearchResultsPage(
                 retry.isManaged = true
                 return@launch
             }
-            if (next.isEmpty()) {
-                finished = true
-            } else {
-                val added = next.count { add(it) }
-                page++
-                if (added == 0) finished = true
-            }
+            page++
+            hasNext = response.hasNext
+            response.items.let(ContentFilter::filter).forEach { add(it) }
+            finished = !hasNext
             idle()
-            if (!finished) loadMore()
+            if (hasNext) loadMore()
         }
     }
 
