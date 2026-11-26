@@ -66,7 +66,7 @@ object PluginManager {
     /** For other provider sources (Stremio add-ons, profile switches) to refresh screens too. */
     fun bumpVersion() = changed()
 
-    /** register* calls in Plugin.load mutate global lists; translation and class loading stay parallel. */
+    /** register* calls in Plugin.load mutate global lists, so plugin loading is serialized. */
     private val registerLock = Any()
 
     fun installed(): List<PluginData> =
@@ -82,7 +82,7 @@ object PluginManager {
 
     /**
      * Loads every installed plugin, like upstream's loadAllOnlinePlugins + loadAllLocalPlugins,
-     * but in parallel: first-run .cs3 translation is CPU bound and dominates startup.
+     * with bounded concurrency: first-run .cs3 translation is CPU- and memory-intensive.
      */
     suspend fun loadAll(): Map<String, Throwable> = coroutineScope {
         Platform.init()
