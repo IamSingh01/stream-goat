@@ -10,12 +10,14 @@ import com.lagradost.cloudstream3.linux.LiveTv
 import com.lagradost.cloudstream3.linux.StremioAddons
 import com.lagradost.cloudstream3.linux.StremioApi
 import com.lagradost.cloudstream3.linux.statusName
+import javafx.application.Platform
 import javafx.geometry.Pos
 import javafx.scene.Node
 import javafx.scene.control.Alert
 import javafx.scene.control.ButtonType
 import javafx.scene.control.ComboBox
 import javafx.scene.control.ProgressIndicator
+import javafx.scene.control.ScrollPane
 import javafx.scene.control.TextField
 import javafx.scene.image.ImageView
 import javafx.scene.layout.FlowPane
@@ -70,6 +72,8 @@ class ExtensionsPage : StackPane(), Refreshable {
     private val busy = mutableSetOf<String>()
     private var available: List<PluginWrapper> = emptyList()
     private var loadingRepos = false
+    private var installingAll = false
+    private lateinit var pageScroller: ScrollPane
 
     init {
         val header = hbox(12.0,
@@ -102,8 +106,9 @@ class ExtensionsPage : StackPane(), Refreshable {
             id = "ext-kind"
         }
         val page = VBox(18.0, kind, body).pad(22.0, 36.0, 32.0, 36.0)
-        children += pageScroll(page)
-        ui.launch { PluginManager.version.collect { applyFilter() } }
+        pageScroller = pageScroll(page, scrollMultiplier = 1.0, animationMillis = 110.0)
+        children += pageScroller
+        ui.launch { PluginManager.version.collect { applyFilter(resetPagination = false) } }
     }
 
     private fun cardWidth(): Double {
@@ -168,7 +173,7 @@ class ExtensionsPage : StackPane(), Refreshable {
         })
     }
 
-    private fun applyFilter() {
+    private fun applyFilter(resetPagination: Boolean = true) {
         val installed = PluginManager.installed()
         val byName = installed.associateBy { it.internalName }
         val rows = available.map { ExtRow(it, byName[it.plugin.internalName]) } +
@@ -191,8 +196,8 @@ class ExtensionsPage : StackPane(), Refreshable {
                     2 -> row.hasUpdate
                     else -> true
                 }
-        }.sortedWith(compareBy({ it.installed == null }, { it.name.lowercase() }))
-        shown = PAGE
+        }.sortedBy { it.name.lowercase() }
+        if (resetPagination) shown = PAGE
         renderGrid()
         val loaded = Engine.allProviders().size
         if (!loadingRepos) stats.text = "${available.size} available · ${installed.size} installed · $loaded providers loaded" +
@@ -202,6 +207,12 @@ class ExtensionsPage : StackPane(), Refreshable {
 
     /** Renders cards a page at a time: big repositories list hundreds of extensions. */
     private fun renderGrid() {
+        val scrollTop = if (::pageScroller.isInitialized) {
+            val content = pageScroller.content as? javafx.scene.layout.Region
+            content?.let {
+                (pageScroller.vvalue * (it.height - pageScroller.viewportBounds.height)).coerceAtLeast(0.0)
+            } ?: 0.0
+        } else 0.0
         val w = cardWidth()
         val nodes = rows.take(shown).map { card(it).apply { prefWidth = w } }.toMutableList<Node>()
         if (rows.isEmpty()) nodes += label(if (available.isEmpty() && loadingRepos) "Loading extensions…" else "No extensions match these filters", "muted")
@@ -210,6 +221,18 @@ class ExtensionsPage : StackPane(), Refreshable {
             renderGrid()
         }
         grid.children.setAll(nodes)
+        if (::pageScroller.isInitialized) {
+            Platform.runLater {
+                pageScroller.applyCss()
+                val content = pageScroller.content as? javafx.scene.layout.Region
+                content?.layout()
+                pageScroller.layout()
+                if (content != null) {
+                    val maxScroll = (content.height - pageScroller.viewportBounds.height).coerceAtLeast(0.0)
+                    pageScroller.vvalue = if (maxScroll == 0.0) 0.0 else (scrollTop / maxScroll).coerceIn(0.0, 1.0)
+                }
+            }
+        }
     }
 
     private fun languageName(code: String) =
@@ -259,19 +282,53 @@ class ExtensionsPage : StackPane(), Refreshable {
                 { Toasts.show("Installed ${wrapper.plugin.name}" + it.providers.takeIf { p -> p.isNotEmpty() }?.let { p -> " · ${p.joinToString { a -> a.name }}" }.orEmpty()) },
                 { Toasts.show("${wrapper.plugin.name} failed: ${it.message ?: it}", seconds = 8.0) },
             )
-            applyFilter()
+            applyFilter(resetPagination = false)
         }
     }
 
     private fun installAll(list: List<PluginWrapper>) {
+        if (installingAll) return
         val installed = PluginManager.installed().map { it.internalName }.toSet()
-        list.filter { it.plugin.status != 0 && it.plugin.internalName !in installed }.forEach { install(it) }
+        val pending = list.filter { it.plugin.status != 0 && it.plugin.internalName !in installed }
+        if (pending.isEmpty()) {
+            Toasts.show("No extensions to install")
+            return
+        }
+
+        installingAll = true
+        ui.launch {
+            var succeeded = 0
+            val failed = mutableListOf<String>()
+            try {
+                for (wrapper in pending) {
+                    val name = wrapper.plugin.internalName
+                    busy.add(name)
+                    renderGrid()
+                    val result = try {
+                        withContext(Engine.dispatcher) { PluginManager.install(wrapper) }
+                    } catch (t: Throwable) {
+                        Result.failure(t)
+                    }
+                    busy.remove(name)
+                    result.onSuccess { succeeded++ }
+                        .onFailure { failed += wrapper.plugin.name }
+                    applyFilter(resetPagination = false)
+                }
+            } finally {
+                pending.forEach { busy.remove(it.plugin.internalName) }
+                installingAll = false
+                applyFilter(resetPagination = false)
+            }
+
+            val summary = "Installed $succeeded of ${pending.size} extensions"
+            Toasts.show(if (failed.isEmpty()) summary else "$summary · Failed: ${failed.joinToString()}", seconds = 8.0)
+        }
     }
 
     private fun uninstall(row: ExtRow) {
         PluginManager.uninstall(row.internalName)
         Toasts.show("Uninstalled ${row.name}")
-        applyFilter()
+        applyFilter(resetPagination = false)
     }
 
     private fun updateAll() {
@@ -294,7 +351,7 @@ class ExtensionsPage : StackPane(), Refreshable {
                 { Toasts.show("Loaded ${it.manifest.name}: ${it.providers.joinToString { p -> p.name }.ifEmpty { "no providers" }}") },
                 { Toasts.show("${file.name} failed: ${it.message ?: it}", seconds = 8.0) },
             )
-            applyFilter()
+            applyFilter(resetPagination = false)
         }
     }
 
@@ -332,11 +389,11 @@ class ExtensionsPage : StackPane(), Refreshable {
         when {
             row.internalName in busy -> actions.children += hbox(8.0, ProgressIndicator().apply { setPrefSize(18.0, 18.0) }, label("Installing…", "muted"))
             row.installed == null -> actions.children += button("Install", Icons.DOWNLOAD, "btn-accent", "btn-small") { install(row.wrapper!!) }
-                .apply { isDisable = p?.status == 0 }
+                .apply { isDisable = p?.status == 0 || installingAll }
             else -> {
                 actions.children += label(if (failure == null) "Installed" else "Error", if (failure == null) "good-text" else "error-text", "small")
                 actions.children += spacer()
-                if (row.hasUpdate) actions.children += button("Update", Icons.REFRESH, "btn-accent", "btn-small") { install(row.wrapper!!) }
+                if (row.hasUpdate) actions.children += button("Update", Icons.REFRESH, "btn-accent", "btn-small") { install(row.wrapper!!) }.apply { isDisable = installingAll }
                 // A failed one (e.g. its file is missing after restoring a backup): download it again in one click.
                 if (failure != null && !row.hasUpdate) actions.children += button("Reinstall", Icons.REFRESH, "btn-accent", "btn-small") {
                     if (busy.add(row.internalName)) renderGrid()
@@ -345,10 +402,10 @@ class ExtensionsPage : StackPane(), Refreshable {
                         busy -= row.internalName
                         r.onSuccess { Toasts.show("${row.wrapper?.plugin?.name ?: row.internalName} works again") }
                             .onFailure { Toasts.show("Couldn't reinstall: ${it.message ?: it}", seconds = 8.0) }
-                        applyFilter()
+                        applyFilter(resetPagination = false)
                     }
                 }
-                actions.children += button(null, Icons.DELETE, "btn-danger", "btn-small") { uninstall(row) }.tooltip("Uninstall")
+                actions.children += button(null, Icons.DELETE, "btn-danger", "btn-small") { uninstall(row) }.apply { isDisable = installingAll }.tooltip("Uninstall")
             }
         }
         card.children += spacer()
