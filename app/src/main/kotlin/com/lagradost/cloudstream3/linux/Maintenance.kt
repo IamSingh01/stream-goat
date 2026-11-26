@@ -62,7 +62,14 @@ object Updates {
         }.getOrNull()?.takeIf { it.isNotBlank() } ?: "dev"
     }
 
-    private val osKey get() = when { Os.isWindows -> "windows"; Os.isMac -> "mac"; else -> "linux" }
+    // Keep the existing "mac" key for Apple Silicon; Intel uses a separate patch whose JavaFX/native
+    // dependency hashes match the x86_64 installation.
+    private val osKey get() = when {
+        Os.isWindows -> "windows"
+        Os.isMac && System.getProperty("os.arch") in setOf("x86_64", "amd64") -> "mac-x86_64"
+        Os.isMac -> "mac"
+        else -> "linux"
+    }
 
     /** The newest version if it's newer than [current] (with Test builds: a different, not older, test build). */
     suspend fun check(current: String): Release? = withContext(Dispatchers.IO) {
