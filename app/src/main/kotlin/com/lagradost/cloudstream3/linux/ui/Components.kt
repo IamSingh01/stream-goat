@@ -195,14 +195,14 @@ class WideCard(
 }
 
 /**
- * A titled horizontal row. Wheel and trackpad gestures over the cards scroll this row,
- * while scrolling outside the shelf continues to move the page.
+ * A titled horizontal row. Horizontal gestures can be captured by this shelf when
+ * explicitly enabled; normal vertical wheel scrolling always remains with the page.
  */
 class Shelf(
     title: String,
     private val onViewAll: (() -> Unit)? = null,
     trailing: Node? = null,
-    private val captureHorizontalWheel: Boolean = true,
+    private val captureHorizontalWheel: Boolean = false,
 ) : VBox(12.0) {
     val row = HBox(14.0).apply { alignment = Pos.TOP_LEFT }
     // The viewport is as tall as its row (measured, not bound: a binding lags one layout pass,
@@ -224,7 +224,7 @@ class Shelf(
         val header = HBox(10.0, label(title, "shelf-title"), spacer()).apply { styleClass += "shelf-header" }
         trailing?.let { header.children += it }
         onViewAll?.let { action ->
-            header.children += button("View all", Icons.CHEVRON_RIGHT, "btn-accent", "btn-small", action = action)
+            header.children += button("View all", null, "btn-ghost", "btn-small", action = action)
         }
         val clip = Rectangle()
         clip.widthProperty().bind(viewport.widthProperty())
@@ -245,12 +245,13 @@ class Shelf(
 
         if (captureHorizontalWheel) {
             viewport.addEventFilter(ScrollEvent.SCROLL) { e ->
-                // Prefer the trackpad's horizontal axis. A conventional vertical mouse wheel
-                // over the shelf also scrolls the row, without requiring Shift.
+                // This handler is enabled only for Global Search shelves. Prefer the
+                // trackpad's horizontal axis even when Shift is held; some macOS gestures
+                // report both axes, and choosing deltaY first lets the parent page scroll.
                 val delta = when {
-                    e.isShiftDown -> e.deltaY
                     kotlin.math.abs(e.deltaX) > 0.5 -> e.deltaX
-                    else -> e.deltaY
+                    e.isShiftDown -> e.deltaY
+                    else -> 0.0
                 }
                 if (kotlin.math.abs(delta) > 0.5) {
                     move(target + delta * 2.0)
