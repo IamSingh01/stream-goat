@@ -72,10 +72,28 @@ object Popover {
         panel.setOnMouseClicked { it.consume() }
         panel.applyCss()
         panel.autosize()
-        layer.children += panel
+
+        // Menus with many sources must stay inside the window and scroll instead
+        // of growing beyond the visible screen area.
+        val top = bounds.maxY + 8.0
+        val availableHeight = (anchor.scene.height - top - 12.0).coerceAtLeast(120.0)
+        val contentHeight = panel.prefHeight(-1.0).takeIf { it.isFinite() && it > 0.0 } ?: panel.height
+        val scroll = javafx.scene.control.ScrollPane(panel).apply {
+            isFitToWidth = true
+            isPannable = true
+            hbarPolicy = javafx.scene.control.ScrollPane.ScrollBarPolicy.NEVER
+            vbarPolicy = javafx.scene.control.ScrollPane.ScrollBarPolicy.AS_NEEDED
+            prefViewportHeight = minOf(contentHeight, availableHeight)
+            maxHeight = availableHeight
+            minHeight = 0.0
+            styleClass += "popover-scroll"
+        }
+        scroll.applyCss()
+        scroll.autosize()
+        layer.children += scroll
         val sceneWidth = anchor.scene.width
-        panel.layoutY = bounds.maxY + 8
-        panel.layoutXProperty().bind(panel.widthProperty().map { w ->
+        scroll.layoutY = top
+        scroll.layoutXProperty().bind(scroll.widthProperty().map { w ->
             if (alignRight) (bounds.maxX - w.toDouble()).coerceAtLeast(8.0) else bounds.minX.coerceAtMost(sceneWidth - w.toDouble() - 8)
         })
         Nav.window.showOverlay(layer)
