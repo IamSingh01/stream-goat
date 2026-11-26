@@ -300,7 +300,7 @@ class DetailsPage(
         Images.load(image, ep.posterUrl ?: r.backgroundPosterUrl ?: r.posterUrl, w, h, r.posterHeaders)
         val progress = Library.progress(api.name, ep.data)?.let { if (it.duration > 0) it.position / it.duration else null }
         // Anti-spoiler: unwatched episodes show a blurred thumbnail and no description.
-        val hidden = Settings.antiSpoiler && (progress == null || progress < 0.92) && ep.posterUrl != null
+        val hidden = Settings.antiSpoiler && (progress == null || progress < com.lagradost.cloudstream3.linux.Library.WATCHED_AT) && ep.posterUrl != null
         if (hidden) image.effect = javafx.scene.effect.GaussianBlur(26.0)
         val play = StackPane(icon(Icons.PLAY, 20.0).apply { style += "-fx-background-color: white;" }).apply {
             style = "-fx-background-color: rgba(0,0,0,0.55); -fx-background-radius: 999;"
@@ -311,7 +311,7 @@ class DetailsPage(
             styleClass += "poster-frame"
             setMinSize(w, h); setMaxSize(w, h)
             if (progress != null) children += progressBar(progress, w).also { StackPane.setAlignment(it, Pos.BOTTOM_LEFT) }
-            if (progress != null && progress > 0.92) children += label("Watched", "badge", "good").also {
+            if (progress != null && progress >= com.lagradost.cloudstream3.linux.Library.WATCHED_AT) children += label("Watched", "badge", "good").also {
                 StackPane.setAlignment(it, Pos.TOP_RIGHT); StackPane.setMargin(it, javafx.geometry.Insets(8.0))
             }
             children += DownloadsUi.episodeBadge(api, r, ep).also { StackPane.setAlignment(it, Pos.TOP_LEFT); StackPane.setMargin(it, javafx.geometry.Insets(8.0)) }
@@ -328,7 +328,7 @@ class DetailsPage(
         ).pad(10.0, 12.0, 12.0, 12.0)
         return VBox(thumb, text).apply {
             styleClass += "episode-card"
-            if (progress != null && progress > 0.92) styleClass += "watched"
+            if (progress != null && progress >= com.lagradost.cloudstream3.linux.Library.WATCHED_AT) styleClass += "watched"
             prefWidth = w; maxWidth = w
             roundedClip(this, 12.0)
             setOnMouseEntered { animate(play.opacityProperty(), 1.0, 120.0) }

@@ -143,11 +143,12 @@ object WeTrakrSync {
     suspend fun apply(apiName: String, r: LoadResponse, playables: List<Playable>): Int {
         // What was watched in another extension (or on WeTrakr) is marked here too: kept by ids, signed in or not.
         if (WeTrakr.available && WeTrakr.connected) pull()
-        if (movies().isEmpty() && episodes().isEmpty()) return 0
         val info = runCatching { Metadata.details(r) }.getOrNull()
         val tmdb = info?.tmdbId
         val imdb = info?.imdbId ?: runCatching { r.getImdbIdSafe() }.getOrNull()
         if (tmdb == null && imdb == null) return 0
+        noteOffered(tmdb, imdb, playables)
+        if (movies().isEmpty() && episodes().isEmpty()) return 0
         val isMovie = r.type == TvType.Movie || r.type == TvType.AnimeMovie || playables.all { it.episode == null }
         val todo = playables.filter { p ->
             !Library.isWatched(apiName, p.data) && if (isMovie) movieWatched(tmdb, imdb)
@@ -293,7 +294,36 @@ object WeTrakrSync {
         if (watched.isEmpty()) return localStamp
         val tv = tmdb ?: imdb?.let { Metadata.tmdbForImdb(it) }
         val aired = tv?.let { Metadata.aired(it) } ?: return Stamp.CONTINUE
-        return seriesStamp(watched, aired)
+        return seriesStamp(watched, withOffered(aired, offered(k)))
+    }
+
+    /**
+     * The newest episode each show's extension offers, by ids ("t123" → "1:8"). TMDB counts only the episodes that
+     * have aired, and a weekly show's extension can already have more (Dead-End Job: 4 aired, 8 offered): a show
+     * is WATCHED only once the newest offered episode was watched too. Noted when its title page opens.
+     */
+    private fun noteOffered(tmdb: Int?, imdb: String?, playables: List<Playable>) {
+        val newest = playables.filter { it.episode != null && (it.season ?: 1) > 0 }
+            .maxWithOrNull(compareBy({ it.season ?: 1 }, { it.episode!! })) ?: return
+        val value = "${newest.season ?: 1}:${newest.episode}"
+        val map = runCatching { org.json.JSONObject(prefs.getString("offered", null) ?: "{}") }.getOrDefault(org.json.JSONObject())
+        val k = keys(tmdb, imdb)
+        if (k.all { map.optString(it) == value }) return
+        k.forEach { map.put(it, value) }
+        prefs.edit().putString("offered", map.toString()).apply()
+    }
+
+    private fun offered(k: List<String>): Pair<Int, Int>? {
+        val map = runCatching { org.json.JSONObject(prefs.getString("offered", null) ?: "{}") }.getOrNull() ?: return null
+        return k.firstNotNullOfOrNull { key -> map.optString(key).split(':').takeIf { it.size == 2 } }
+            ?.let { (s, e) -> (s.toIntOrNull() ?: return null) to (e.toIntOrNull() ?: return null) }
+    }
+
+    /** [a] with the extension's newest episode counted as out, when it's beyond what TMDB says has aired. */
+    internal fun withOffered(a: Metadata.Aired, offered: Pair<Int, Int>?): Metadata.Aired {
+        val (s, e) = offered ?: return a
+        if (s < a.lastSeason || (s == a.lastSeason && e <= a.lastEpisode)) return a
+        return a.copy(seasons = a.seasons + (s to maxOf(a.seasons[s] ?: 0, e)), lastSeason = s, lastEpisode = e)
     }
 
     /** All aired episodes watched → WATCHED; caught up with only the newest missing (recent) → NEW_EPISODES; else CONTINUE. */

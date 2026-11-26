@@ -18,7 +18,7 @@ data class WatchEntry(
     val updatedAt: Long,
 ) {
     val progress: Double get() = if (duration > 0) (position / duration).coerceIn(0.0, 1.0) else 0.0
-    val finished: Boolean get() = progress > 0.92
+    val finished: Boolean get() = progress >= Library.WATCHED_AT
 }
 
 @JsonIgnoreProperties(ignoreUnknown = true)
@@ -56,7 +56,13 @@ object Library {
 
     fun history(): List<WatchEntry> = read<List<WatchEntry>>("history", emptyList()).sortedByDescending { it.updatedAt }
 
-    fun continueWatching(): List<WatchEntry> = history().filter { it.progress in 0.02..0.92 }
+    /**
+     * From here an episode or film counts as watched (its tick, the poster's stamp, gone from Continue Watching),
+     * the same as WeTrakr. Playing it again still starts where you stopped (up to 92%, see the player).
+     */
+    const val WATCHED_AT = 0.8
+
+    fun continueWatching(): List<WatchEntry> = history().filter { it.progress >= 0.02 && it.progress < WATCHED_AT }
 
     fun lastWatched(apiName: String, url: String): WatchEntry? = history().find { it.apiName == apiName && it.url == url }
 
@@ -129,7 +135,7 @@ object Library {
     init { listeners += { stampIndex = null } }
 
     fun isWatched(apiName: String, episodeData: String) =
-        progress(apiName, episodeData)?.let { it.duration > 0 && it.position / it.duration > 0.92 } == true
+        progress(apiName, episodeData)?.let { it.duration > 0 && it.position / it.duration >= WATCHED_AT } == true
 
     fun bookmarks(): List<Bookmark> = read<List<Bookmark>>("bookmarks", emptyList()).sortedByDescending { it.addedAt }
 

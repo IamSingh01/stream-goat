@@ -29,4 +29,15 @@ class SeriesStampTest {
 
     @Test fun `new episodes long ago are Continue`() =
         assertEquals(Stamp.CONTINUE, WeTrakrSync.seriesStamp(eps(1 to 1..8), airing.copy(lastAirDate = "2025-01-01"), today))
+
+    // Dead-End Job: TMDB says 4 episodes aired (weekly), the extension already offers all 8, 1-4 watched.
+    private val weekly = Metadata.Aired(mapOf(1 to 8), lastSeason = 1, lastEpisode = 4, lastAirDate = "2026-11-20")
+
+    @Test fun `4 of 8 offered watched is Continue even when TMDB says only 4 aired`() {
+        assertEquals(Stamp.WATCHED, WeTrakrSync.seriesStamp(eps(1 to 1..4), weekly, today), "what TMDB alone says")
+        assertEquals(Stamp.CONTINUE, WeTrakrSync.seriesStamp(eps(1 to 1..4), WeTrakrSync.withOffered(weekly, 1 to 8), today))
+        assertEquals(Stamp.WATCHED, WeTrakrSync.seriesStamp(eps(1 to 1..8), WeTrakrSync.withOffered(weekly, 1 to 8), today))
+        // The extension offering fewer than TMDB changes nothing.
+        assertEquals(weekly, WeTrakrSync.withOffered(weekly, 1 to 2))
+    }
 }
