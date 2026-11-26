@@ -122,6 +122,10 @@ object PluginManager {
     fun loadPlugin(file: File, data: PluginData): Result<LoadedPlugin> = runCatching {
         loaded[file.absolutePath]?.let { return@runCatching it }
 
+        // Extensions may inspect MainAPI.settingsForProvider.enableAdult while registering providers.
+        // Restore the current profile's preference before loading any extension classes.
+        ContentFilter.syncAdult()
+
         // .jar = cross-platform build, already JVM bytecode. .cs3 = Dalvik, translate first.
         if (file.extension != "jar") System.err.println("I/plugins: translating ${file.name}")
         val jar = if (file.extension == "jar") file else DexTranslator.translate(file)
