@@ -75,6 +75,8 @@ class ExtensionsPage : StackPane(), Refreshable {
     private var installingAll = false
     private lateinit var pageScroller: ScrollPane
     private var renderGeneration = 0
+    // Keep the pre-mutation offset across every render triggered by uninstall.
+    private var preservedScrollTop: Double? = null
 
     init {
         val header = hbox(12.0,
@@ -209,7 +211,7 @@ class ExtensionsPage : StackPane(), Refreshable {
     /** Renders cards a page at a time: big repositories list hundreds of extensions. */
     private fun renderGrid() {
         val generation = ++renderGeneration
-        val scrollTop = if (::pageScroller.isInitialized) {
+        val scrollTop = preservedScrollTop ?: if (::pageScroller.isInitialized) {
             val content = pageScroller.content as? javafx.scene.layout.Region
             content?.let {
                 (pageScroller.vvalue * (it.height - pageScroller.viewportBounds.height)).coerceAtLeast(0.0)
@@ -237,6 +239,9 @@ class ExtensionsPage : StackPane(), Refreshable {
                 if (content != null) {
                     val maxScroll = (content.height - pageScroller.viewportBounds.height).coerceAtLeast(0.0)
                     pageScroller.vvalue = if (maxScroll == 0.0) 0.0 else (scrollTop / maxScroll).coerceIn(0.0, 1.0)
+                }
+                if (generation == renderGeneration && preservedScrollTop != null) {
+                    preservedScrollTop = null
                 }
             }
         }
@@ -333,6 +338,14 @@ class ExtensionsPage : StackPane(), Refreshable {
     }
 
     private fun uninstall(row: ExtRow) {
+        // Capture before unloading: PluginManager emits a version update while
+        // uninstalling, which can trigger an intermediate render and clamp vvalue.
+        if (::pageScroller.isInitialized) {
+            val content = pageScroller.content as? javafx.scene.layout.Region
+            preservedScrollTop = content?.let {
+                (pageScroller.vvalue * (it.height - pageScroller.viewportBounds.height)).coerceAtLeast(0.0)
+            } ?: 0.0
+        }
         PluginManager.uninstall(row.internalName)
         Toasts.show("Uninstalled ${row.name}")
         applyFilter(resetPagination = false)
