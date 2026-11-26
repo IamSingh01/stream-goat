@@ -194,6 +194,7 @@ class SearchPage : StackPane(), Refreshable {
                         batch.api.name,
                         onViewAll = { Nav.window.push(SearchResultsPage(batch.api, query, batch.results)) },
                         trailing = label("${batch.results.size}", "tag"),
+                        captureHorizontalWheel = true,
                     ).apply {
                         batch.results.forEach { item -> add(PosterCard.of(item) { Nav.open(batch.api, item) }) }
                     }
