@@ -16,6 +16,7 @@ import javafx.scene.layout.VBox
 import javafx.util.Duration
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
 
 /** Searches every provider in parallel; each provider's row appears the moment it answers. */
 class SearchPage : StackPane(), Refreshable {
@@ -274,7 +275,9 @@ private class SearchResultsPage(
         status.text = "Loading more from ${api.name}…"
         job = ui.launch {
             val next = runCatching {
-                api.search(query, page + 1)?.items.orEmpty().let(ContentFilter::filter)
+                withTimeout(api.searchTimeoutMs ?: 45_000L) {
+                    api.search(query, page + 1)?.items.orEmpty().let(ContentFilter::filter)
+                }
             }.getOrNull()
             loading = false
             if (next == null) {
