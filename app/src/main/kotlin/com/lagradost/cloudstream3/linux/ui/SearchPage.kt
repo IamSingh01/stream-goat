@@ -7,6 +7,7 @@ import com.lagradost.cloudstream3.linux.PluginManager
 import com.lagradost.cloudstream3.linux.SearchHistory
 import javafx.animation.PauseTransition
 import javafx.geometry.Pos
+import javafx.scene.control.ComboBox
 import javafx.scene.control.ProgressIndicator
 import javafx.scene.control.TextField
 import javafx.scene.layout.FlowPane
@@ -22,7 +23,12 @@ class SearchPage : StackPane(), Refreshable {
         styleClass.setAll("text-field", "search-field")
         promptText = "Search movies, series, anime…"
     }
-    private val filter = ChipGroup { promptText(); run() }
+    private val sourceSelector = ComboBox<String>().apply {
+        styleClass += "source-selector"
+        promptText = "All sources"
+        prefWidth = 260.0
+        setOnAction { promptText(); run() }
+    }
     private var apis: List<MainAPI> = emptyList()
     private val status = hbox(10.0)
     private val results = VBox(30.0)
@@ -57,7 +63,7 @@ class SearchPage : StackPane(), Refreshable {
             }
         }
         field.focusedProperty().addListener { _, _, f -> if (!f) PauseTransition(Duration.millis(150.0)).apply { setOnFinished { hideSuggestions() } }.play() }
-        val top = vbox(16.0, label("Search", "h2"), vbox(6.0, fieldBox, suggestBox), filter, status)
+        val top = vbox(16.0, label("Search", "h2"), vbox(6.0, fieldBox, suggestBox), sourceSelector, status)
         children += pageScroll(vbox(26.0, top, results).pad(22.0, 36.0, 40.0, 36.0))
         ui.launch { PluginManager.version.collect { refreshProviders() } }
     }
@@ -70,14 +76,14 @@ class SearchPage : StackPane(), Refreshable {
     /** Search only [provider] (Home's Search button), or every extension (null). Runs again if there's a search. */
     fun scopeTo(provider: String?) {
         val index = provider?.let { name -> apis.indexOfFirst { it.name == name } }?.takeIf { it >= 0 }
-        filter.select((index ?: -1) + 1, notify = false)
+        sourceSelector.selectionModel.select((index ?: -1) + 1)
         promptText()
         if (field.text.trim().length >= 2 && lastQuery.isNotEmpty()) run()
         javafx.application.Platform.runLater { focusField() }
     }
 
     private fun promptText() {
-        val one = apis.getOrNull(filter.selected - 1)
+        val one = apis.getOrNull(sourceSelector.selectionModel.selectedIndex - 1)
         field.promptText = if (one != null) "Search in ${one.name}…" else "Search movies, series, anime…"
     }
 
@@ -149,14 +155,17 @@ class SearchPage : StackPane(), Refreshable {
 
     private fun refreshProviders() {
         apis = Engine.providers()
-        val names = listOf("All") + apis.map { it.name }
-        filter.setItems(names, filter.selected.coerceAtLeast(0))
+        val selected = sourceSelector.selectionModel.selectedIndex.coerceAtLeast(0)
+        val names = listOf("All sources") + apis.map { it.name }
+        sourceSelector.items.setAll(names)
+        sourceSelector.selectionModel.select(selected.coerceAtMost(names.lastIndex))
+        promptText()
     }
 
     fun run(query: String = field.text.trim()) {
         if (query.length < 2) return
         if (field.text.trim() != query) field.text = query
-        val selected = filter.selected
+        val selected = sourceSelector.selectionModel.selectedIndex
         val targets = if (selected <= 0) apis else listOfNotNull(apis.getOrNull(selected - 1))
         if (targets.isEmpty()) {
             results.children.setAll(emptyState(Icons.EXTENSION, "No extensions installed", "Install extensions from a repository first.",
@@ -239,25 +248,15 @@ private class SearchResultsPage(
         scroll = pageScroll(vbox(24.0, header, grid, footer).pad(22.0, 36.0, 40.0, 36.0))
         children += scroll
         idle()
-        scroll.vvalueProperty().addListener { _, _, _ -> maybeLoad() }
-        scroll.viewportBoundsProperty().addListener { _, _, _ -> maybeLoad() }
-        grid.heightProperty().addListener { _, _, _ -> maybeLoad() }
-        javafx.application.Platform.runLater { maybeLoad() }
+        // View All means the complete provider result set, not just the first batch
+        // visible in Global Search. Fetch subsequent provider pages until exhausted.
+        javafx.application.Platform.runLater { loadMore() }
     }
 
     private fun add(item: com.lagradost.cloudstream3.SearchResponse): Boolean {
         if (!seen.add(item.url)) return false
         grid.children += PosterCard.of(item) { Nav.open(api, item) }
         return true
-    }
-
-    private fun maybeLoad() {
-        if (loading || finished || retry.isVisible || scene == null) return
-        val content = (scroll.content as? javafx.scene.layout.Region)?.height ?: return
-        val viewport = scroll.viewportBounds.height
-        if (viewport > 0 && content - viewport * (1 + scroll.vvalue) < viewport * 1.5) {
-            javafx.application.Platform.runLater { if (!loading && !finished) loadMore() }
-        }
     }
 
     private fun loadMore() {
@@ -289,7 +288,7 @@ private class SearchResultsPage(
                 if (added == 0) finished = true
             }
             idle()
-            if (!finished) maybeLoad()
+            if (!finished) loadMore()
         }
     }
 
