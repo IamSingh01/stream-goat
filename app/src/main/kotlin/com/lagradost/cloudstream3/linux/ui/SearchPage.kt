@@ -27,7 +27,8 @@ class SearchPage : StackPane(), Refreshable {
     private val sourceSelector = ComboBox<String>().apply {
         styleClass += "source-selector"
         promptText = "All sources"
-        prefWidth = 260.0
+        prefWidth = 220.0
+        minWidth = 190.0
         setOnAction { if (!changingSource) { promptText(); run() } }
     }
     private var apis: List<MainAPI> = emptyList()
@@ -65,7 +66,12 @@ class SearchPage : StackPane(), Refreshable {
             }
         }
         field.focusedProperty().addListener { _, _, f -> if (!f) PauseTransition(Duration.millis(150.0)).apply { setOnFinished { hideSuggestions() } }.play() }
-        val top = vbox(16.0, label("Search", "h2"), vbox(6.0, fieldBox, suggestBox), sourceSelector, status)
+        val top = vbox(12.0,
+            label("Search", "h2"),
+            hbox(12.0, fieldBox, sourceSelector),
+            suggestBox,
+            status,
+        )
         children += pageScroll(vbox(26.0, top, results).pad(22.0, 36.0, 40.0, 36.0))
         ui.launch { PluginManager.version.collect { refreshProviders() } }
     }
