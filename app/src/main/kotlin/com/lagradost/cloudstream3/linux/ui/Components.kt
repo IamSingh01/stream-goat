@@ -195,10 +195,15 @@ class WideCard(
 }
 
 /**
- * A titled horizontal row. Mouse-wheel scrolling passes through to the page, while
- * trackpad horizontal swipes, shift+wheel and the arrow buttons move the row.
+ * A titled horizontal row. Horizontal gestures can be captured by this shelf when
+ * explicitly enabled; normal vertical wheel scrolling always remains with the page.
  */
-class Shelf(title: String, private val onViewAll: (() -> Unit)? = null, trailing: Node? = null) : VBox(12.0) {
+class Shelf(
+    title: String,
+    private val onViewAll: (() -> Unit)? = null,
+    trailing: Node? = null,
+    private val captureHorizontalWheel: Boolean = false,
+) : VBox(12.0) {
     val row = HBox(14.0).apply { alignment = Pos.TOP_LEFT }
     // The viewport is as tall as its row (measured, not bound: a binding lags one layout pass,
     // which left rows squashed when their cards arrived after the first layout).
@@ -236,17 +241,15 @@ class Shelf(title: String, private val onViewAll: (() -> Unit)? = null, trailing
         stack.setOnMouseExited { left.opacity = 0.0; right.opacity = 0.0 }
         row.translateXProperty().addListener { _, _, _ -> if (stack.isHover) updateArrows(left, right, true) }
 
-        viewport.addEventFilter(ScrollEvent.SCROLL) { e ->
-            // Route sideways trackpad and mouse-wheel gestures to this shelf only.
-            val delta = when {
-                e.isShiftDown -> e.deltaY
-                kotlin.math.abs(e.deltaX) > 0.5 -> e.deltaX
-                kotlin.math.abs(e.deltaY) > 0.5 -> e.deltaY
-                else -> 0.0
-            }
-            if (delta != 0.0) {
-                move(target + delta * 2.5)
-                e.consume()
+        if (captureHorizontalWheel) {
+            viewport.addEventFilter(ScrollEvent.SCROLL) { e ->
+                // Only sideways trackpad gestures (or Shift+wheel) belong to this shelf.
+                // A regular vertical wheel gesture must continue scrolling the whole page.
+                val delta = if (e.isShiftDown) e.deltaY else e.deltaX
+                if (kotlin.math.abs(delta) > 0.5) {
+                    move(target + delta * 2.0)
+                    e.consume()
+                }
             }
         }
         children.addAll(header, stack)
