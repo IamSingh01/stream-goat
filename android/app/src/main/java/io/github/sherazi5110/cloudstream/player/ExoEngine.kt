@@ -66,6 +66,10 @@ class ExoEngine(context: Context) : PlaybackEngine {
                 // The subtitles go to this app's own subtitle view, in the chosen style (see createView).
                 override fun onCues(cueGroup: androidx.media3.common.text.CueGroup) { styledSubs?.setCues(styled(cueGroup.cues)) }
 
+                // A subtitle file just added (OpenSubtitles, translated, the extension's): selected as soon as
+                // ExoPlayer has it, instead of the track chosen before.
+                override fun onTracksChanged(tracks: Tracks) = onTracksChangedNow()
+
                 override fun onPlaybackStateChanged(state: Int) {
                     when (state) {
                         Player.STATE_BUFFERING -> listener?.onBuffering(true)
@@ -212,7 +216,7 @@ class ExoEngine(context: Context) : PlaybackEngine {
         tracksOf(C.TRACK_TYPE_TEXT).mapIndexed { n, (g, i) -> TrackInfo(idOf(g, i), nameOf(g, i, n + 1)) }
     override fun subtitleTrack() = if (player.trackSelectionParameters.disabledTrackTypes.contains(C.TRACK_TYPE_TEXT)) -1
         else tracksOf(C.TRACK_TYPE_TEXT).firstOrNull { (g, i) -> g.isTrackSelected(i) }?.let { (g, i) -> idOf(g, i) } ?: -1
-    override fun setSubtitle(id: Int) = select(C.TRACK_TYPE_TEXT, id)
+    override fun setSubtitle(id: Int) { pendingSub = null; select(C.TRACK_TYPE_TEXT, id) }
 
     private fun select(type: Int, id: Int) {
         val params = player.trackSelectionParameters.buildUpon()
@@ -225,13 +229,32 @@ class ExoEngine(context: Context) : PlaybackEngine {
     /** ExoPlayer takes subtitle files with the source: it reopens at the same place with the file added. */
     override fun addSubtitle(uri: Uri) {
         val r = request ?: return
-        if (uri in extraSubs) return
+        // The track chosen before (a subtitle inside the video) would stay chosen and hide the added file: cleared,
+        // and the file's own track is selected once it's there (onTracksChanged).
+        player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+            .clearOverridesOfType(C.TRACK_TYPE_TEXT).setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false).build()
+        if (uri in extraSubs) {
+            // Added before (picked again from the list): just select it.
+            pendingSub = "sub${(r.subtitles + extraSubs).distinct().indexOf(uri)}"
+            onTracksChangedNow()
+            return
+        }
         extraSubs += uri
+        pendingSub = "sub${(r.subtitles + extraSubs).distinct().indexOf(uri)}"
         val pos = player.currentPosition
         val playing = player.playWhenReady
         openSource(r.copy(startMs = pos))
         player.playWhenReady = playing
-        player.trackSelectionParameters = player.trackSelectionParameters.buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false).build()
+    }
+
+    /** The subtitle file waiting to be selected ("sub3": its id in the media item). */
+    private var pendingSub: String? = null
+
+    private fun onTracksChangedNow() {
+        val want = pendingSub ?: return
+        val found = tracksOf(C.TRACK_TYPE_TEXT).firstOrNull { (g, i) -> g.getTrackFormat(i).id?.substringAfterLast(':') == want } ?: return
+        pendingSub = null
+        select(C.TRACK_TYPE_TEXT, idOf(found.first, found.second))
     }
 
     override fun reallyEnded() = ended
