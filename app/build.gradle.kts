@@ -26,10 +26,15 @@ dependencies {
     // JavaFX ships per-system native code: build on Windows for the Windows version.
     val windows = System.getProperty("os.name").startsWith("Windows", ignoreCase = true)
     val mac = System.getProperty("os.name").startsWith("Mac", ignoreCase = true)
-    val arm = System.getProperty("os.arch") == "aarch64"
+    val arch = System.getProperty("os.arch")
+    val arm = arch == "aarch64"
     val fxPlatform = when {
         windows -> "win"
-        mac -> if (arm) "mac-aarch64" else "mac"
+        mac -> when (arch) {
+            "aarch64" -> "mac-aarch64"
+            "x86_64", "amd64" -> "mac"
+            else -> error("Unsupported macOS architecture for JavaFX: $arch")
+        }
         arm -> "linux-aarch64"
         else -> "linux"
     }
