@@ -404,7 +404,7 @@ class ExtensionsPage : StackPane(), Refreshable {
                             .onFailure { Toasts.show("Couldn't reinstall: ${it.message ?: it}", seconds = 8.0) }
                         applyFilter(resetPagination = false)
                     }
-                }
+                }.apply { isDisable = installingAll }
                 actions.children += button(null, Icons.DELETE, "btn-danger", "btn-small") { uninstall(row) }.apply { isDisable = installingAll }.tooltip("Uninstall")
             }
         }
