@@ -14,6 +14,7 @@ import javafx.geometry.Pos
 import javafx.scene.Node
 import javafx.scene.control.ProgressIndicator
 import javafx.scene.control.ScrollPane
+import javafx.scene.control.TextField
 import javafx.scene.effect.GaussianBlur
 import javafx.scene.image.ImageView
 import javafx.scene.layout.FlowPane
@@ -99,10 +100,11 @@ class HomePage : StackPane(), Refreshable, TopBarActions {
     }
 
     private fun showSourceMenu() {
-        val rows = sources.map { src ->
+        val sourceRows = VBox(2.0)
+        fun sourceRow(src: Source): Node {
             val row = Popover.row(if (src.key == FEED) icon(Icons.APPS, 18.0) else label(src.label.filter { it.isLetterOrDigit() }.take(2).uppercase(), "provider-badge", "small-badge"),
                 src.label, if (src.key == FEED) "${src.apis.size} extensions" else null, selected = src == current) { select(src) }
-            if (Profiles.isKids) return@map row
+            if (Profiles.isKids) return row
             // Edit this extension's catalogs (or the feed) right from the menu.
             val tune = StackPane(icon(Icons.TUNE, 16.0)).apply {
                 styleClass += "popover-tune"
@@ -114,16 +116,47 @@ class HomePage : StackPane(), Refreshable, TopBarActions {
                 }
             }
             (row as javafx.scene.layout.HBox).children += tune
-            row
-        }.toMutableList()
-        if (rows.isNotEmpty()) rows += Popover.separator()
-        if (!Profiles.isKids) rows += Popover.row(icon(Icons.TUNE, 18.0), "Customize home…") { Nav.window.showOverlay(HomeManager(providers, null)) }
-        rows += Popover.row(icon(Icons.REFRESH, 18.0), "Reload") { current?.let { select(it, force = true) } }
-        Popover.show(sourceButton, Popover.panel(*rows.toTypedArray()))
+            return row
+        }
+        fun filterSources(query: String) {
+            val matches = sources.filter { it.label.contains(query.trim(), ignoreCase = true) }
+            sourceRows.children.setAll(
+                if (matches.isEmpty()) listOf(label("No matching sources", "muted").pad(8.0))
+                else matches.map(::sourceRow)
+            )
+        }
+
+        val search = TextField().apply {
+            promptText = "Search installed extensions…"
+            styleClass += "text-field"
+            prefWidth = 300.0
+            maxWidth = Double.MAX_VALUE
+            textProperty().addListener { _, _, value -> filterSources(value ?: "") }
+        }
+        filterSources("")
+        val sourceScroll = ScrollPane(sourceRows).apply {
+            isFitToWidth = true
+            hbarPolicy = ScrollPane.ScrollBarPolicy.NEVER
+            vbarPolicy = ScrollPane.ScrollBarPolicy.AS_NEEDED
+            prefViewportHeight = 320.0
+            maxHeight = 320.0
+            minHeight = 80.0
+            styleClass += "popover-scroll"
+        }
+        val actions = mutableListOf<Node>()
+        if (!Profiles.isKids) actions += Popover.row(icon(Icons.TUNE, 18.0), "Customize home…") { Nav.window.showOverlay(HomeManager(providers, null)) }
+        actions += Popover.row(icon(Icons.REFRESH, 18.0), "Reload") { current?.let { select(it, force = true) } }
+        val panel = VBox(8.0, search, sourceScroll, Popover.separator(), *actions.toTypedArray()).apply {
+            padding = javafx.geometry.Insets(8.0)
+            minWidth = 320.0
+        }
+        Popover.show(sourceButton, panel)
     }
 
     private fun refreshProviders(force: Boolean = false) {
-        val fresh = Engine.providers().filter { it.hasMainPage }
+        // Include every provider available to this profile, not only extensions with Home catalogs.
+        // Providers without a Home page are still valid sources for Search.
+        val fresh = Engine.providers()
         val feed = Catalogs.feedProviders(fresh).takeIf { Catalogs.multiFeed && it.isNotEmpty() }
         val fresher = listOfNotNull(feed?.let { Source(FEED, "My feed", it) }) + fresh.map { Source(it.name, it.name, listOf(it)) }
         if (!force && fresher == sources && current != null) return
