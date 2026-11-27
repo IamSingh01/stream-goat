@@ -70,7 +70,7 @@ object Updates {
         val json = JSONObject(app.get("https://api.github.com/repos/$REPO/releases/" + if (test) "tags/test-build" else "latest", timeout = 15).text)
         val assets = json.optJSONArray("assets") ?: org.json.JSONArray()
         fun asset(name: String) = (0 until assets.length()).map { assets.getJSONObject(it) }.firstOrNull { it.optString("name") == name }
-        val props = asset("streamgoat-update-$osKey.properties")?.let { a ->
+        val props = asset("roarstream-update-$osKey.properties")?.let { a ->
             runCatching { java.util.Properties().apply { load(java.io.StringReader(app.get(a.optString("browser_download_url"), timeout = 15).text)) } }.getOrNull()
         }
         val page = json.optString("html_url", if (test) TEST_BUILDS else RELEASES)
@@ -84,7 +84,7 @@ object Updates {
             if (!newer(tag, current)) return@withContext null
             Release(tag.trimStart('v', 'V'), page, props?.getProperty("build"))
         }
-        val zip = asset("streamgoat-update-$osKey.zip")
+        val zip = asset("roarstream-update-$osKey.zip")
         val patch = if (props != null && zip != null && props.getProperty("version") == release.version && patchFits(props))
             Patch(zip.optString("browser_download_url"), zip.optLong("size"), props) else null
         release.copy(patch = patch)
