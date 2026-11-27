@@ -101,8 +101,22 @@ class SearchPageUiTest {
         assertEquals("Try again", retry.text)
         assertEquals(0, viewAll.automationResultCount())
         assertTrue(viewAll.automationHasNext())
-        // This button is the actual retry control shown by the View All screen.
-        // A separate page-session test verifies retry after a simulated provider failure.
+        val viewAllStage = Stage()
+        onFx {
+            viewAllStage.scene = Scene(viewAll, 1000.0, 700.0)
+            viewAllStage.show()
+            retry.isVisible = true
+            retry.isManaged = true
+        }
+        // Click the real retry control, then wait for the deterministic page response.
+        robot.clickOn(retry)
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+        while (System.nanoTime() < deadline && onFx { viewAll.automationHasNext() }) {
+            Thread.sleep(25)
+        }
+        assertTrue(!onFx { viewAll.automationHasNext() })
+        assertEquals("That's everything · 0 titles", onFx { viewAll.automationStatusLabel().text })
+        onFx { viewAllStage.close() }
     }
 
     private fun <T> onFx(block: () -> T): T {
