@@ -60,7 +60,7 @@ class ExoEngine(context: Context) : PlaybackEngine {
             .setTargetBufferBytes(memMb * 1024 * 1024)
             .setPrioritizeTimeOverSizeThresholds(false)
             .build()
-        val renderers = DefaultRenderersFactory(appContext).setEnableDecoderFallback(true)
+        val renderers = WithFfmpegAudio(appContext).setEnableDecoderFallback(true)
         ExoPlayer.Builder(appContext, renderers).setLoadControl(load).build().apply {
             addListener(object : Player.Listener {
                 // The subtitles go to this app's own subtitle view, in the chosen style (see createView).
@@ -332,5 +332,25 @@ class ExoEngine(context: Context) : PlaybackEngine {
         playerView = null
         runCatching { loudness?.release() }
         player.release()
+    }
+}
+
+/**
+ * ExoPlayer's renderers plus FFmpeg's audio decoders after the device's own (NextLib): a sound the device can't decode
+ * (Dolby Digital Plus "DDP 5.1", DTS, TrueHD on many phones) is decoded by FFmpeg instead of playing silently. The
+ * device's decoders come first, so passthrough to a receiver and hardware decoding are unchanged.
+ */
+@OptIn(UnstableApi::class)
+private class WithFfmpegAudio(context: Context) : DefaultRenderersFactory(context) {
+    override fun buildAudioRenderers(
+        context: Context, extensionRendererMode: Int, mediaCodecSelector: androidx.media3.exoplayer.mediacodec.MediaCodecSelector,
+        enableDecoderFallback: Boolean, audioSink: androidx.media3.exoplayer.audio.AudioSink, eventHandler: Handler,
+        eventListener: androidx.media3.exoplayer.audio.AudioRendererEventListener, out: java.util.ArrayList<androidx.media3.exoplayer.Renderer>,
+    ) {
+        super.buildAudioRenderers(context, extensionRendererMode, mediaCodecSelector, enableDecoderFallback, audioSink, eventHandler, eventListener, out)
+        runCatching {
+            if (io.github.anilbeesetti.nextlib.media3ext.ffdecoder.FfmpegLibrary.isAvailable())
+                out += io.github.anilbeesetti.nextlib.media3ext.ffdecoder.FfmpegAudioRenderer(eventHandler, eventListener, audioSink)
+        }.onFailure { android.util.Log.w("StreamGoat", "FFmpeg audio decoders unavailable", it) }
     }
 }

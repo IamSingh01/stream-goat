@@ -149,6 +149,10 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer-dash:$media3")
     implementation("androidx.media3:media3-datasource-okhttp:$media3")
     implementation("androidx.media3:media3-ui:$media3")
+    // FFmpeg's audio decoders for ExoPlayer (NextLib, GPL-3.0 like this app; the one Next Player uses, built for this
+    // Media3 version): Dolby (AC-3, E-AC-3 "DDP"), DTS, TrueHD… on phones without their own decoder, which played
+    // such films without sound (issue #78). The device's decoders still come first.
+    implementation("io.github.anilbeesetti:nextlib-media3ext:$media3-0.19.0")
     // Torrent streaming (opt-in, Settings → Player): libtorrent through libtorrent4j, native code for each ABI.
     val libtorrent = "2.1.0-39"
     implementation("org.libtorrent4j:libtorrent4j:$libtorrent")
