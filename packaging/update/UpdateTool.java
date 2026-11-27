@@ -11,7 +11,7 @@ import java.util.zip.*;
  *   cert <keystore> <storepass> <alias> <out.pem>
  *       The signing key's certificate, built into the app so it can check patches (Boot.verify).
  *   make <libdir> <outdir> <os> <version> <build> <keystore> <storepass> <alias> <keypass>
- *       outdir/streamgoat-update-<os>.zip: Stream Goat's own jars, patch.properties (version, build, the jars'
+ *       outdir/roarstream-update-<os>.zip: RoarStream's own jars, patch.properties (version, build, the jars'
  *       SHA-256 and the SHA-256 of every other jar it needs unchanged) and patch.sig, its signature;
  *       outdir/streamgoat-update-<os>.properties: the same properties, for checking without the download.
  *
