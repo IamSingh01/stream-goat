@@ -145,12 +145,12 @@ val packageWindows by tasks.registering(Exec::class) {
     commandLine(buildList {
         addAll(listOf("jpackage", "--type", type, "--name", "RoarStream", "--app-version", version))
         addAll(listOf("--vendor", "Aman Singh", "--dest", out.get().asFile.path))
-        addAll(listOf("--description", "Stream Goat: movies, series, anime and Live TV from CloudStream extensions"))
+        addAll(listOf("--description", "RoarStream: movies, series, anime and live TV"))
         if (type == "app-image") {
             addAll(listOf("--input", input.get().asFile.path, "--main-jar", "app.jar", "--main-class", application.mainClass.get()))
             addAll(listOf("--icon", rootProject.file("packaging/windows/cloudstream.ico").path))
-            // A second launcher with a console window for the command line (streamgoat-cli.exe doctor, install…).
-            addAll(listOf("--add-launcher", "streamgoat-cli=" + rootProject.file("packaging/windows/cli-launcher.properties").path))
+            // A second launcher with a console window for the command line (roarstream-cli.exe doctor, install…).
+            addAll(listOf("--add-launcher", "roarstream-cli=" + rootProject.file("packaging/windows/cli-launcher.properties").path))
             addAll(listOf("--jlink-options", "--strip-debug --no-man-pages --no-header-files --strip-native-commands"))
             addAll(listOf("--add-modules", listOf(
                 "java.base", "java.desktop", "java.logging", "java.management", "java.naming", "java.net.http",
@@ -171,7 +171,7 @@ val packageWindows by tasks.registering(Exec::class) {
 
 // macOS (Apple Silicon): RoarStream.app with its own Java runtime and VLC, and a .dmg, built with the JDK's
 // jpackage on a Mac (CI: .github/workflows/macos.yml). The VLC folder is VLC.app's Contents/MacOS (lib/, plugins/).
-//   ./gradlew :app:packageMac -PvlcDir=/path/to/vlc                      -> build/jpackage-mac/Stream Goat.app
+//   ./gradlew :app:packageMac -PvlcDir=/path/to/vlc                      -> build/jpackage-mac/RoarStream.app
 //   ./gradlew :app:packageMac -PvlcDir=... -PjpackageType=dmg             -> build/jpackage-mac/RoarStream-<v>.dmg
 val packageMac by tasks.registering(Exec::class) {
     group = "distribution"
@@ -182,22 +182,44 @@ val packageMac by tasks.registering(Exec::class) {
     val version = file("src/main/kotlin/com/lagradost/cloudstream3/linux/ui/AppWindow.kt").readText()
         .let { Regex("VERSION = \"([0-9.]+)").find(it)!!.groupValues[1] }
     val type = (findProperty("jpackageType") as String?) ?: "app-image"
+    val iconFile = layout.buildDirectory.file("generated/branding/RoarStream.icns")
     doFirst {
         val inDir = input.get().asFile.apply { deleteRecursively(); mkdirs() }
         lib.get().asFile.copyRecursively(inDir)
-        // VLC's lib/ and plugins/ go into Stream Goat.app/Contents/app/vlc; see Os.bundledVlcDir.
+        // Build the macOS icon from the supplied RoarStream lion asset.
+        val iconset = layout.buildDirectory.dir("generated/branding/RoarStream.iconset").get().asFile
+        iconset.deleteRecursively()
+        iconset.mkdirs()
+        val sourceIcon = rootProject.file("app/src/main/resources/ui/icon.png")
+        val iconSizes = listOf(
+            16 to "icon_16x16.png", 32 to "icon_16x16@2x.png",
+            32 to "icon_32x32.png", 64 to "icon_32x32@2x.png",
+            128 to "icon_128x128.png", 256 to "icon_128x128@2x.png",
+            256 to "icon_256x256.png", 512 to "icon_256x256@2x.png",
+            512 to "icon_512x512.png", 1024 to "icon_512x512@2x.png",
+        )
+        iconSizes.forEach { (size, name) ->
+            val result = ProcessBuilder("sips", "-z", size.toString(), size.toString(), sourceIcon.path,
+                "--out", iconset.resolve(name).path).inheritIO().start().waitFor()
+            check(result == 0) { "sips failed while generating $name" }
+        }
+        iconFile.get().asFile.parentFile.mkdirs()
+        val iconResult = ProcessBuilder("iconutil", "-c", "icns", iconset.path, "-o", iconFile.get().asFile.path)
+            .inheritIO().start().waitFor()
+        check(iconResult == 0 && iconFile.get().asFile.isFile) { "Could not create the RoarStream .icns icon" }
+        // VLC's lib/ and plugins/ go into RoarStream.app/Contents/app/vlc; see Os.bundledVlcDir.
         (findProperty("vlcDir") as String?)?.let { file(it).copyRecursively(inDir.resolve("vlc")) }
         // libmpv (the main player, see ui/Mpv.kt) goes into <app>/mpv.
         (findProperty("mpvDir") as String?)?.let { file(it).copyRecursively(inDir.resolve("mpv")) }
         if (type == "app-image") out.get().asFile.deleteRecursively()
     }
     commandLine(buildList {
-        addAll(listOf("jpackage", "--type", type, "--name", "Stream Goat", "--app-version", version))
-        addAll(listOf("--vendor", "Syed Ali Hamza", "--dest", out.get().asFile.path))
-        addAll(listOf("--description", "Stream Goat: movies, series, anime and Live TV from CloudStream extensions"))
+        addAll(listOf("jpackage", "--type", type, "--name", "RoarStream", "--app-version", version))
+        addAll(listOf("--vendor", "Aman Singh", "--dest", out.get().asFile.path))
+        addAll(listOf("--description", "RoarStream: movies, series, anime and live TV"))
         if (type == "app-image") {
             addAll(listOf("--input", input.get().asFile.path, "--main-jar", "app.jar", "--main-class", application.mainClass.get()))
-            addAll(listOf("--icon", rootProject.file("packaging/macos/RoarStream.icns").path))
+            addAll(listOf("--icon", iconFile.get().asFile.path))
             addAll(listOf("--mac-package-identifier", "com.aman.roarstream", "--mac-package-name", "RoarStream"))
             addAll(listOf("--mac-app-category", "public.app-category.entertainment"))
             addAll(listOf("--jlink-options", "--strip-debug --no-man-pages --no-header-files --strip-native-commands"))
@@ -209,7 +231,7 @@ val packageMac by tasks.registering(Exec::class) {
             application.applicationDefaultJvmArgs.forEach { addAll(listOf("--java-options", it)) }
         } else {
             // The .dmg wraps the app image built (and signed) first, with a link to Applications to drag it to.
-            addAll(listOf("--app-image", out.get().asFile.resolve("Stream Goat.app").path))
+            addAll(listOf("--app-image", out.get().asFile.resolve("RoarStream.app").path))
         }
     })
 }
