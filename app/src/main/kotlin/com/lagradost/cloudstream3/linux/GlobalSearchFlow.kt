@@ -53,7 +53,7 @@ class ViewAllSearchSession<T, K>(
     val items: List<T> get() = mutableItems.toList()
     private var page = 1
     private var pagination = SearchPaginationState(hasNext = firstHasNext)
-    val hasNext: Boolean get() = pagination.canLoadNext || (pagination.hasNext && !pagination.loading && pagination.pagesFetched < 100)
+    val hasNext: Boolean get() = pagination.hasNext && !pagination.loading && pagination.pagesFetched < 100
 
     suspend fun loadNext(): Boolean {
         if (!pagination.canLoadNext) return false
@@ -64,6 +64,9 @@ class ViewAllSearchSession<T, K>(
             response.items.forEach { item -> if (seen.add(keyOf(item))) mutableItems += item }
             pagination = pagination.pageLoaded(response.hasNext)
             true
+        } catch (cancelled: CancellationException) {
+            pagination = pagination.pageFailed()
+            throw cancelled
         } catch (_: Throwable) {
             pagination = pagination.pageFailed()
             false
