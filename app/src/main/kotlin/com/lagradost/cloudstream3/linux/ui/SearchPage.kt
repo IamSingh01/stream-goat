@@ -238,10 +238,7 @@ private class SearchResultsPage(
 ) : StackPane(), Disposable {
     private val grid = FlowPane(18.0, 22.0)
     private val seen = HashSet<String>()
-    private var page = 1
-    private var loading = false
-    private var hasNext = firstHasNext
-    private var finished = !firstHasNext
+    private val pagination = com.lagradost.cloudstream3.linux.SearchPagination(firstHasNext)
     private var job: Job? = null
     private val spinner = ProgressIndicator().apply { setPrefSize(22.0, 22.0); setMaxSize(22.0, 22.0) }
     private val status = label("", "muted")
@@ -273,8 +270,7 @@ private class SearchResultsPage(
     }
 
     private fun loadMore() {
-        if (loading || finished) return
-        loading = true
+        val nextPage = pagination.nextPage() ?: return
         retry.isVisible = false
         retry.isManaged = false
         spinner.isVisible = true
@@ -282,10 +278,10 @@ private class SearchResultsPage(
         status.text = "Loading more from ${api.name}…"
         job = ui.launch {
             val response = runCatching {
-                withTimeout(api.searchTimeoutMs ?: 45_000L) { api.search(query, page + 1) }
+                withTimeout(api.searchTimeoutMs ?: 45_000L) { api.search(query, nextPage) }
             }.getOrNull()
-            loading = false
             if (response == null) {
+                pagination.pageFailed()
                 spinner.isVisible = false
                 spinner.isManaged = false
                 status.text = "Couldn't load more results."
@@ -293,19 +289,17 @@ private class SearchResultsPage(
                 retry.isManaged = true
                 return@launch
             }
-            page++
-            hasNext = response.hasNext
+            pagination.pageLoaded(response.hasNext)
             response.items.let(ContentFilter::filter).forEach { add(it) }
-            finished = !hasNext
             idle()
-            if (hasNext) loadMore()
+            if (!pagination.finished) loadMore()
         }
     }
 
     private fun idle() {
         spinner.isVisible = false
         spinner.isManaged = false
-        status.text = if (finished) "That's everything · ${grid.children.size} titles" else ""
+        status.text = if (pagination.finished) "That's everything · ${grid.children.size} titles" else ""
     }
 
     override fun dispose() {
