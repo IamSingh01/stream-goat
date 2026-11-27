@@ -151,7 +151,7 @@ public final class Boot {
         System.err.println("update: starting " + p.getProperty("version") + " (" + p.getProperty("build") + ")");
         System.setProperty("roarstream.patch", p.getProperty("version", "") + " " + p.getProperty("build", ""));
         // Nothing is shared with the installed copies: every class (JavaFX, VLC, the app) comes from this loader.
-        return new URLClassLoader("streamgoat-update", urls.toArray(new URL[0]), ClassLoader.getPlatformClassLoader());
+        return new URLClassLoader("roarstream-update", urls.toArray(new URL[0]), ClassLoader.getPlatformClassLoader());
     }
 
     /** Checks [sig] over [data] with the certificate the installed app was built with (none: patches are off). */
