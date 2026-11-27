@@ -92,12 +92,16 @@ fun TvScale(content: @Composable () -> Unit) {
 @Composable
 fun AppRoot() {
     val top = Nav.top
+    // What each screen remembers (the Library tab you were on, the Settings section, scroll positions): kept here,
+    // above the player, so playing a video and coming back doesn't reset it (it used to: Downloads → My list).
+    val saved = rememberSaveableStateHolder()
     BackHandler(enabled = Nav.stack.isNotEmpty() || Nav.tab != Tab.HOME) { Nav.back() }
     // Leaving the Music section stops the music (it keeps playing with the screen off or the app in the background).
     androidx.compose.runtime.LaunchedEffect(Nav.tab) {
         if (Nav.tab != Tab.MUSIC && io.github.sherazi5110.cloudstream.Music.current != null) io.github.sherazi5110.cloudstream.Music.stop()
     }
-    BoxWithConstraints(Modifier.fillMaxSize().background(Palette.background)) {
+    FocusKeeperRoot { keeper ->
+    BoxWithConstraints(keeper.fillMaxSize().background(Palette.background)) {
         if (ThemeState.mode == ThemeMode.GLASS) GlassBackdrop(Modifier.fillMaxSize())
         val wide = isTv || maxWidth > maxHeight
         CompositionLocalProvider(LocalWide provides wide) {
@@ -112,7 +116,7 @@ fun AppRoot() {
             if (wide) Row(Modifier.fillMaxSize()) {
                 Rail()
                 Box(Modifier.weight(1f).fillMaxHeight()) {
-                    Content(top)
+                    Content(top, saved)
                     if (top == null) MiniPlayer(Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp).widthIn(max = 720.dp))
                 }
             } else if (Palette.isGlass && top == null) {
@@ -120,14 +124,14 @@ fun AppRoot() {
                 val haze = dev.chrisbanes.haze.rememberHazeState()
                 Box(Modifier.fillMaxSize()) {
                     CompositionLocalProvider(LocalBottomInset provides 88.dp) {
-                        Box(Modifier.fillMaxSize().hazeSource(haze)) { Content(top) }
+                        Box(Modifier.fillMaxSize().hazeSource(haze)) { Content(top, saved) }
                     }
                     CompositionLocalProvider(Glass.LocalHaze provides haze) {
                         Column(Modifier.align(Alignment.BottomCenter)) { MiniPlayer(); BottomBar() }
                     }
                 }
             } else Column(Modifier.fillMaxSize()) {
-                Box(Modifier.weight(1f)) { Content(top) }
+                Box(Modifier.weight(1f)) { Content(top, saved) }
                 if (top == null) { MiniPlayer(Modifier.padding(top = 6.dp)); BottomBar() }
             }
             ProfileOverlays()
@@ -137,12 +141,12 @@ fun AppRoot() {
             CloudDialogs()
         }
     }
+    }
 }
 
 @Composable
-private fun Content(top: Screen?) {
-    // Each tab keeps its scroll position when you come back to it.
-    val holder = rememberSaveableStateHolder()
+private fun Content(top: Screen?, holder: androidx.compose.runtime.saveable.SaveableStateHolder) {
+    // Each tab and screen keeps its state (scroll position, chosen tab or section) when you come back to it.
     when (top) {
         null -> holder.SaveableStateProvider(Nav.tab.name) {
             when (Nav.tab) {
@@ -158,11 +162,11 @@ private fun Content(top: Screen?) {
             }
         }
         is Screen.Details -> holder.SaveableStateProvider("details|${top.apiName}|${top.url}") { DetailsScreen(top) }
-        is Screen.Catalog -> CatalogScreen(top)
-        is Screen.Repository -> RepositoryScreen(top)
+        is Screen.Catalog -> holder.SaveableStateProvider("catalog|${top.apiName}|${top.sectionName}") { CatalogScreen(top) }
+        is Screen.Repository -> holder.SaveableStateProvider("repo|${top.url}") { RepositoryScreen(top) }
         is Screen.ProviderTests -> ProviderTestsScreen()
         is Screen.AddFromPhone -> AddFromPhoneScreen()
-        is Screen.SettingsPage -> SettingsPageScreen(top)
+        is Screen.SettingsPage -> holder.SaveableStateProvider("settings|${top.section}") { SettingsPageScreen(top) }
         is Screen.Player, is Screen.WebPlayer -> Unit
     }
 }
@@ -173,8 +177,10 @@ private fun Content(top: Screen?) {
  */
 @Composable
 fun TopBar(modifier: Modifier = Modifier, start: @Composable () -> Unit = {}) {
+    // Reached with ↑ (or from the side bar), not with → at the end of a row (it used to jump to Search or the profile).
+    NavArea("top bar", listOf(androidx.compose.ui.focus.FocusDirection.Up)) { nav ->
     Row(
-        modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 24.dp, vertical = 10.dp),
+        nav.then(modifier).fillMaxWidth().statusBarsPadding().padding(horizontal = 24.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         start()
@@ -190,6 +196,7 @@ fun TopBar(modifier: Modifier = Modifier, start: @Composable () -> Unit = {}) {
         }
         Spacer(Modifier.width(10.dp))
         ProfileButton(30.dp, showName = true)
+    }
     }
 }
 
@@ -212,8 +219,9 @@ private fun BottomBar() {
         val tabs = visibleTabs(listOf(Tab.HOME, Tab.LIVE, Tab.SPORTS, Tab.SEARCH, Tab.MUSIC, Tab.YOUTUBE, Tab.LIBRARY))
         // Room for every tab at full size with the chosen one's name (about 48 units each, plus ~75 for the name)?
         val compact = maxWidth < (48 * (tabs.size + 1) + 75 + 40).dp
+        NavArea("bottom bar", listOf(androidx.compose.ui.focus.FocusDirection.Down)) { nav ->
         Row(
-            (if (Palette.isGlass) Modifier.glassPanel(RoundedCornerShape(50)) else Modifier.shadow(12.dp, RoundedCornerShape(50))
+            nav.then(if (Palette.isGlass) Modifier.glassPanel(RoundedCornerShape(50)) else Modifier.shadow(12.dp, RoundedCornerShape(50))
                 .background(pillColor, RoundedCornerShape(50)).border(1.dp, pillEdge, RoundedCornerShape(50))).padding(5.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(2.dp),
@@ -227,6 +235,7 @@ private fun BottomBar() {
             }
             Box(Modifier.padding(horizontal = if (compact) 3.dp else 6.dp).width(1.dp).height(22.dp).background(Color.White.copy(alpha = 0.18f)))
             PillItem(Tab.MORE, Icons.Filled.Settings, vertical = false, compact = compact)
+        }
         }
     }
 }
@@ -245,7 +254,9 @@ private fun Rail() {
         val free = maxHeight - logo - avatar - 16.dp /* breathing room */ - 12.dp /* pill padding */ - (if (settings) 7.dp else 0.dp)
         val gap = if (free / count >= 54.dp) 6.dp else 3.dp
         val item = ((free - gap * (count - 1)) / count).coerceIn(34.dp, 48.dp)
-        Column(Modifier.fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally) {
+        // Reached with ← from the page; a lost selection never lands here by itself (it used to: the Home icon).
+        NavArea("side bar", listOf(androidx.compose.ui.focus.FocusDirection.Left)) { nav ->
+        Column(nav.fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally) {
             Logo(logo)
             Spacer(Modifier.weight(1f))
             Column(
@@ -262,6 +273,7 @@ private fun Rail() {
             }
             Spacer(Modifier.weight(1f))
             ProfileButton(avatar)
+        }
         }
     }
 }

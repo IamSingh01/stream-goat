@@ -36,16 +36,19 @@ import java.security.MessageDigest
  *
  * The backup (the same file as Settings → Backup) is kept in a "Stream Goat backups" folder in My Drive (scope
  * drive.file: the app sees only the files it created itself, never the rest of the Drive; Google's code sign-in
- * doesn't allow the hidden app folder, drive.appdata). Each device keeps its own backup file, so a
- * phone and a TV on the same account don't overwrite each other, and Restore lists every device's backup (restore
- * the phone's on the TV). With automatic backup on, it's uploaded when something changed (checked every 5 minutes
- * and when the app goes to the background).
+ * doesn't allow the hidden app folder, drive.appdata). Every device (phone, TV, Windows, Mac, Linux) shares one
+ * backup file and keeps it in sync: each merges its changes with the file instead of overwriting it (BackupMerge),
+ * so My list, history, progress, watched marks, extensions and the rest are the same everywhere; each device's own
+ * settings stay on it. With automatic backup on, it syncs when the app starts and comes back, when it goes to the
+ * background, and every 5 minutes. (Older versions kept one file per device: they're merged in and moved to trash.)
  *
  * The Google client id comes from the build (GitHub secrets GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET, see
  * docs/google-drive-setup.md). Builds without it show that Google sign-in isn't set up.
  */
 object CloudBackup {
     const val FILE_PREFIX = "stream-goat-backup"
+    /** The one backup every device shares and keeps in sync (older versions kept one file per device). */
+    const val SHARED = "$FILE_PREFIX.json"
     /** Automatic backup: checked this often, uploaded only when something changed. */
     const val AUTO_INTERVAL_MS = 5 * 60_000L
     const val SCOPE = "https://www.googleapis.com/auth/drive.file"
@@ -277,6 +280,7 @@ object CloudBackup {
 
     private fun forget() {
         prefs.edit().remove("access").remove("access_until").remove("refresh").remove("email").remove("last_backup").remove("last_hash").commit()
+        runCatching { baseFile.delete() }
         publish()
     }
 
@@ -289,15 +293,20 @@ object CloudBackup {
 
     // ------------------------------------------------------------------ backup file
 
-    /** A backup in Drive: which device saved it, when, with which app version. */
-    data class Remote(val id: String, val modified: String, val device: String?, val app: String?, val size: Long, val deviceId: String?) {
-        /** This device's own backup. */
-        val mine: Boolean get() = deviceId != null && deviceId == CloudBackup.deviceId
+    /** A backup in Drive: the shared one ([SHARED], every device's) or an old one of a single device. */
+    data class Remote(
+        val id: String, val modified: String, val device: String?, val app: String?, val size: Long, val deviceId: String?,
+        val name: String = "",
+    ) {
+        /** The one backup every device shares and keeps in sync. */
+        val shared: Boolean get() = name == SHARED
+        /** This device's own old backup (from before the shared one). */
+        val mine: Boolean get() = !shared && deviceId != null && deviceId == CloudBackup.deviceId
         /** When it was saved, in milliseconds (0 if unknown). */
         val time: Long get() = runCatching { java.time.Instant.parse(modified).toEpochMilli() }.getOrDefault(0)
     }
 
-    /** Every device's backup in this account, newest first. */
+    /** The shared backup first, then any old ones, newest first. */
     suspend fun backups(): List<Remote> {
         val q = URLEncoder.encode("name contains '$FILE_PREFIX' and trashed = false", "UTF-8")
         val (code, body) = drive(Request.Builder().url(
@@ -308,8 +317,8 @@ object CloudBackup {
             val f = files.getJSONObject(i)
             val props = f.optJSONObject("appProperties")
             Remote(f.getString("id"), f.optString("modifiedTime"), props?.optString("device")?.ifBlank { null }, props?.optString("app")?.ifBlank { null },
-                f.optString("size").toLongOrNull() ?: 0, props?.optString("deviceId")?.ifBlank { null })
-        }.sortedByDescending { it.time }
+                f.optString("size").toLongOrNull() ?: 0, props?.optString("deviceId")?.ifBlank { null }, f.optString("name"))
+        }.sortedWith(compareByDescending<Remote> { it.shared }.thenByDescending { it.time })
     }
 
     /** The "Stream Goat backups" folder: the one the app made before (on any device), or a new one. */
@@ -324,37 +333,94 @@ object CloudBackup {
         return JSONObject(answer).getString("id")
     }
 
-    /** The newest backup of any device. */
+    /** The shared backup (or, before there is one, the newest old one). */
     suspend fun remote(): Remote? = backups().firstOrNull()
 
-    /** Removes one device's backup (an old phone, a reset TV). */
+    /** Removes a backup from Drive. */
     suspend fun delete(remote: Remote) {
         val (code, _) = drive(Request.Builder().url("${endpoints.drive}/files/${remote.id}").delete())
         if (code !in 200..299 && code != 404) throw CloudException("Drive answered $code")
     }
 
+    /** Moves a backup to Drive's trash (Google keeps it there for 30 days). */
+    private suspend fun trash(remote: Remote) {
+        val (code, _) = drive(Request.Builder().url("${endpoints.drive}/files/${remote.id}")
+            .patch(JSONObject().put("trashed", true).toString().toRequestBody(json)))
+        if (code !in 200..299 && code != 404) throw CloudException("Drive answered $code")
+    }
+
+    private suspend fun download(remote: Remote): String {
+        val (code, content) = drive(Request.Builder().url("${endpoints.drive}/files/${remote.id}?alt=media"))
+        if (code != 200) throw CloudException("Drive answered $code")
+        return content
+    }
+
+    /**
+     * The shared backup as this device last synced it (which file, its version, its content): what changed since,
+     * here and there, is merged. Only for that file: another account's (or a re-made) file starts afresh, so
+     * nothing is removed because it's missing there.
+     */
+    private class Base(val fileId: String, val stamp: String, val stores: JSONObject)
+    private val baseFile get() = java.io.File(App.context.filesDir, "cloud_sync_base.json")
+    private fun readBase(): Base? = runCatching {
+        val o = JSONObject(baseFile.readText()); Base(o.getString("file"), o.getString("stamp"), o.getJSONObject("stores"))
+    }.getOrNull()
+    private fun writeBase(fileId: String, stamp: String, stores: JSONObject) {
+        runCatching { baseFile.writeText(JSONObject().put("file", fileId).put("stamp", stamp).put("stores", stores).toString()) }
+    }
+
     private val backupLock = Mutex()
 
-    /** Uploads the backup now (or only if it changed). Returns false when there was nothing new to upload. */
+    /**
+     * Syncs this device with the shared backup: downloads it, merges it with what's here both ways (BackupMerge:
+     * what changed on either side is kept), keeps the result here and uploads it in place of the old one. The
+     * first time, the old one-file-per-device backups are merged in too (the newest of each device) and moved to
+     * Drive's trash. With [onlyIfChanged], does nothing when nothing changed here or there (returns false).
+     */
     suspend fun backupNow(onlyIfChanged: Boolean = false): Boolean = backupLock.withLock {
-        val content = withContext(Dispatchers.IO) { Backup.export() }
-        val hash = hashOf(content)
-        if (onlyIfChanged && hash == prefs.getString("last_hash", null)) return false
-        publish(busy = "Backing up…")
         try {
-            val existing = backups().firstOrNull { it.deviceId == deviceId }
-            val meta = JSONObject().put("name", "$FILE_PREFIX-$deviceId.json")
-                .put("appProperties", JSONObject().put("device", "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}").put("app", runCatching { App.context.packageManager.getPackageInfo(App.context.packageName, 0).versionName }.getOrNull() ?: "?").put("deviceId", deviceId))
-            if (existing == null) meta.put("parents", org.json.JSONArray().put(folder()))
-            val body = MultipartBody.Builder().setType("multipart/related".toMediaType())
-                .addPart(meta.toString().toRequestBody(json))
-                .addPart(content.toRequestBody(json))
-                .build()
-            val request = if (existing == null) Request.Builder().url("${endpoints.upload}/files?uploadType=multipart&fields=id").post(body)
-            else Request.Builder().url("${endpoints.upload}/files/${existing.id}?uploadType=multipart&fields=id").patch(body)
-            val (code, answer) = drive(request)
-            if (code !in 200..299) throw CloudException("Drive answered $code: ${answer.take(200)}")
-            prefs.edit().putLong("last_backup", System.currentTimeMillis()).putString("last_hash", hash).apply()
+            val all = backups()
+            val main = all.firstOrNull { it.shared }
+            val old = all.filter { it !== main }
+            val local = withContext(Dispatchers.IO) { BackupMerge.content(Backup.stores(Backup.export())) }
+            val base = readBase()?.takeIf { main != null && it.fileId == main.id }
+            val remoteChanged = main != null && main.modified != base?.stamp
+            if (onlyIfChanged && old.isEmpty() && main != null && !remoteChanged &&
+                BackupMerge.canon(local) == BackupMerge.canon(base!!.stores)) return@withLock false
+            publish(busy = "Syncing…")
+            val remote = when {
+                main == null -> null
+                !remoteChanged -> base!!.stores
+                else -> BackupMerge.content(Backup.stores(download(main)))
+            }
+            var merged = BackupMerge.merge(base?.stores, local, remote)
+            // The old one-file-per-device backups (and a second shared one, if two devices made it at once): the
+            // newest of each other device is merged in, so nothing is lost; this device's own is older than now.
+            val olds = old.filter { it.shared } + old.filter { !it.shared && !it.mine }.groupBy { it.device ?: it.id }.values.map { l -> l.maxBy { it.time } }
+            for (o in olds) runCatching { BackupMerge.content(Backup.stores(download(o))) }.getOrNull()?.let { merged = BackupMerge.merge(null, merged, it) }
+            val changedHere = withContext(Dispatchers.IO) { Backup.applyContent(merged, local) }
+            var fileId = main?.id
+            var stamp = main?.modified ?: ""
+            if (remote == null || BackupMerge.canon(merged) != BackupMerge.canon(remote)) {
+                val meta = JSONObject().put("name", SHARED).put("appProperties", JSONObject().put("device", "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}").put("app", runCatching { App.context.packageManager.getPackageInfo(App.context.packageName, 0).versionName }.getOrNull() ?: "?").put("deviceId", deviceId))
+                if (main == null) meta.put("parents", org.json.JSONArray().put(folder()))
+                val body = MultipartBody.Builder().setType("multipart/related".toMediaType())
+                    .addPart(meta.toString().toRequestBody(json))
+                    .addPart(Backup.document(merged).toRequestBody(json))
+                    .build()
+                val request = if (main == null) Request.Builder().url("${endpoints.upload}/files?uploadType=multipart&fields=id,modifiedTime").post(body)
+                else Request.Builder().url("${endpoints.upload}/files/${main.id}?uploadType=multipart&fields=id,modifiedTime").patch(body)
+                val (code, answer) = drive(request)
+                if (code !in 200..299) throw CloudException("Drive answered $code: ${answer.take(200)}")
+                val saved = JSONObject(answer)
+                fileId = saved.getString("id")
+                stamp = saved.optString("modifiedTime").ifBlank { backups().firstOrNull { it.id == fileId }?.modified ?: "" }
+            }
+            writeBase(fileId!!, stamp, merged)
+            // Merged in: the old files go to Drive's trash (kept there 30 days), so Restore shows one backup.
+            for (o in old) runCatching { trash(o) }
+            prefs.edit().putLong("last_backup", System.currentTimeMillis()).apply()
+            if (changedHere.isNotEmpty()) synced(changedHere)
             publish()
             true
         } catch (e: Exception) {
@@ -363,32 +429,33 @@ object CloudBackup {
         }
     }
 
+    /** Another device's changes arrived: the library's screens refresh, its new extensions are downloaded. */
+    private suspend fun synced(stores: Set<String>) {
+        runCatching { Library.notifyChanged() }
+        if (stores.any { it.startsWith("rebuild_preference") }) runCatching { PluginManager.installMissing(includeNew = false) }
+    }
+
     /**
-     * Downloads a backup ([which], or the newest of any device) and restores it; then the missing extensions are
-     * downloaded. Returns their names.
+     * Replaces what's here with a backup ([which], or the shared one); then the missing extensions are downloaded.
+     * Returns their names.
      */
     suspend fun restore(which: Remote? = null): List<String> = backupLock.withLock {
         publish(busy = "Restoring…")
         try {
             val r = which ?: remote() ?: throw CloudException("There's no backup in this Google account yet")
-            val (code, content) = drive(Request.Builder().url("${endpoints.drive}/files/${r.id}?alt=media"))
-            if (code != 200) throw CloudException("Drive answered $code")
+            val content = download(r)
             withContext(Dispatchers.IO) { Backup.import(content) }
-            prefs.edit().putString("last_hash", hashOf(content)).apply()
+            // Restored from the shared backup: this device is now in step with it.
+            if (r.shared) writeBase(r.id, r.modified, BackupMerge.content(Backup.stores(content)))
             publish(busy = "Downloading the extensions…")
             val got = runCatching { PluginManager.installMissing(includeNew = false) }.getOrDefault(emptyList())
+            runCatching { Library.notifyChanged() }
             publish()
             got
         } catch (e: Exception) {
             publish(error = e.message ?: e.toString())
             throw e
         }
-    }
-
-    /** The backup minus its time stamp, so an unchanged library doesn't upload again. */
-    private fun hashOf(content: String): String {
-        val stable = runCatching { JSONObject(content).apply { remove("created") }.toString() }.getOrDefault(content)
-        return MessageDigest.getInstance("SHA-256").digest(stable.toByteArray()).joinToString("") { "%02x".format(it) }
     }
 
     // ------------------------------------------------------------------ automatic backup
@@ -408,8 +475,17 @@ object CloudBackup {
         }
     }
 
-    /** Backs up now if automatic backup is on and something changed (the app going to the background calls it). */
-    fun soon() { scope.launch { soonNow() } }
+    /**
+     * Syncs now if automatic backup is on and something changed here or on another device. Coming back to the app
+     * calls it (at most once a minute); going to the background calls it with [always], so nothing is left behind.
+     */
+    fun soon(always: Boolean = false) {
+        val now = System.currentTimeMillis()
+        if (!always && now - lastSoon < 60_000) return
+        lastSoon = now
+        scope.launch { soonNow() }
+    }
+    @Volatile private var lastSoon = 0L
 
     private suspend fun soonNow() {
         if (!configured || !auto || prefs.getString("refresh", null) == null) return

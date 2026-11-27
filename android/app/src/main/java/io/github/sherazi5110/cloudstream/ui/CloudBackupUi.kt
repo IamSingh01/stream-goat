@@ -46,7 +46,7 @@ import kotlinx.coroutines.launch
 /** Google Drive backup: what's open right now (the dialogs can be opened from Settings or the first-run screen). */
 object CloudUi {
     var signingIn by mutableStateOf(false)
-    /** Every device's backup in the account, to pick one to restore (the phone's on the TV…). */
+    /** The backups in the account (the shared one, and old ones of single devices), to pick one to restore. */
     var choosing by mutableStateOf<List<CloudBackup.Remote>?>(null)
     /** The backup picked, waiting for "Restore". */
     var confirm by mutableStateOf<CloudBackup.Remote?>(null)
@@ -83,7 +83,7 @@ private fun ago(ms: Long): String {
 
 /** "Lenovo TB522FU · 3 min ago · Stream Goat 8.0.1" */
 private fun CloudBackup.Remote.describe(): String =
-    listOfNotNull(ago(time), app?.let { "Stream Goat $it" }).joinToString(" · ")
+    listOfNotNull(ago(time), if (shared) device?.let { "last from $it" } else null, app?.let { "Stream Goat $it" }).joinToString(" · ")
 
 private fun date(iso: String): String = runCatching {
     java.time.Instant.parse(iso).atZone(java.time.ZoneId.systemDefault())
@@ -100,20 +100,22 @@ internal fun CloudBackupSection() {
         return
     }
     if (!state.signedIn) {
-        Hint("Sign in with your Google account to keep this backup in your Google Drive, automatically, and restore it on " +
-            "another device or after reinstalling. It goes in a \"Stream Goat backups\" folder: Stream Goat only sees the files it made, never your other files.")
+        Hint("Sign in with the same Google account on every device (phone, TV, computer) and they stay in sync: My list, history, " +
+            "where you stopped, watched marks, extensions, Live TV and playlists. One backup in your Google Drive, in a \"Stream Goat backups\" " +
+            "folder: Stream Goat only sees the files it made, never your other files.")
         PillButton("Sign in with Google", Icons.Filled.CloudUpload, compact = true, modifier = Modifier.padding(top = 6.dp)) { CloudUi.signingIn = true }
         return
     }
     Text("Signed in as ${state.email ?: "your Google account"}", style = MaterialTheme.typography.bodyLarge)
-    Hint("Last backup: ${ago(state.lastBackup)}" + (state.busy?.let { " · $it" } ?: "") + (state.error?.let { " · Problem: $it" } ?: ""))
+    Hint("Last sync: ${ago(state.lastBackup)}" + (state.busy?.let { " · $it" } ?: "") + (state.error?.let { " · Problem: $it" } ?: ""))
     var auto by remember { mutableStateOf(CloudBackup.auto) }
-    SwitchRow("Back up automatically", "When something changed: every 5 minutes, and when you leave the app. Each device keeps its own backup.", auto) { auto = it; CloudBackup.auto = it }
+    SwitchRow("Keep in sync automatically", "Every device signed in to this account shares one backup: changes from each are merged, " +
+        "when the app starts or comes back, every 5 minutes and when you leave it. Each device keeps its own settings.", auto) { auto = it; CloudBackup.auto = it }
     Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(top = 6.dp)) {
-        PillButton("Back up now", Icons.Filled.CloudUpload, compact = true) {
+        PillButton("Sync now", Icons.Filled.CloudUpload, compact = true) {
             App.scope.launch {
-                runCatching { CloudBackup.backupNow() }.onSuccess { App.toast("Backed up to Google Drive") }
-                    .onFailure { App.toast("Couldn't back up: ${it.message}") }
+                runCatching { CloudBackup.backupNow() }.onSuccess { App.toast("Synced with Google Drive") }
+                    .onFailure { App.toast("Couldn't sync: ${it.message}") }
             }
         }
         PillButton("Restore", Icons.Filled.CloudDownload, primary = false, compact = true) { CloudUi.restoreFromDrive() }
@@ -158,11 +160,10 @@ private fun SignInDialog() {
             runCatching { CloudBackup.finishSignIn(s) }.onSuccess {
                 CloudUi.signingIn = false
                 App.toast("Signed in as ${CloudBackup.state.value.email ?: "your Google account"}")
-                // Backups of other devices (the phone's, on the TV) are offered; otherwise this device's is saved now.
+                // This device joins the shared backup: what the other devices have comes here, what's here goes there.
                 App.scope.launch {
-                    val list = runCatching { CloudBackup.backups() }.getOrDefault(emptyList())
-                    if (list.any { !it.mine }) CloudUi.choosing = list
-                    else runCatching { CloudBackup.backupNow() }.onSuccess { App.toast("Backed up to Google Drive") }
+                    runCatching { CloudBackup.backupNow() }.onSuccess { App.toast("Synced with your other devices") }
+                        .onFailure { App.toast("Couldn't sync: ${it.message}") }
                 }
             }.onFailure { error = it.message }
         }.onFailure { error = it.message }
@@ -213,24 +214,26 @@ internal fun SignInBody(signIn: CloudBackup.SignIn?, error: String?, tv: Boolean
 private fun BackupPicker(list: List<CloudBackup.Remote>) {
     var backups by remember(list) { mutableStateOf(list) }
     SimpleDialog("Restore a backup", { CloudUi.choosing = null }) {
-        Hint("Each device that's signed in keeps its own backup. Pick the one to copy to this device.")
+        Hint("Every device signed in to this account shares one backup and stays in sync with it. Restoring replaces what's on this device with it.")
         backups.forEach { r ->
-            Row(
-                Modifier.padding(top = 6.dp).fillMaxWidth().card(RoundedCornerShape(12.dp), focusScale = 1.02f) { CloudUi.choosing = null; CloudUi.confirm = r }
-                    .background(Palette.surfaceHigh, RoundedCornerShape(12.dp)).padding(horizontal = 14.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
+            // Delete sits beside the backup (→ from it), not inside it, where the remote couldn't reach it.
+            ActionRow(onClick = { CloudUi.choosing = null; CloudUi.confirm = r }, modifier = Modifier.padding(top = 6.dp).fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp), background = Palette.surfaceHigh,
+                padding = androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp, vertical = 10.dp),
+                actions = {
+                    Icon(Icons.Filled.Delete, "Delete this backup", tint = Palette.muted, modifier = Modifier.size(36.dp).card(RoundedCornerShape(50)) {
+                        App.scope.launch {
+                            runCatching { CloudBackup.delete(r) }.onSuccess { backups = backups - r; App.toast("Backup deleted") }
+                                .onFailure { App.toast("Couldn't delete: ${it.message}") }
+                        }
+                    }.padding(7.dp))
+                }) {
                 Icon(Icons.Filled.Devices, null, tint = Palette.muted, modifier = Modifier.size(24.dp))
-                Column(Modifier.weight(1f)) {
-                    Text((r.device ?: "A device") + if (r.mine) " (this device)" else "", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
+                Column(Modifier.weight(1f).padding(start = 12.dp)) {
+                    Text(if (r.shared) "All your devices" else (r.device ?: "A device") + if (r.mine) " (this device, old)" else " (old)",
+                        style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
                     Text(r.describe(), style = MaterialTheme.typography.bodySmall, color = Palette.muted)
                 }
-                Icon(Icons.Filled.Delete, "Delete this backup", tint = Palette.muted, modifier = Modifier.size(36.dp).card(RoundedCornerShape(50)) {
-                    App.scope.launch {
-                        runCatching { CloudBackup.delete(r) }.onSuccess { backups = backups - r; App.toast("Backup deleted") }
-                            .onFailure { App.toast("Couldn't delete: ${it.message}") }
-                    }
-                }.padding(7.dp))
             }
         }
         if (backups.isEmpty()) Hint("No backups left in this Google account.")
@@ -249,9 +252,11 @@ private fun RestoreDialog(remote: CloudBackup.Remote) {
                 .onFailure { App.toast("Couldn't restore: ${it.message}") }
         }
     }) {
-        Hint("The backup" + (remote.device?.let { " from $it" } ?: "") + (if (remote.mine) " (this device)" else "") +
-            ", saved ${date(remote.modified)}" + (remote.app?.let { " (Stream Goat $it)" } ?: "") + ".")
-        Hint("Restoring replaces this device's settings, profiles, My list, history, repositories and extensions with the backup's. " +
+        Hint((if (remote.shared) "The shared backup of all your devices" else "The old backup" + (remote.device?.let { " from $it" } ?: "") +
+            (if (remote.mine) " (this device)" else "")) + ", saved ${date(remote.modified)}" + (remote.app?.let { " (Stream Goat $it)" } ?: "") + ".")
+        Hint(if (remote.shared) "Restoring replaces this device's profiles, My list, history, repositories and extensions with the backup's " +
+            "(they're normally kept in sync anyway); this device's settings stay. The extensions are downloaded again."
+        else "Restoring replaces this device's settings, profiles, My list, history, repositories and extensions with the backup's. " +
             "The extensions are downloaded again.")
     }
 }

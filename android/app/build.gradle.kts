@@ -15,16 +15,19 @@ android {
         minSdk = 23
         targetSdk = 36
         // CI passes the release tag (-PappVersion=7.0.0); local builds use the numbers below.
-        val tagVersion = (findProperty("appVersion") as String?)?.removePrefix("v")?.removePrefix("V")
-        versionName = tagVersion ?: "10.0.1"
-        versionCode = tagVersion?.let { v ->
+        // Test builds use this version: it must be above the latest release, or Android won't install it over it.
+        val version = (findProperty("appVersion") as String?)?.removePrefix("v")?.removePrefix("V") ?: "11.0.0"
+        versionName = version
+        versionCode = version.let { v ->
             val (major, minor, patch) = (v.substringBefore('-').split('.').map { it.toIntOrNull() ?: 0 } + listOf(0, 0, 0)).take(3)
             major * 10000 + minor * 100 + patch
-        } ?: 100000
+        }
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // Google Drive backup: the project's Google sign-in client (GitHub secrets, docs/google-drive-setup.md).
         // For an installed app Google doesn't treat the client secret as secret; it ships in the app.
         fun quoted(name: String) = "\"" + (System.getenv(name) ?: "").replace("\"", "") + "\""
+        // Which build this is (the commit, from GitHub's build): the test channel's update check compares it exactly.
+        buildConfigField("String", "BUILD_ID", "\"${System.getenv("GITHUB_SHA")?.take(12).orEmpty()}\"")
         buildConfigField("String", "GOOGLE_CLIENT_ID", quoted("GOOGLE_CLIENT_ID"))
         buildConfigField("String", "GOOGLE_CLIENT_SECRET", quoted("GOOGLE_CLIENT_SECRET"))
         // WeTrakr sync: the app key (client_id) of the Stream Goat app registered on wetrakr.com (GitHub secret
@@ -64,6 +67,9 @@ android {
         compose = true
         buildConfig = true
     }
+
+    // Robolectric (the remote-control tests) reads the app's resources and manifest.
+    testOptions { unitTests.isIncludeAndroidResources = true }
 
     packaging {
         resources.excludes += setOf("META-INF/*.kotlin_module", "META-INF/versions/**", "META-INF/DEPENDENCIES",
@@ -145,6 +151,10 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer-dash:$media3")
     implementation("androidx.media3:media3-datasource-okhttp:$media3")
     implementation("androidx.media3:media3-ui:$media3")
+    // FFmpeg's audio decoders for ExoPlayer (NextLib, GPL-3.0 like this app; the one Next Player uses, built for this
+    // Media3 version): Dolby (AC-3, E-AC-3 "DDP"), DTS, TrueHD… on phones without their own decoder, which played
+    // such films without sound (issue #78). The device's decoders still come first.
+    implementation("io.github.anilbeesetti:nextlib-media3ext:$media3-0.19.0")
     // Torrent streaming (opt-in, Settings → Player): libtorrent through libtorrent4j, native code for each ABI.
     val libtorrent = "2.1.0-39"
     implementation("org.libtorrent4j:libtorrent4j:$libtorrent")
@@ -162,6 +172,11 @@ dependencies {
     androidTestImplementation("androidx.test:runner:1.7.0")
     androidTestImplementation("androidx.test.ext:junit:1.3.0")
     testImplementation("junit:junit:4.13.2")
+    // Remote-control tests (FocusTest…): the app's screens in a simulated Android, driven with D-pad key presses.
+    testImplementation("org.robolectric:robolectric:4.16")
+    testImplementation(platform("androidx.compose:compose-bom:2026.03.00"))
+    testImplementation("androidx.compose.ui:ui-test-junit4")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
 }
 
 // Paparazzi (Android screenshots drawn on the computer: ./gradlew :app:recordPaparazziDebug) clashes with
@@ -172,7 +187,19 @@ tasks.withType<Test>().configureEach { reports.html.required.set(false) }
 // that process with Paparazzi's renderer: it gets a process of its own, right after the other unit tests.
 afterEvaluate {
     val unit = tasks.named<Test>("testDebugUnitTest")
-    unit.configure { filter { excludeTestsMatching("*TorrentStreamingTest"); isFailOnNoMatchingTests = false } }
+    unit.configure { filter { excludeTestsMatching("*TorrentStreamingTest"); excludeTestsMatching("*ui.FocusTest"); isFailOnNoMatchingTests = false } }
+    // The remote-control tests run in Robolectric's simulated Android, which leaves Paparazzi's renderer unable to
+    // start in the same process: they get one of their own too.
+    val focus = tasks.register<Test>("focusUnitTest") {
+        val base = unit.get()
+        testClassesDirs = base.testClassesDirs
+        classpath = base.classpath
+        jvmArgs(base.allJvmArgs.filter { it.startsWith("--add-opens") || it.startsWith("-D") })
+        systemProperties(base.systemProperties)
+        filter { includeTestsMatching("*ui.FocusTest"); isFailOnNoMatchingTests = false }
+        dependsOn(base.dependsOn)
+    }
+    unit.configure { finalizedBy(focus) }
     val torrent = tasks.register<Test>("torrentUnitTest") {
         val base = unit.get()
         testClassesDirs = base.testClassesDirs

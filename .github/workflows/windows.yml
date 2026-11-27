@@ -4,7 +4,7 @@ name: Windows
 # Built and tested on a real Windows machine; on a version tag the files are attached to the release.
 on:
   push:
-    branches: [main, windows, stream-goat]
+    branches: [main, windows, stream-goat, picture-keys]
     tags: ["v*", "V*", "[0-9]*"]
   pull_request:
 
@@ -185,11 +185,11 @@ jobs:
 
       - name: Test build (pull requests)
         # Also on the "test-build" pre-release (see build.yml), next to the Android files.
-        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'picture-keys'  # only the test branch, not small fixes
+        if: (github.event_name == 'push' && github.ref == 'refs/heads/picture-keys') || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'picture-keys')  # only the test branch, not small fixes
         uses: softprops/action-gh-release@v2
         with:
           tag_name: test-build
-          target_commitish: ${{ github.event.pull_request.head.sha }}
+          target_commitish: ${{ github.event.pull_request.head.sha || github.sha }}
           name: Test build (not a release)
           prerelease: true
           make_latest: false

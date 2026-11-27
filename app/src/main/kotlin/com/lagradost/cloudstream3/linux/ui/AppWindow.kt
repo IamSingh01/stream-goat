@@ -41,7 +41,7 @@ import kotlin.system.exitProcess
 
 object AppInfo {
     const val NAME = "Stream Goat"
-    const val VERSION = "10.0.1"
+    const val VERSION = "11.0.0"
     const val CREDIT = "Syed Ali Hamza"
 }
 
@@ -411,6 +411,15 @@ class AppWindow(val stage: Stage) : StackPane() {
             loading.join()
             // Carry on with downloads that were running when the app closed.
             runCatching { com.lagradost.cloudstream3.linux.Downloads.init() }
+            // WeTrakr: watched history in, every 30 minutes (posters and titles show what was watched elsewhere).
+            runCatching { com.lagradost.cloudstream3.linux.WeTrakrSync.start() }
+            // Back in the window: what was finished meanwhile in another WeTrakr app shows here (at most every 2 minutes).
+            stage.focusedProperty().addListener { _, _, focused ->
+                if (focused) ui.launch(kotlinx.coroutines.Dispatchers.IO) { runCatching { com.lagradost.cloudstream3.linux.WeTrakrSync.pull() } }
+                // And what changed on the other devices (the shared Google Drive backup; at most once a minute).
+                // Leaving the window: what changed here goes up now (like a phone app going to the background).
+                com.lagradost.cloudstream3.linux.CloudBackup.soon(always = !focused)
+            }
             if (Settings.autoUpdateExtensions) {
                 val updated = withContext(Engine.dispatcher) { runCatching { PluginManager.updateAll() }.getOrDefault(emptyList()) }
                 if (updated.isNotEmpty()) Toasts.show("Updated ${updated.joinToString()}")

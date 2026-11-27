@@ -295,6 +295,64 @@ object Metadata {
         return null
     }
 
+    /**
+     * A poster's title as ids (tmdb, imdb, isMovie) without opening it, for the "Watched" stamp: an IMDb id in its
+     * address (Stremio), the TMDB entry chosen by hand or found the way its rating is (cached), else Cinemeta's
+     * search (IMDb ids, no key needed). Null when nothing matched.
+     */
+    suspend fun posterIds(item: SearchResponse): Triple<Int?, String?, Boolean?>? = withContext(Dispatchers.IO) {
+        val kind = kindOf(item.type)
+        val movie: Boolean? = kind?.let { it == "movie" }
+        Regex("tt\\d{5,}").find(item.url)?.value?.let { return@withContext Triple(null, it, movie) }
+        val (title, year) = cleanTitle(item.name)
+        val y = year ?: (item as? com.lagradost.cloudstream3.MovieSearchResponse)?.year ?: (item as? com.lagradost.cloudstream3.TvSeriesSearchResponse)?.year
+        if (hasTmdb) {
+            val chosen = chosenMatch(item.apiName, item.url)
+            if (chosen != null) return@withContext chosen.first?.let { Triple(chosen.second, null, it == "movie") }
+            val hit = cached(cacheKey("search", title, y, kind, language)) { searchTmdb(title, y, kind) }
+            if (hit != null) {
+                val type = hit.optString("media_type").ifBlank { kind ?: "" }
+                return@withContext Triple(hit.optInt("id").takeIf { it > 0 }, null, if (type.isBlank()) movie else type == "movie")
+            }
+        }
+        if (!cinemeta || kind == null) return@withContext null
+        val type = if (kind == "movie") "movie" else "series"
+        val hit = cached(cacheKey("cinemeta-search", type, title, y)) {
+            runCatching {
+                val enc = java.net.URLEncoder.encode(title, "UTF-8")
+                val metas = JSONObject(app.get("$cinemetaBase/catalog/$type/top/search=$enc.json", timeout = 8).text).optJSONArray("metas")
+                val list = (0 until (metas?.length() ?: 0)).mapNotNull { metas!!.optJSONObject(it) }
+                val wanted = normalize(title)
+                list.firstOrNull { o ->
+                    normalize(o.optString("name")) == wanted &&
+                        (y == null || o.optString("releaseInfo").take(4).toIntOrNull()?.let { kotlin.math.abs(it - y) <= 1 } != false)
+                }
+            }.getOrNull()
+        }
+        hit?.optString("imdb_id")?.ifBlank { hit.optString("id") }?.takeIf { it.startsWith("tt") }?.let { Triple(null, it, movie) }
+    }
+
+    /** A show's aired episodes (seasons 1+): episodes per season, the latest aired one and its date. */
+    data class Aired(val seasons: Map<Int, Int>, val lastSeason: Int, val lastEpisode: Int, val lastAirDate: String?)
+
+    /** [Aired] for a TMDB show, refreshed daily (new episodes appear). Null without a TMDB key or when unknown. */
+    suspend fun aired(tmdbId: Int): Aired? = withContext(Dispatchers.IO) {
+        if (!hasTmdb) return@withContext null
+        val o = cached(cacheKey("aired", tmdbId, java.time.LocalDate.now().toString())) { tmdb("/tv/$tmdbId") } ?: return@withContext null
+        val last = o.optJSONObject("last_episode_to_air") ?: return@withContext null
+        val seasons = o.optJSONArray("seasons")?.let { a -> (0 until a.length()).mapNotNull { a.optJSONObject(it) } }.orEmpty()
+            .associate { it.optInt("season_number") to it.optInt("episode_count") }.filterKeys { it > 0 }
+        val ls = last.optInt("season_number"); val le = last.optInt("episode_number")
+        if (ls <= 0 || le <= 0) return@withContext null
+        Aired(seasons, ls, le, last.optString("air_date").takeIf { it.isNotBlank() })
+    }
+
+    /** IMDb id → TMDB id (cached), for shows matched by IMDb id. */
+    suspend fun tmdbForImdb(imdb: String): Int? = withContext(Dispatchers.IO) {
+        if (!hasTmdb) return@withContext null
+        cached(cacheKey("find", imdb)) { findByImdb(imdb) }?.optInt("id")?.takeIf { it > 0 }
+    }
+
     // ---------- details ----------
 
     /** Everything known about a title from the enabled services, or null when nothing matched. */

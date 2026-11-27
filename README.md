@@ -7,7 +7,7 @@ Created by <b>Syed Ali Hamza</b></p>
 
 ![Stream Goat: Home](docs/screenshots/home.jpg)
 
-> **Testing notes (10.0.1).** The Mac and Linux apps are built and checked automatically but haven't been tested by hand yet, so please report anything odd. On Windows the first launch after installing can be slow and laggy for a minute while the app sets itself up and loads an earlier backup; give it a moment and it runs smoothly after that.
+> **Testing notes (11.0.0).** The Mac and Linux apps are built and checked automatically but haven't been tested by hand yet, so please report anything odd. On Windows the first launch after installing can be slow and laggy for a minute while the app sets itself up and loads an earlier backup; give it a moment and it runs smoothly after that.
 
 > **Disclaimer.** Stream Goat is only a media player and organiser. It does not host, provide, link to or endorse any movies, shows, channels or other content, and it ships with no content sources. You add your own extensions, add-ons and playlists and are responsible for having the rights to whatever you play. Titles, posters and logos belong to their owners and appear in the screenshots only to show how the app looks.
 
@@ -33,10 +33,11 @@ library and downloads carry over.)*
 
 ## What it does
 
-> **New in 10.0.1:** **mpv** is the new player on Windows, Mac and Linux (NetMirror plays with its real length and
-> audio languages), **small updates** install from inside every app, and Settings is back in the phone's bottom bar.
-> [All changes](docs/releases/10.0.1.md) · 10.0.0 brought updates inside the app, **Sports**, **Music**, **YouTube**,
-> ExoPlayer and a much smoother TV app ([10.0.0 changes](docs/releases/10.0.0.md)).
+> **New in 11.0.0:** a big **WATCHED** stamp and Continue / New episodes badges matched across every extension,
+> **one Google Drive backup** that keeps phone, TV and computer in sync, a **TV remote** that stays where you are (Back
+> returns to the same place, every button reachable), and sound for **Dolby / DTS** films on every phone.
+> [All changes](docs/releases/11.0.0.md) · 10.0.1 brought the **mpv** player on computers and small updates inside the
+> app ([10.0.1 changes](docs/releases/10.0.1.md)).
 
 - **One app on every screen:** Android phones, tablets and TV, Windows, Mac, Linux and the web, with the same look.
 - **Your own sources:** CloudStream extensions and repositories, Stremio add-ons, and Live TV from M3U playlists,

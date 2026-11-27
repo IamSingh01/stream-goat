@@ -248,6 +248,8 @@ class PlayerController(
      * True when the player was replaced (a chosen subtitle file is then shown again by play).
      */
     fun restyle(): Boolean {
+        // ExoPlayer (NetMirror and most extension streams) takes the new style at once, without reopening.
+        (engine as? ExoEngine)?.let { if (!released) it.restyle(); return false }
         if (released || engine.kind != EngineKind.VLC || Vlc.look == SubtitleStyle.current()) return false
         val keep = if (started) audioTrack() to (if (selectedSubtitle == null) spuTrack() else null) else null
         val l = engine.view

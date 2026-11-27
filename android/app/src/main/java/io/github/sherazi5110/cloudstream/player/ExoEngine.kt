@@ -60,9 +60,16 @@ class ExoEngine(context: Context) : PlaybackEngine {
             .setTargetBufferBytes(memMb * 1024 * 1024)
             .setPrioritizeTimeOverSizeThresholds(false)
             .build()
-        val renderers = DefaultRenderersFactory(appContext).setEnableDecoderFallback(true)
+        val renderers = WithFfmpegAudio(appContext).setEnableDecoderFallback(true)
         ExoPlayer.Builder(appContext, renderers).setLoadControl(load).build().apply {
             addListener(object : Player.Listener {
+                // The subtitles go to this app's own subtitle view, in the chosen style (see createView).
+                override fun onCues(cueGroup: androidx.media3.common.text.CueGroup) { styledSubs?.setCues(styled(cueGroup.cues)) }
+
+                // A subtitle file just added (OpenSubtitles, translated, the extension's): selected as soon as
+                // ExoPlayer has it, instead of the track chosen before.
+                override fun onTracksChanged(tracks: Tracks) = onTracksChangedNow()
+
                 override fun onPlaybackStateChanged(state: Int) {
                     when (state) {
                         Player.STATE_BUFFERING -> listener?.onBuffering(true)
@@ -209,7 +216,7 @@ class ExoEngine(context: Context) : PlaybackEngine {
         tracksOf(C.TRACK_TYPE_TEXT).mapIndexed { n, (g, i) -> TrackInfo(idOf(g, i), nameOf(g, i, n + 1)) }
     override fun subtitleTrack() = if (player.trackSelectionParameters.disabledTrackTypes.contains(C.TRACK_TYPE_TEXT)) -1
         else tracksOf(C.TRACK_TYPE_TEXT).firstOrNull { (g, i) -> g.isTrackSelected(i) }?.let { (g, i) -> idOf(g, i) } ?: -1
-    override fun setSubtitle(id: Int) = select(C.TRACK_TYPE_TEXT, id)
+    override fun setSubtitle(id: Int) { pendingSub = null; select(C.TRACK_TYPE_TEXT, id) }
 
     private fun select(type: Int, id: Int) {
         val params = player.trackSelectionParameters.buildUpon()
@@ -222,13 +229,32 @@ class ExoEngine(context: Context) : PlaybackEngine {
     /** ExoPlayer takes subtitle files with the source: it reopens at the same place with the file added. */
     override fun addSubtitle(uri: Uri) {
         val r = request ?: return
-        if (uri in extraSubs) return
+        // The track chosen before (a subtitle inside the video) would stay chosen and hide the added file: cleared,
+        // and the file's own track is selected once it's there (onTracksChanged).
+        player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+            .clearOverridesOfType(C.TRACK_TYPE_TEXT).setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false).build()
+        if (uri in extraSubs) {
+            // Added before (picked again from the list): just select it.
+            pendingSub = "sub${(r.subtitles + extraSubs).distinct().indexOf(uri)}"
+            onTracksChangedNow()
+            return
+        }
         extraSubs += uri
+        pendingSub = "sub${(r.subtitles + extraSubs).distinct().indexOf(uri)}"
         val pos = player.currentPosition
         val playing = player.playWhenReady
         openSource(r.copy(startMs = pos))
         player.playWhenReady = playing
-        player.trackSelectionParameters = player.trackSelectionParameters.buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false).build()
+    }
+
+    /** The subtitle file waiting to be selected ("sub3": its id in the media item). */
+    private var pendingSub: String? = null
+
+    private fun onTracksChangedNow() {
+        val want = pendingSub ?: return
+        val found = tracksOf(C.TRACK_TYPE_TEXT).firstOrNull { (g, i) -> g.getTrackFormat(i).id?.substringAfterLast(':') == want } ?: return
+        pendingSub = null
+        select(C.TRACK_TYPE_TEXT, idOf(found.first, found.second))
     }
 
     override fun reallyEnded() = ended
@@ -237,8 +263,56 @@ class ExoEngine(context: Context) : PlaybackEngine {
         useController = false
         setShutterBackgroundColor(android.graphics.Color.BLACK)
         setKeepContentOnPlayerReset(true)
-        subtitleView?.setApplyEmbeddedStyles(true)
-        subtitleView?.setFractionalTextSize(0.0533f * (io.github.sherazi5110.cloudstream.Settings.textScale.coerceIn(0.8f, 1.5f)))
+        // ExoPlayer's own subtitle view always drew plain white text (Settings → Subtitle style only reached VLC):
+        // this app's view draws them instead, in the chosen size, colour, font, edge, background, height and side.
+        subtitleView?.visibility = View.GONE
+        val own = androidx.media3.ui.SubtitleView(context)
+        overlayFrameLayout?.addView(own, android.widget.FrameLayout.LayoutParams(
+            android.widget.FrameLayout.LayoutParams.MATCH_PARENT, android.widget.FrameLayout.LayoutParams.MATCH_PARENT))
+        styledSubs = own
+        restyle()
+    }
+
+    /** This app's subtitle view, styled (see [restyle]). */
+    private var styledSubs: androidx.media3.ui.SubtitleView? = null
+    private var look = SubtitleStyle.current()
+
+    /** Applies Settings → Subtitle style to the subtitles at once (no reopening, unlike VLC). */
+    fun restyle() {
+        look = SubtitleStyle.current()
+        val v = styledSubs ?: return
+        val l = look
+        val shadow = l.edge == "SHADOW"
+        val edge = when (l.edge) {
+            "NONE" -> androidx.media3.ui.CaptionStyleCompat.EDGE_TYPE_NONE
+            "SHADOW" -> androidx.media3.ui.CaptionStyleCompat.EDGE_TYPE_DROP_SHADOW
+            else -> androidx.media3.ui.CaptionStyleCompat.EDGE_TYPE_OUTLINE
+        }
+        val family = when (l.font) { "SERIF" -> "serif"; "MONO" -> "monospace"; "CONDENSED" -> "sans-serif-condensed"; else -> "sans-serif" }
+        val alpha = (l.backgroundOpacity.coerceIn(0, 100) * 255 / 100) shl 24
+        v.setStyle(androidx.media3.ui.CaptionStyleCompat(
+            0xff000000.toInt() or SubtitleStyle.rgb(l.color),
+            if (l.background) alpha or SubtitleStyle.rgb(l.backgroundColor) else android.graphics.Color.TRANSPARENT,
+            android.graphics.Color.TRANSPARENT,
+            edge,
+            if (shadow) 0xff000000.toInt() else 0xff000000.toInt() or SubtitleStyle.rgb(l.outlineColor),
+            android.graphics.Typeface.create(family, if (l.bold) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL),
+        ))
+        // The stream's own sizes and colours would win over the chosen ones; its italics stay.
+        v.setApplyEmbeddedFontSizes(false)
+        v.setFractionalTextSize(SubtitleStyle.exoTextSize(l.size) * io.github.sherazi5110.cloudstream.Settings.textScale.coerceIn(0.8f, 1.5f))
+        v.setBottomPaddingFraction(SubtitleStyle.exoBottom(l.height))
+        player.currentCues.cues.let { v.setCues(styled(it)) }
+    }
+
+    /** The chosen side (left, centre, right) for text subtitles (pictures, as on some Blu-rays, stay where they are). */
+    private fun styled(cues: List<androidx.media3.common.text.Cue>): List<androidx.media3.common.text.Cue> {
+        val align = when (look.align) {
+            "LEFT" -> android.text.Layout.Alignment.ALIGN_NORMAL
+            "RIGHT" -> android.text.Layout.Alignment.ALIGN_OPPOSITE
+            else -> return cues
+        }
+        return cues.map { c -> if (c.bitmap != null) c else c.buildUpon().setTextAlignment(align).build() }
     }
 
     override fun attach(view: View, hdr: Boolean) {
@@ -258,5 +332,25 @@ class ExoEngine(context: Context) : PlaybackEngine {
         playerView = null
         runCatching { loudness?.release() }
         player.release()
+    }
+}
+
+/**
+ * ExoPlayer's renderers plus FFmpeg's audio decoders after the device's own (NextLib): a sound the device can't decode
+ * (Dolby Digital Plus "DDP 5.1", DTS, TrueHD on many phones) is decoded by FFmpeg instead of playing silently. The
+ * device's decoders come first, so passthrough to a receiver and hardware decoding are unchanged.
+ */
+@OptIn(UnstableApi::class)
+private class WithFfmpegAudio(context: Context) : DefaultRenderersFactory(context) {
+    override fun buildAudioRenderers(
+        context: Context, extensionRendererMode: Int, mediaCodecSelector: androidx.media3.exoplayer.mediacodec.MediaCodecSelector,
+        enableDecoderFallback: Boolean, audioSink: androidx.media3.exoplayer.audio.AudioSink, eventHandler: Handler,
+        eventListener: androidx.media3.exoplayer.audio.AudioRendererEventListener, out: java.util.ArrayList<androidx.media3.exoplayer.Renderer>,
+    ) {
+        super.buildAudioRenderers(context, extensionRendererMode, mediaCodecSelector, enableDecoderFallback, audioSink, eventHandler, eventListener, out)
+        runCatching {
+            if (io.github.anilbeesetti.nextlib.media3ext.ffdecoder.FfmpegLibrary.isAvailable())
+                out += io.github.anilbeesetti.nextlib.media3ext.ffdecoder.FfmpegAudioRenderer(eventHandler, eventListener, audioSink)
+        }.onFailure { android.util.Log.w("StreamGoat", "FFmpeg audio decoders unavailable", it) }
     }
 }

@@ -14,6 +14,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
@@ -100,6 +101,9 @@ enum class Section(val title: String, val text: String, val icon: ImageVector) {
 fun SettingsScreen() {
     var selected by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(Section.PROFILES) }
     val wide = isWide
+    // Back inside a section goes to the section list first (it used to leave Settings for Home at once).
+    val selectedRow = remember { androidx.compose.ui.focus.FocusRequester() }
+    val content = backToHeader(selectedRow)
     Row(Modifier.fillMaxSize().statusBarsPadding()) {
         Column(Modifier.then(if (wide) Modifier.width(300.dp) else Modifier.fillMaxWidth()).fillMaxHeight()
             .verticalScroll(rememberScrollState()).padding(16.dp).padding(bottom = LocalBottomInset.current), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -110,7 +114,7 @@ fun SettingsScreen() {
             Section.entries.forEach { s ->
                 val on = wide && s == selected
                 Row(
-                    Modifier.fillMaxWidth().card(RoundedCornerShape(10.dp), focusScale = 1.02f) {
+                    Modifier.fillMaxWidth().then(if (on) Modifier.focusRequester(selectedRow) else Modifier).card(RoundedCornerShape(10.dp), focusScale = 1.02f) {
                         when {
                             s == Section.EXTENSIONS -> Nav.select(Tab.EXTENSIONS)
                             wide -> selected = s
@@ -128,7 +132,7 @@ fun SettingsScreen() {
                 }
             }
         }
-        if (wide) Column(Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState()).padding(24.dp).widthIn(max = 760.dp)) {
+        if (wide) Column(content.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState()).padding(24.dp).widthIn(max = 760.dp)) {
             Text(selected.title, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(bottom = 12.dp))
             SectionContent(selected)
         }
@@ -691,10 +695,19 @@ private fun WeTrakrSection() {
             var syncing by remember { mutableStateOf(false) }
             Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("Two-way sync: what you watch in other apps on WeTrakr (and on the website) shows as watched here, " +
-                    "and what you mark watched here is sent there. Checked every 30 minutes and when you open a title.",
+                    "and what you watch or mark watched here is sent there. Checked when the app opens or comes back, every 5 minutes, " +
+                    "and when you open a title. Sync now imports your whole WeTrakr history again.",
                     style = MaterialTheme.typography.bodySmall, color = Palette.muted, modifier = Modifier.weight(1f))
                 PillButton(if (syncing) "Syncing…" else "Sync now", null, primary = false, compact = true) {
-                    if (!syncing) { syncing = true; syncScope.launch { runCatching { io.github.sherazi5110.cloudstream.WeTrakrSync.pull(force = true) }; syncing = false; App.toast("WeTrakr synced") } }
+                    if (!syncing) {
+                        syncing = true
+                        syncScope.launch {
+                            val sum = runCatching { io.github.sherazi5110.cloudstream.WeTrakrSync.pull(full = true) }.getOrNull()
+                            syncing = false
+                            App.toast(if (sum == null) (io.github.sherazi5110.cloudstream.WeTrakrSync.lastError ?: "Couldn't reach WeTrakr. Try again in a moment.")
+                                else "WeTrakr: ${sum.films} films and ${sum.episodes} episodes watched, marked here too")
+                        }
+                    }
                 }
             }
         }

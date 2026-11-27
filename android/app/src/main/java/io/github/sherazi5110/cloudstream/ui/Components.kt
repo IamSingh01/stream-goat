@@ -1,6 +1,7 @@
 package io.github.sherazi5110.cloudstream.ui
 
 import androidx.compose.ui.focus.focusRestorer
+import androidx.compose.ui.layout.onPlaced
 import androidx.compose.foundation.focusGroup
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.input.pointer.pointerInput
@@ -98,10 +99,20 @@ private fun Modifier.cardImpl(
     val firstClickSelects = false
     val requester = remember { androidx.compose.ui.focus.FocusRequester() }
     val press = remember { PressState() }
+    // FocusKeeper: where this card is, so a lost selection can come back to it or to its neighbour.
+    val area = LocalFocusArea.current
+    val kept = remember(area) { FocusKeeper.Item(requester, area) }
+    androidx.compose.runtime.DisposableEffect(kept) {
+        FocusKeeper.register(kept)
+        onDispose { FocusKeeper.unregister(kept) }
+    }
     this
+        .watchDetach(kept)
+        .then(Modifier.onPlaced { FocusKeeper.placed(kept, it) })
         // Read while drawing (not composing): the zoom animation doesn't rebuild the card on every frame.
         .graphicsLayer { scaleX = scale; scaleY = scale }
-        .then(if (firstClickSelects) Modifier.focusRequester(requester).pointerInput(Unit) {
+        .focusRequester(requester)
+        .then(if (firstClickSelects) Modifier.pointerInput(Unit) {
             // Seen before the click handler: was it already selected when the button went down?
             awaitPointerEventScope {
                 while (true) {
@@ -116,6 +127,7 @@ private fun Modifier.cardImpl(
         .onFocusChanged {
             focused = it.isFocused
             press.focused = it.isFocused
+            FocusKeeper.focusChanged(kept, it.isFocused)
             if (it.isFocused) onFocus?.invoke()
         }
         .then(if (focused) Modifier.border(3.dp, Color.White, shape) else Modifier)
@@ -315,6 +327,7 @@ fun PosterCard(
             }
             NetImage(item.posterUrl, Modifier.fillMaxSize(), item.posterHeaders)
             item.scoreText()?.let { ScoreBadge(it, Modifier.align(Alignment.TopStart).padding(6.dp)) }
+            WatchedStamp(item)
             PosterRating(item, Modifier.align(Alignment.BottomStart).padding(6.dp))
         }
         Text(
@@ -372,6 +385,30 @@ fun Pill(text: String, modifier: Modifier = Modifier, label: String? = null, lab
     ) {
         label?.let { Text(it, color = labelColor, fontWeight = FontWeight.Bold, fontSize = 12.sp) }
         Text(text, color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+    }
+}
+
+/**
+ * A row you open with OK that has buttons at its end (delete, ⋮…). The buttons sit beside the row's main part, not
+ * inside it: the remote can't reach a button inside a selectable row, so → goes from the row to its buttons.
+ * [modifier] and [background] are for the whole row, [padding] for its main part.
+ */
+@Composable
+fun ActionRow(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    shape: Shape = RoundedCornerShape(10.dp),
+    background: Color = Color.Transparent,
+    padding: androidx.compose.foundation.layout.PaddingValues = androidx.compose.foundation.layout.PaddingValues(10.dp),
+    focusScale: Float = 1.02f,
+    onLongClick: (() -> Unit)? = null,
+    actions: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit,
+    content: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit,
+) {
+    Row(modifier.background(background, shape), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.weight(1f).card(shape, focusScale, onLongClick = onLongClick, onClick = onClick).padding(padding),
+            verticalAlignment = Alignment.CenterVertically, content = content)
+        Row(Modifier.padding(end = 4.dp), verticalAlignment = Alignment.CenterVertically, content = actions)
     }
 }
 
@@ -440,7 +477,9 @@ fun EmptyState(title: String, text: String, modifier: Modifier = Modifier, butto
 }
 
 /** Phone or TV, for layouts that differ. */
-val isTv: Boolean get() = App.isTv
+val isTv: Boolean get() = tvForTests ?: App.isTv
+/** The remote-control tests run the TV layout without an Android TV. */
+internal var tvForTests: Boolean? = null
 
 /** Minutes as "2h 4m". */
 fun formatMinutes(minutes: Int): String = if (minutes >= 60) "${minutes / 60}h ${minutes % 60}m" else "${minutes}m"
@@ -452,6 +491,48 @@ fun rememberMetadata(r: com.lagradost.cloudstream3.LoadResponse?, version: Int =
         value = r?.let { runCatching { io.github.sherazi5110.cloudstream.Metadata.details(it) }.getOrNull() }
     }
     return state.value
+}
+
+/**
+ * A big green rubber stamp across a watched poster: "WATCHED" (a film) or "WATCHING" (a show), watched here or on
+ * WeTrakr (matched by the title's ids, so it shows whichever extension lists it). The poster is dimmed a little so the
+ * stamp reads. Redraws when watched marks change.
+ */
+@Composable
+fun WatchedStamp(item: SearchResponse, modifier: Modifier = Modifier) {
+    val version = io.github.sherazi5110.cloudstream.WeTrakrSync.version
+    val stamp = androidx.compose.runtime.produceState<io.github.sherazi5110.cloudstream.WeTrakrSync.Stamp?>(null, item.url, version) {
+        value = runCatching { io.github.sherazi5110.cloudstream.WeTrakrSync.stamp(item) }.getOrNull()
+    }.value ?: return
+    if (stamp.big) StampMark(stamp.label, modifier)
+    else Box(modifier.fillMaxSize().padding(6.dp), contentAlignment = Alignment.TopEnd) {
+        val color = if (stamp == io.github.sherazi5110.cloudstream.WeTrakrSync.Stamp.NEW_EPISODES) Color(0xFFFF9F1C) else Palette.accent
+        Text((if (stamp == io.github.sherazi5110.cloudstream.WeTrakrSync.Stamp.CONTINUE) "▶ " else "") + stamp.label.uppercase(),
+            fontSize = 10.sp, fontWeight = FontWeight.Black, color = Color.White, maxLines = 1,
+            modifier = Modifier.background(color, RoundedCornerShape(6.dp)).padding(horizontal = 6.dp, vertical = 3.dp))
+    }
+}
+
+/** The stamp itself: [label] in a tilted double green frame over the whole poster. */
+@Composable
+fun StampMark(label: String, modifier: Modifier = Modifier) {
+    val green = Color(0xFF2EE06A)
+    androidx.compose.foundation.layout.BoxWithConstraints(modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.38f)), contentAlignment = Alignment.Center) {
+        val w = maxWidth
+        val text = label.uppercase()
+        Box(
+            Modifier.graphicsLayer { rotationZ = -18f }
+                .border((w.value / 55f).coerceIn(1.5f, 3.5f).dp, green, RoundedCornerShape(w * 0.05f))
+                .padding((w.value / 60f).coerceIn(1.5f, 3f).dp)
+                .border((w.value / 110f).coerceIn(1f, 2f).dp, green.copy(alpha = 0.85f), RoundedCornerShape(w * 0.035f))
+                .background(Color.Black.copy(alpha = 0.25f), RoundedCornerShape(w * 0.035f))
+                .padding(horizontal = w * 0.06f, vertical = w * 0.02f),
+        ) {
+            Text(text, color = green, fontWeight = FontWeight.Black, maxLines = 1, softWrap = false,
+                fontSize = (w.value * if (text.length > 7) 0.135f else 0.16f).sp,
+                letterSpacing = (w.value * 0.008f).sp)
+        }
+    }
 }
 
 /** "TMDB 8.4" on a poster (when a TMDB key is set and poster ratings are on). */

@@ -181,8 +181,14 @@ class MpvEngine(private val video: VideoView, private val events: EngineEvents) 
         opt("demuxer-max-bytes", "200MiB")
         opt("demuxer-readahead-secs", "30")
         opt("sub-auto", "no")
-        opt("sub-font-size", "44")
-        opt("sub-border-size", "2.5")
+        // Settings → Subtitles (size, colour, outline, background): mpv used to keep its own look.
+        opt("sub-font-size", when (com.lagradost.cloudstream3.linux.Settings.subtitleSize) { "SMALL" -> "36"; "LARGE" -> "56"; "HUGE" -> "70"; else -> "44" })
+        opt("sub-color", com.lagradost.cloudstream3.linux.Settings.subtitleColor.takeIf { Regex("#[0-9a-fA-F]{6}").matches(it) } ?: "#FFFFFF")
+        opt("sub-border-size", (com.lagradost.cloudstream3.linux.Settings.subtitleOutline * 0.7).toString())
+        if (com.lagradost.cloudstream3.linux.Settings.subtitleBackground) {
+            opt("sub-border-style", "opaque-box")   // mpv 0.38+; older ones keep the outline
+            opt("sub-back-color", "#AA000000")
+        }
         if (video.upscale) opt("sws-scaler", "lanczos")
         // MPV_LOG=<file>: mpv's own log (what FFmpeg says about a stream), for finding why one doesn't play.
         System.getenv("MPV_LOG")?.let { opt("log-file", it); opt("msg-level", "all=v") }

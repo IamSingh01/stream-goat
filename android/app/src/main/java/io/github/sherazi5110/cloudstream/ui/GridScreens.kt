@@ -224,15 +224,20 @@ fun LibraryScreen() {
     // Saved with the tab: playing a download and coming back shows Downloads again, not My list.
     var tab by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(0) }
     if (openLibraryDownloads) { openLibraryDownloads = false; tab = 2 }
+    // Back inside the list goes to the tabs (My list · History · Downloads) first, then Home.
+    val tabFocus = remember { FocusRequester() }
+    val content = backToHeader(tabFocus)
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
         Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             listOf("My list", "History", "Downloads").forEachIndexed { i, label ->
                 Text(label, style = MaterialTheme.typography.labelLarge, modifier = Modifier
+                    .then(if (tab == i) Modifier.focusRequester(tabFocus) else Modifier)
                     .card(RoundedCornerShape(50)) { tab = i }
                     .background(if (tab == i) Palette.accent else Palette.surfaceHigh, RoundedCornerShape(50))
                     .padding(horizontal = 16.dp, vertical = 8.dp))
             }
         }
+        Box(content.weight(1f)) {
         if (tab == 2) DownloadsTab()
         else if (tab == 0) {
             if (bookmarks.isEmpty()) EmptyState("Your list is empty", "Tap + My list on a title page to keep it here.", Modifier.fillMaxWidth())
@@ -261,6 +266,7 @@ fun LibraryScreen() {
                 }
             }
         }
+        }
     }
 }
 
@@ -286,14 +292,17 @@ internal fun RecentSearches(
             }
         }
         uniqueItems(recent, key = { "recent|$it" }) { q ->
-            Row(Modifier.fillMaxWidth().card(RoundedCornerShape(10.dp), focusScale = 1.02f) { onSearch(q) }.padding(horizontal = 12.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            // × sits beside the search (→ from it), not inside it, where the remote couldn't reach it.
+            ActionRow(onClick = { onSearch(q) }, modifier = Modifier.fillMaxWidth(),
+                padding = PaddingValues(horizontal = 12.dp, vertical = 12.dp),
+                actions = {
+                    Icon(Icons.Filled.Close, "Remove $q", tint = Palette.muted, modifier = Modifier.size(32.dp).card(CircleShape) {
+                        io.github.sherazi5110.cloudstream.SearchHistory.remove(q); recent = io.github.sherazi5110.cloudstream.SearchHistory.all()
+                    }.padding(6.dp))
+                }) {
                 Icon(Icons.Filled.History, null, tint = Palette.muted, modifier = Modifier.size(20.dp))
                 Text(q, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f))
-                Icon(Icons.Filled.Close, "Remove $q", tint = Palette.muted, modifier = Modifier.size(32.dp).card(CircleShape) {
-                    io.github.sherazi5110.cloudstream.SearchHistory.remove(q); recent = io.github.sherazi5110.cloudstream.SearchHistory.all()
-                }.padding(6.dp))
+                    modifier = Modifier.weight(1f).padding(start = 12.dp))
             }
         }
     }

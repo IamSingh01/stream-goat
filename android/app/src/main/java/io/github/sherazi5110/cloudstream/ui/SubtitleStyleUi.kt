@@ -57,12 +57,20 @@ import io.github.sherazi5110.cloudstream.player.SubtitleStyle
 @Composable
 private fun SidePanel(title: String, modifier: Modifier, onClose: () -> Unit, content: @Composable () -> Unit) {
     Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.35f)).pointerInput(Unit) { detectTapGestures { onClose() } })
+    // The remote stays in the panel (it used to slip out to the player's buttons behind it) and goes back to the
+    // button that opened it when it closes.
+    FocusOverlay(title) { trap ->
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.CenterEnd) {
-        Column(modifier.fillMaxHeight().width(380.dp).glassPanel(RoundedCornerShape(topStart = 24.dp, bottomStart = 24.dp), blur = false)
+        Column(trap.then(modifier).fillMaxHeight().width(380.dp).glassPanel(RoundedCornerShape(topStart = 24.dp, bottomStart = 24.dp), blur = false)
             .pointerInput(Unit) { detectTapGestures { } }.padding(vertical = 16.dp)) {
-            Text(title, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
+            // Done closes it (and applies the changes): with the remote, Back does the same.
+            Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 16.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(title, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
+                Choice("Done", false) { onClose() }
+            }
             content()
         }
+    }
     }
 }
 
@@ -188,7 +196,7 @@ internal fun SubtitleStylePanel(onApply: (Boolean) -> Unit, onClose: () -> Unit)
     LaunchedEffect(Unit) { runCatching { first.requestFocus() } }
     SidePanel("Subtitle style", Modifier, onClose) {
         Preview(look, clean)
-        Text("Applies when you close this panel (the video reopens where it was).",
+        Text("Applied when you press Apply, Done or Back (the video reopens where it was).",
             style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.6f), modifier = Modifier.padding(horizontal = 20.dp))
         Column(Modifier.verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
             Box(Modifier.focusRequester(first)) {
@@ -215,7 +223,8 @@ internal fun SubtitleStylePanel(onApply: (Boolean) -> Unit, onClose: () -> Unit)
             ChoiceRow("Alignment", SubtitleStyle.aligns, look.align) { v -> set { copy(align = v) } }
             Toggle("Remove closed captions", "Hides [door knocks], (laughs), ♪ lyrics and NAME: labels", clean.noCaptions) { v -> setClean { copy(noCaptions = v) } }
             Toggle("Remove ads", "Hides \"Subtitles by…\" and website lines", clean.noAds) { v -> setClean { copy(noAds = v) } }
-            Row(Modifier.padding(horizontal = 20.dp, vertical = 10.dp)) {
+            Row(Modifier.padding(horizontal = 20.dp, vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Choice("Apply", false) { onClose() }
                 Choice("Reset to default", false) {
                     look = SubtitleStyle.Look(); set { this }
                     clean = SubtitleStyle.Clean(); setClean { this }

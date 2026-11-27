@@ -55,6 +55,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -136,12 +137,14 @@ private fun Details(api: MainAPI, r: LoadResponse) {
         kotlinx.coroutines.delay(1200)
         io.github.sherazi5110.cloudstream.Engine.prefetch(api, t.data)
     }
-    var season by remember(r) { mutableStateOf(target?.season ?: seasons.keys.firstOrNull()) }
+    // Kept when you play an episode and come back (the player replaces this page meanwhile).
+    var season by androidx.compose.runtime.saveable.rememberSaveable(r.url) { mutableStateOf(target?.season ?: seasons.keys.firstOrNull()) }
     val episodes = seasons[season].orEmpty()
     val bookmarked = remember(libraryVersion, r) { Library.isBookmarked(api.name, r.url) }
     val allWatched = remember(libraryVersion, r) { playables.isNotEmpty() && playables.all { Library.isWatched(api.name, it.data) } }
     val playFocus = remember { FocusRequester() }
-    LaunchedEffect(Unit) { if (isTv) runCatching { playFocus.requestFocus() } }
+    // Opening the page selects Play; coming back to it (Back from the player) selects the episode you played instead.
+    LaunchedEffect(Unit) { if (isTv && !FocusKeeper.returning) runCatching { playFocus.requestFocus() } }
     val meta = io.github.sherazi5110.cloudstream.Metadata
     var matchVersion by remember { mutableIntStateOf(0) }
     var matching by remember { mutableStateOf(false) }
@@ -192,7 +195,7 @@ private fun Details(api: MainAPI, r: LoadResponse) {
                 }
             }
             ActionButton(Icons.Filled.Check, if (allWatched) "Watched" else "Mark as watched", tint = if (allWatched) Palette.watched else Color.White) {
-                if (allWatched) Library.markUnwatched(api.name, r.url, playables.map { it.data })
+                if (allWatched) { Library.markUnwatched(api.name, r.url, playables.map { it.data }); io.github.sherazi5110.cloudstream.WeTrakrSync.unmark(r, playables) }
                 else { Library.markWatched(api.name, r.url, r.name, r.posterUrl, playables.map { it.data to it.label }); io.github.sherazi5110.cloudstream.WeTrakrSync.push(r, playables) }
             }
             ActionButton(if (bookmarked) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder, if (bookmarked) "In My list" else "Add to My list") {
@@ -434,7 +437,9 @@ private fun EpisodeCard(api: MainAPI, r: LoadResponse, ep: Playable, libraryVers
                     var dlMenu by remember { mutableStateOf(false) }
                     Icon(DownloadsUi.icon(item), if (item == null) "Download" else DownloadsUi.label(item),
                         tint = if (item?.state == io.github.sherazi5110.cloudstream.Downloads.State.DONE) Palette.watched else Palette.muted,
-                        modifier = Modifier.size(40.dp).card(androidx.compose.foundation.shape.CircleShape) {
+                        // Touch taps it; on TV it can't be reached inside the tile, so it only shows the state there
+                        // and the remote downloads with a long press of OK (the episode's menu → Download).
+                        modifier = Modifier.size(40.dp).focusProperties { canFocus = !isTv }.card(androidx.compose.foundation.shape.CircleShape) {
                             if (item == null) DownloadsUi.start(context, api, r, ep) else dlMenu = true
                         }.padding(9.dp))
                     DownloadsUi.Menu(dlMenu, item) { dlMenu = false }
@@ -457,7 +462,7 @@ private fun EpisodeMenu(open: Boolean, api: MainAPI, r: LoadResponse, ep: Playab
             leadingIcon = { Icon(DownloadsUi.icon(item), null) },
             onClick = { onDismiss(); if (item == null) DownloadsUi.start(context, api, r, ep) else dlMenu = true })
         if (watched) DropdownMenuItem(text = { Text("Mark as not watched") }, leadingIcon = { Icon(Icons.Filled.Refresh, null) },
-            onClick = { onDismiss(); Library.markUnwatched(api.name, r.url, listOf(ep.data)) })
+            onClick = { onDismiss(); Library.markUnwatched(api.name, r.url, listOf(ep.data)); io.github.sherazi5110.cloudstream.WeTrakrSync.unmark(r, listOf(ep)) })
         else DropdownMenuItem(text = { Text("Mark as watched") }, leadingIcon = { Icon(Icons.Filled.Check, null) },
             onClick = { onDismiss(); Library.markWatched(api.name, r.url, r.name, r.posterUrl, listOf(ep.data to ep.label)); io.github.sherazi5110.cloudstream.WeTrakrSync.push(r, listOf(ep)) })
         DropdownMenuItem(text = { Text("Choose source") }, leadingIcon = { Icon(Icons.AutoMirrored.Filled.List, null) },
@@ -472,22 +477,10 @@ private fun EpisodeRow(api: MainAPI, r: LoadResponse, ep: Playable, libraryVersi
     val watched = remember(libraryVersion, ep) { Library.isWatched(api.name, ep.data) }
     var menu by remember { mutableStateOf(false) }
     Box {
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)
-                .card(RoundedCornerShape(10.dp), focusScale = 1.02f, onLongClick = { menu = true }, selectFirst = true) { Playback.play(api, r, ep) }
-                .padding(4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Box(Modifier.width(132.dp).aspectRatio(16f / 9f).clip(RoundedCornerShape(8.dp))) {
-                NetImage(ep.posterUrl ?: r.backgroundPosterUrl ?: r.posterUrl, Modifier.fillMaxSize(), r.posterHeaders)
-                if (progress != null && progress.duration > 0 && !watched) ProgressLine((progress.position / progress.duration).toFloat(), Modifier.align(Alignment.BottomStart))
-            }
-            Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                Text(ep.code(), style = MaterialTheme.typography.labelSmall, color = Palette.accent)
-                Text(ep.name ?: "Episode ${ep.episode ?: ""}", style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 2.dp))
-                val left = progress?.takeIf { !watched && it.duration > 0 && it.position > 30 }?.let { "${((it.duration - it.position) / 60).toInt()}m left" }
-                (left ?: ep.description?.takeIf { it.isNotBlank() })?.let { Text(it, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis) }
-            }
+        // ✓ and the download button sit beside the episode (→ from it), not inside it, where the remote couldn't reach them.
+        ActionRow(onClick = { Playback.play(api, r, ep) }, modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+            padding = PaddingValues(4.dp), onLongClick = { menu = true },
+            actions = {
             if (watched) Icon(Icons.Filled.Check, "Watched", tint = Palette.watched, modifier = Modifier.padding(end = 8.dp))
             if (api !is io.github.sherazi5110.cloudstream.OfflineApi) {
                 val context = androidx.compose.ui.platform.LocalContext.current
@@ -500,6 +493,17 @@ private fun EpisodeRow(api: MainAPI, r: LoadResponse, ep: Playable, libraryVersi
                     else DownloadsUi.Badge(item, Modifier.card(RoundedCornerShape(50)) { dlMenu = true })
                     DownloadsUi.Menu(dlMenu, item) { dlMenu = false }
                 }
+            }
+            }) {
+            Box(Modifier.width(132.dp).aspectRatio(16f / 9f).clip(RoundedCornerShape(8.dp))) {
+                NetImage(ep.posterUrl ?: r.backgroundPosterUrl ?: r.posterUrl, Modifier.fillMaxSize(), r.posterHeaders)
+                if (progress != null && progress.duration > 0 && !watched) ProgressLine((progress.position / progress.duration).toFloat(), Modifier.align(Alignment.BottomStart))
+            }
+            Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+                Text(ep.code(), style = MaterialTheme.typography.labelSmall, color = Palette.accent)
+                Text(ep.name ?: "Episode ${ep.episode ?: ""}", style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 2.dp))
+                val left = progress?.takeIf { !watched && it.duration > 0 && it.position > 30 }?.let { "${((it.duration - it.position) / 60).toInt()}m left" }
+                (left ?: ep.description?.takeIf { it.isNotBlank() })?.let { Text(it, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis) }
             }
         }
         EpisodeMenu(menu, api, r, ep, watched) { menu = false }

@@ -219,9 +219,10 @@ private fun DownloadLine(item: Downloads.Item) {
         else -> item.label ?: item.episodeName ?: "Episode"
     }
     Box {
-        Row(Modifier.fillMaxWidth().card(RoundedCornerShape(10.dp), focusScale = 1.02f, onLongClick = { menu = true }) {
-            if (item.state == State.DONE) DownloadsUi.play(item) else menu = true
-        }.background(Palette.surface, RoundedCornerShape(10.dp)).padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+        // Delete sits beside the line (→ from it), not inside it, where the remote couldn't reach it.
+        ActionRow(onClick = { if (item.state == State.DONE) DownloadsUi.play(item) else menu = true }, modifier = Modifier.fillMaxWidth(),
+            background = Palette.surface, onLongClick = { menu = true },
+            actions = { Icon(Icons.Filled.Delete, "Delete", tint = Palette.muted, modifier = Modifier.size(36.dp).card(CircleShape) { Downloads.delete(item.id) }.padding(8.dp)) }) {
             Box(Modifier.size(34.dp).background(if (item.state == State.DONE) Palette.accent else Palette.surfaceHigh, CircleShape), contentAlignment = Alignment.Center) {
                 Icon(if (item.state == State.DONE) Icons.Filled.PlayArrow else DownloadsUi.icon(item), null, tint = Color.White, modifier = Modifier.size(20.dp))
             }
@@ -231,7 +232,6 @@ private fun DownloadLine(item: Downloads.Item) {
                     color = if (item.state == State.FAILED) Color(0xFFFF6B6B) else Palette.muted)
                 if (item.state != State.DONE && item.progress >= 0) ProgressLine(item.progress.toFloat(), Modifier.padding(top = 6.dp))
             }
-            Icon(Icons.Filled.Delete, "Delete", tint = Palette.muted, modifier = Modifier.size(36.dp).card(CircleShape) { Downloads.delete(item.id) }.padding(8.dp))
         }
         DownloadsUi.Menu(menu, item) { menu = false }
     }

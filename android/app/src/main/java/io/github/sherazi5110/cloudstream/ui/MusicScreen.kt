@@ -69,6 +69,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.key.key
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
@@ -206,7 +211,10 @@ fun MusicScreen() {
 
 @Composable
 private fun TopBar() {
-    Row(Modifier.fillMaxWidth().padding(horizontal = PageSide, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+    // Home · Explore · Library · Search: reached with ↑, never by a lost selection (it used to land on Home here
+    // when the song list changed as a song started).
+    NavArea("music tabs", listOf(androidx.compose.ui.focus.FocusDirection.Up)) { nav ->
+    Row(nav.fillMaxWidth().padding(horizontal = PageSide, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(30.dp).background(Color(0xFFFF0033), CircleShape), contentAlignment = Alignment.Center) {
             Icon(Icons.Filled.PlayArrow, null, tint = Color.White, modifier = Modifier.size(20.dp))
         }
@@ -218,6 +226,7 @@ private fun TopBar() {
             }
         }
         IconAction(Icons.Filled.Search, "Search") { MusicUi.searching = true }
+    }
     }
 }
 
@@ -458,9 +467,11 @@ private fun Shelf(title: String, tracks: List<Music.Track>) {
 private fun SongRow(t: Music.Track, list: List<Music.Track>, modifier: Modifier = Modifier, playlist: String? = null) {
     val now = Music.current?.url == t.url
     val menu = { MusicUi.menuPlaylist = playlist; MusicUi.menuFor = t }
-    Row(modifier.fillMaxWidth().card(RoundedCornerShape(8.dp), focusScale = 1.02f, onLongClick = menu) { Music.play(t, list) }
-        .background(if (now) Color.White.copy(alpha = 0.1f) else Color.Transparent, RoundedCornerShape(8.dp)).padding(vertical = 6.dp, horizontal = 4.dp),
-        verticalAlignment = Alignment.CenterVertically) {
+    // ⋮ sits beside the song (→ from it), not inside it, where the remote couldn't reach it.
+    ActionRow(onClick = { Music.play(t, list) }, modifier = modifier.fillMaxWidth(), shape = RoundedCornerShape(8.dp),
+        background = if (now) Color.White.copy(alpha = 0.1f) else Color.Transparent,
+        padding = PaddingValues(vertical = 6.dp, horizontal = 4.dp), onLongClick = menu,
+        actions = { IconAction(Icons.Filled.MoreVert, "More") { menu() } }) {
         Box {
             NetImage(t.thumbnail, Modifier.size(56.dp).clip(RoundedCornerShape(4.dp)))
             if (now && Music.playing) Icon(Icons.Filled.Pause, null, tint = Color.White,
@@ -475,7 +486,6 @@ private fun SongRow(t: Music.Track, list: List<Music.Track>, modifier: Modifier 
                     .joinToString(" · "), style = MaterialTheme.typography.bodySmall, color = Palette.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
-        IconAction(Icons.Filled.MoreVert, "More") { menu() }
     }
 }
 
@@ -486,9 +496,16 @@ private fun SongMenu(t: Music.Track) {
     val context = LocalContext.current
     val close = { MusicUi.menuFor = null }
     BackHandler { close() }
-    Box(Modifier.fillMaxSize().freshOkOnly().background(Color.Black.copy(alpha = 0.55f)).card(RoundedCornerShape(0.dp), focusScale = 1f) { close() },
+    // The remote stays in the menu, starts on "Play next" and, when the menu closes, goes back to the song.
+    val firstTile = remember { androidx.compose.ui.focus.FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { firstTile.requestFocus() } }
+    FocusOverlay("song menu") { trap ->
+    // A tap outside closes it (the dimmed backdrop isn't selectable: the remote's buttons are all in the menu).
+    Box(Modifier.fillMaxSize().freshOkOnly().background(Color.Black.copy(alpha = 0.55f))
+        .pointerInput(Unit) { detectTapGestures { close() } },
         contentAlignment = Alignment.BottomCenter) {
-        Column(Modifier.widthIn(max = 900.dp).fillMaxWidth().background(Color(0xFF212121), RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
+        Column(trap.widthIn(max = 900.dp).fillMaxWidth().background(Color(0xFF212121), RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
+            .pointerInput(Unit) { detectTapGestures { } }
             .padding(bottom = 12.dp + LocalBottomInset.current)) {
             Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                 NetImage(t.thumbnail, Modifier.size(48.dp).clip(RoundedCornerShape(4.dp)))
@@ -501,7 +518,7 @@ private fun SongMenu(t: Music.Track) {
             }
             Box(Modifier.fillMaxWidth().height(1.dp).background(Color.White.copy(alpha = 0.1f)))
             Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Tile(Icons.AutoMirrored.Filled.QueueMusic, "Play next", Modifier.weight(1f)) { Music.playNext(t); close() }
+                Tile(Icons.AutoMirrored.Filled.QueueMusic, "Play next", Modifier.weight(1f), firstTile) { Music.playNext(t); close() }
                 Tile(Icons.AutoMirrored.Filled.PlaylistAdd, "Save to playlist", Modifier.weight(1f)) { MusicUi.saveFor = t; close() }
                 Tile(Icons.Filled.Share, "Share", Modifier.weight(1f)) {
                     runCatching {
@@ -521,12 +538,13 @@ private fun SongMenu(t: Music.Track) {
             MusicUi.menuPlaylist?.let { p -> MenuLine(Icons.Filled.Close, "Remove from $p") { MusicLibrary.removeFromPlaylist(p, t); close() } }
         }
     }
+    }
 }
 
 @Composable
-private fun Tile(icon: ImageVector, label: String, modifier: Modifier, onClick: () -> Unit) {
+private fun Tile(icon: ImageVector, label: String, modifier: Modifier, focus: androidx.compose.ui.focus.FocusRequester? = null, onClick: () -> Unit) {
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
-        Box(Modifier.fillMaxWidth().height(64.dp).card(RoundedCornerShape(10.dp)) { onClick() }
+        Box(Modifier.fillMaxWidth().height(64.dp).then(if (focus != null) Modifier.focusRequester(focus) else Modifier).card(RoundedCornerShape(10.dp)) { onClick() }
             .background(Color.White.copy(alpha = 0.08f), RoundedCornerShape(10.dp)), contentAlignment = Alignment.Center) { Icon(icon, label, tint = Color.White) }
         Text(label, style = MaterialTheme.typography.labelLarge, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 8.dp))
     }
@@ -621,9 +639,20 @@ private fun PlayerMain(t: Music.Track, artModifier: Modifier, docked: Boolean = 
         ActionPill(Icons.Filled.Radio, "Mix") { Music.startMix(t) }
     }
     var drag by remember { mutableStateOf<Float?>(null) }
+    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
     Slider(value = drag ?: if (Music.length > 0) (Music.position.toFloat() / Music.length).coerceIn(0f, 1f) else 0f,
         onValueChange = { drag = it }, onValueChangeFinished = { drag?.let { Music.seekTo((it * Music.length).toLong()) }; drag = null },
-        modifier = Modifier.fillMaxWidth().focusProperties { canFocus = !isTv })
+        // Reachable with the remote too: ←/→ move 10 s, ↑/↓ leave the bar (the slider would otherwise take them).
+        modifier = Modifier.fillMaxWidth().onPreviewKeyEvent { e ->
+            val down = e.type == androidx.compose.ui.input.key.KeyEventType.KeyDown
+            when (e.key) {
+                androidx.compose.ui.input.key.Key.DirectionLeft -> { if (down) Music.seekTo((Music.position - 10_000).coerceAtLeast(0)); true }
+                androidx.compose.ui.input.key.Key.DirectionRight -> { if (down && Music.length > 0) Music.seekTo((Music.position + 10_000).coerceAtMost(Music.length)); true }
+                androidx.compose.ui.input.key.Key.DirectionUp -> { if (down) focusManager.moveFocus(androidx.compose.ui.focus.FocusDirection.Up); true }
+                androidx.compose.ui.input.key.Key.DirectionDown -> { if (down) focusManager.moveFocus(androidx.compose.ui.focus.FocusDirection.Down); true }
+                else -> false
+            }
+        })
     Row(Modifier.fillMaxWidth()) {
         Text(clock(Music.position), style = MaterialTheme.typography.labelSmall, color = Palette.muted)
         Spacer(Modifier.weight(1f))
@@ -676,18 +705,21 @@ fun MiniPlayer(modifier: Modifier = Modifier) {
     // Music lives in its own section: its player shows only there (and it stops when you leave, see AppRoot).
     // Tablet and TV have the docked player instead; phones get this bar.
     if (Nav.tab != Tab.MUSIC || MusicUi.playerOpen || isWide) return
-    Column(modifier.fillMaxWidth().padding(horizontal = 12.dp).clip(RoundedCornerShape(12.dp)).background(Color(0xFF212121))
-        .card(RoundedCornerShape(12.dp), focusScale = 1.01f) { Nav.tab = Tab.MUSIC; MusicUi.playerOpen = true }) {
-        Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+    Column(modifier.fillMaxWidth().padding(horizontal = 12.dp).clip(RoundedCornerShape(12.dp)).background(Color(0xFF212121))) {
+        // The buttons sit beside the song (→ from it), not inside the bar's selectable area.
+        ActionRow(onClick = { Nav.tab = Tab.MUSIC; MusicUi.playerOpen = true }, modifier = Modifier.fillMaxWidth().padding(4.dp),
+            shape = RoundedCornerShape(12.dp), padding = PaddingValues(4.dp), focusScale = 1.01f,
+            actions = {
+                IconAction(Icons.Filled.SkipPrevious, "Previous") { Music.previous() }
+                IconAction(if (Music.playing) Icons.Filled.Pause else Icons.Filled.PlayArrow, "Play/pause") { Music.toggle() }
+                IconAction(Icons.Filled.SkipNext, "Next") { Music.next() }
+                IconAction(Icons.Filled.Close, "Stop") { Music.stop() }
+            }) {
             NetImage(t.thumbnail, Modifier.size(44.dp).clip(RoundedCornerShape(4.dp)))
             Column(Modifier.weight(1f).padding(start = 12.dp)) {
                 Text(t.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(Music.error ?: if (Music.loading) "Loading…" else t.artist, style = MaterialTheme.typography.bodySmall, color = Palette.muted, maxLines = 1)
             }
-            IconAction(Icons.Filled.SkipPrevious, "Previous") { Music.previous() }
-            IconAction(if (Music.playing) Icons.Filled.Pause else Icons.Filled.PlayArrow, "Play/pause") { Music.toggle() }
-            IconAction(Icons.Filled.SkipNext, "Next") { Music.next() }
-            IconAction(Icons.Filled.Close, "Stop") { Music.stop() }
         }
         if (Music.length > 0) LinearProgressIndicator(progress = { (Music.position.toFloat() / Music.length).coerceIn(0f, 1f) },
             modifier = Modifier.fillMaxWidth().height(2.dp), color = Color.White, trackColor = Color.White.copy(alpha = 0.15f))

@@ -81,6 +81,12 @@ class DetailsPage(
                 groupIndex = groups().indexOfFirst { g -> g.second.any { it.data == last?.episodeData } }.coerceAtLeast(0)
                 (r.backgroundPosterUrl ?: r.posterUrl)?.let { backdropLayer.children.setAll(backdrop(it, r.posterHeaders, 0.35)) }
                 render()
+                // Episodes (or the film) watched on WeTrakr show as watched here too.
+                val snapshot = playables
+                ui.launch {
+                    val marked = runCatching { com.lagradost.cloudstream3.linux.WeTrakrSync.apply(api.name, r, snapshot) }.getOrDefault(0)
+                    if (marked > 0 && scene != null && response === r) render()
+                }
                 // Start finding the sources of what Play would start, so pressing it starts sooner.
                 if (api !is com.lagradost.cloudstream3.linux.OfflineApi) target()?.let { t ->
                     kotlinx.coroutines.delay(1200)
@@ -181,8 +187,11 @@ class DetailsPage(
         playSlot.children.setAll(playButton())
         val watched = playables.isNotEmpty() && playables.all { Library.isWatched(api.name, it.data) }
         val watchedButton = button(if (watched) "Watched" else "Mark as watched", if (watched) Icons.CHECK else Icons.CHECK, "btn-ghost") {
-            if (watched) Library.markUnwatched(api.name, url, playables.map { it.data })
-            else Library.markWatched(api.name, url, r.name, r.posterUrl ?: poster, playables.map { it.data to (if (playables.size > 1) it.label else null) })
+            if (watched) { Library.markUnwatched(api.name, url, playables.map { it.data }); com.lagradost.cloudstream3.linux.WeTrakrSync.unmark(r, playables) }
+            else {
+                Library.markWatched(api.name, url, r.name, r.posterUrl ?: poster, playables.map { it.data to (if (playables.size > 1) it.label else null) })
+                com.lagradost.cloudstream3.linux.WeTrakrSync.push(r, playables)
+            }
             Toasts.show(if (watched) "Marked as not watched" else "Marked as watched")
             render()
         }.apply {
@@ -291,7 +300,7 @@ class DetailsPage(
         Images.load(image, ep.posterUrl ?: r.backgroundPosterUrl ?: r.posterUrl, w, h, r.posterHeaders)
         val progress = Library.progress(api.name, ep.data)?.let { if (it.duration > 0) it.position / it.duration else null }
         // Anti-spoiler: unwatched episodes show a blurred thumbnail and no description.
-        val hidden = Settings.antiSpoiler && (progress == null || progress < 0.92) && ep.posterUrl != null
+        val hidden = Settings.antiSpoiler && (progress == null || progress < com.lagradost.cloudstream3.linux.Library.WATCHED_AT) && ep.posterUrl != null
         if (hidden) image.effect = javafx.scene.effect.GaussianBlur(26.0)
         val play = StackPane(icon(Icons.PLAY, 20.0).apply { style += "-fx-background-color: white;" }).apply {
             style = "-fx-background-color: rgba(0,0,0,0.55); -fx-background-radius: 999;"
@@ -302,7 +311,7 @@ class DetailsPage(
             styleClass += "poster-frame"
             setMinSize(w, h); setMaxSize(w, h)
             if (progress != null) children += progressBar(progress, w).also { StackPane.setAlignment(it, Pos.BOTTOM_LEFT) }
-            if (progress != null && progress > 0.92) children += label("Watched", "badge", "good").also {
+            if (progress != null && progress >= com.lagradost.cloudstream3.linux.Library.WATCHED_AT) children += label("Watched", "badge", "good").also {
                 StackPane.setAlignment(it, Pos.TOP_RIGHT); StackPane.setMargin(it, javafx.geometry.Insets(8.0))
             }
             children += DownloadsUi.episodeBadge(api, r, ep).also { StackPane.setAlignment(it, Pos.TOP_LEFT); StackPane.setMargin(it, javafx.geometry.Insets(8.0)) }
@@ -319,7 +328,7 @@ class DetailsPage(
         ).pad(10.0, 12.0, 12.0, 12.0)
         return VBox(thumb, text).apply {
             styleClass += "episode-card"
-            if (progress != null && progress > 0.92) styleClass += "watched"
+            if (progress != null && progress >= com.lagradost.cloudstream3.linux.Library.WATCHED_AT) styleClass += "watched"
             prefWidth = w; maxWidth = w
             roundedClip(this, 12.0)
             setOnMouseEntered { animate(play.opacityProperty(), 1.0, 120.0) }

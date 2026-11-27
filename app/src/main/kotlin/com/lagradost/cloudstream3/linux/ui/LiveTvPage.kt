@@ -63,7 +63,7 @@ class LiveTvPage : StackPane(), Refreshable, TopBarActions, Disposable {
     private val guideButton = button("TV guide", Icons.HISTORY, "topbar-source") { toggleGuide() }.apply { tooltip("Switch between the channel list and the TV guide") }
     /** "Check channels": which channels answer (public lists always have dead links). */
     private var checkJob: Job? = null
-    private var checking: Pair<Int, Int>? = null
+    @Volatile private var checking: Pair<Int, Int>? = null
     private val checkButton = button("Check channels", Icons.NETWORK, "topbar-source") { checkChannels() }.apply {
         tooltip("Open every channel's stream to see which ones work; then you can hide the others")
     }
@@ -188,7 +188,15 @@ class LiveTvPage : StackPane(), Refreshable, TopBarActions, Disposable {
             checkButton.text = "Stop checking"
             renderBody()
             val ok = runCatching {
-                LiveTv.check(list) { done, working -> javafx.application.Platform.runLater { checking = done to working; renderBody() } }
+                // Only the progress line changes while checking (at most once a frame). Rebuilding the whole page for
+                // each channel checked froze the window and ran it out of memory with big lists ("All IPTV": 10,000).
+                LiveTv.check(list) { done, working ->
+                    checking = done to working
+                    if (!progressQueued) {
+                        progressQueued = true
+                        javafx.application.Platform.runLater { progressQueued = false; updateProgress() }
+                    }
+                }
             }.getOrNull()
             checking = null
             checkButton.text = "Check channels"
@@ -197,11 +205,19 @@ class LiveTvPage : StackPane(), Refreshable, TopBarActions, Disposable {
         }
     }
 
+    /** The check's progress line (updated in place while checking). */
+    private val progressText = label("", "muted")
+    @Volatile private var progressQueued = false
+    private fun updateProgress() {
+        val (done, working) = checking ?: return
+        progressText.text = "Checking channels… $done of $checkTotal · $working work"
+    }
+
     /** Above the channels: the check's progress, or how many didn't answer with a Hide/Show switch. */
     private fun healthBar(): Node? {
-        checking?.let { (done, working) ->
-            return hbox(10.0, ProgressIndicator().apply { setPrefSize(18.0, 18.0) },
-                label("Checking channels… $done of $checkTotal · $working work", "muted"),
+        checking?.let {
+            updateProgress()
+            return hbox(10.0, ProgressIndicator().apply { setPrefSize(18.0, 18.0) }, progressText,
                 button("Stop", null, "btn-ghost", "btn-small") { checkJob?.cancel() })
         }
         val dead = all.count { (country == null || it.country?.split(';')?.contains(country) == true) && LiveTv.health(it)?.ok == false }

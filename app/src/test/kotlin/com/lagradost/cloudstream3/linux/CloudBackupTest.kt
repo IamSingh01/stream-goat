@@ -14,9 +14,9 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
- * Google Drive backup against a stand-in for Google: code sign-in (with "pending" first), each device's own file in
- * Drive's app folder (a phone's and a TV's don't overwrite each other), a skipped upload when nothing changed, an
- * expired token refreshed, restoring another device's backup, deleting one, sign-out.
+ * Google Drive backup against a stand-in for Google: code sign-in (with "pending" first), one shared backup that
+ * every device keeps in sync (changes from both sides kept, old per-device backups merged in and trashed, each
+ * device's settings left alone), a skipped upload when nothing changed, an expired token refreshed, restore, sign-out.
  */
 class CloudBackupTest {
     private class FakeGoogle {
@@ -30,6 +30,8 @@ class CloudBackupTest {
         private var clock = 1_700_000_000_000L
         /** id → name, appProperties, modifiedTime, content */
         val files = linkedMapOf<String, JSONObject>()
+        /** Moved to Drive's trash. */
+        val trashed = linkedMapOf<String, JSONObject>()
         /** Folders the app made: id → name. */
         val folders = linkedMapOf<String, String>()
 
@@ -95,6 +97,9 @@ class CloudBackupTest {
                         send(x, 200, JSONObject().put("files", list).toString())
                     }
                     x.requestMethod == "DELETE" -> { files.remove(id); send(x, 204, "") }
+                    // Moved to the trash: gone from the lists (Google keeps it 30 days).
+                    x.requestMethod == "PATCH" && JSONObject(x.requestBody.readBytes().decodeToString()).optBoolean("trashed") ->
+                        { files.remove(id)?.let { trashed[id] = it }; send(x, 200, """{"id":"$id"}""") }
                     x.requestURI.rawQuery == "alt=media" -> send(x, 200, files[id]?.getString("content") ?: "")
                     else -> send(x, 404, "{}")
                 }
@@ -109,12 +114,24 @@ class CloudBackupTest {
                     require(meta.getJSONArray("parents").getString(0) in folders)
                     "file-${nextId++}".also { files[it] = JSONObject().put("name", meta.getString("name")) }
                 } else x.requestURI.path.substringAfterLast('/').also { require(x.requestMethod == "PATCH" && it in files) }
-                files.getValue(id).put("appProperties", meta.getJSONObject("appProperties")).put("content", content).put("modified", clock++)
+                val at = clock++
+                files.getValue(id).put("appProperties", meta.getJSONObject("appProperties")).put("content", content).put("modified", at)
                 uploads++
-                send(x, 200, """{"id":"$id"}""")
+                send(x, 200, """{"id":"$id","modifiedTime":"${java.time.Instant.ofEpochMilli(at)}"}""")
             }
             server.start()
         }
+
+        /** A backup file put there by another device (an old per-device one, or the shared one changed). */
+        fun put(name: String, device: String, deviceId: String, stores: JSONObject, id: String? = null): String {
+            val fid = id ?: "file-${nextId++}"
+            val content = JSONObject().put("format", Backup.FORMAT).put("version", 1).put("stores", stores).toString()
+            files[fid] = JSONObject().put("name", name).put("content", content).put("modified", clock++)
+                .put("appProperties", JSONObject().put("device", device).put("deviceId", deviceId))
+            return fid
+        }
+
+        fun stores(id: String): JSONObject = JSONObject(files.getValue(id).getString("content")).getJSONObject("stores")
     }
 
     private val store get() = Platform.context.getSharedPreferences("cloud_test", 0)
@@ -144,8 +161,17 @@ class CloudBackupTest {
         assertEquals(null, CloudBackup.fallbackUrl("${e.drive}/files", e))
     }
 
+    /** My list in the test's library store ("sync_test" stands for library: it's content, so it's synced). */
+    private val lib get() = Platform.context.getSharedPreferences("sync_test", 0)
+    private val device get() = Platform.context.getSharedPreferences("app_settings", 0)
+    private fun list(vararg urls: String) = JSONArray(urls.map { JSONObject().put("apiName", "X").put("url", it) }).toString()
+    private fun listStore(vararg urls: String) = JSONObject().put("sync_test", JSONObject().put("bookmarks", JSONObject().put("s", list(*urls))))
+    private fun urlsOf(json: String?) = JSONArray(json ?: "[]").let { a -> (0 until a.length()).map { a.getJSONObject(it).getString("url") }.sorted() }
+    private fun urlsHere() = urlsOf(lib.getString("bookmarks", null))
+    private fun urlsIn(stores: JSONObject) = urlsOf(stores.optJSONObject("sync_test")?.optJSONObject("bookmarks")?.optString("s"))
+
     @Test
-    fun `sign in with a code, each device backs up its own file, restore another device's, sign out`(): Unit = runBlocking {
+    fun `sign in with a code, one shared backup kept in sync by every device, old ones merged and trashed, sign out`(): Unit = runBlocking {
         Platform.init(); Network.init()
         val google = FakeGoogle()
         val before = CloudBackup.endpoints
@@ -154,6 +180,7 @@ class CloudBackupTest {
             drive = "${google.base}/drive/v3", upload = "${google.base}/upload/drive/v3",
         )
         CloudBackup.clientId = "test-client"; CloudBackup.clientSecret = "test-secret"
+        val layout = device.getString("layout", null)
         try {
             CloudBackup.signOut()
             val signIn = CloudBackup.startSignIn()
@@ -162,53 +189,63 @@ class CloudBackupTest {
             assertEquals(2, google.polls)
             assertTrue(CloudBackup.state.value.signedIn)
             assertEquals("goat@example.com", CloudBackup.state.value.email)
-            val tv = CloudBackup.deviceId
+            google.folders["folder-0"] = "Stream Goat backups"
 
-            // This device ("the TV") backs up its own file; unchanged, nothing is uploaded again.
-            store.edit().putString("value", "tv").commit()
-            assertEquals(emptyList(), CloudBackup.backups())
+            // Old versions left one backup per device: two from the TV (an old install and the latest) and the tablet's.
+            val oldTv = google.put("stream-goat-backup-tv-old.json", "Google TV Streamer", "tv-old", listStore("deleted-long-ago"))
+            google.put("stream-goat-backup-tv.json", "Google TV Streamer", "tv", listStore("tv-film"))
+            google.put("stream-goat-backup-tab.json", "Lenovo", "tab", listStore("tablet-film"))
+            // This computer: its own film, and its own layout setting.
+            lib.edit().putString("bookmarks", list("pc-film")).commit()
+            device.edit().putString("layout", "tv").commit()
+
+            // The first sync: one shared file, with everyone's films (the newest backup of each device), the old ones
+            // in the trash. Each device's own settings aren't in it.
             assertTrue(CloudBackup.backupNow())
+            val shared = google.files.entries.single()
+            assertEquals(CloudBackup.SHARED, shared.value.getString("name"))
+            assertEquals(listOf("pc-film", "tablet-film", "tv-film"), urlsIn(google.stores(shared.key)))
+            assertEquals(listOf("pc-film", "tablet-film", "tv-film"), urlsHere())
+            assertFalse(google.stores(shared.key).has("app_settings"))
+            assertFalse(google.stores(shared.key).has("cloud_backup"))
+            assertEquals(3, google.trashed.size)
+            assertTrue(oldTv in google.trashed)
+            assertTrue(CloudBackup.backups().single().shared)
+
+            // Nothing changed anywhere: nothing is uploaded.
+            val uploads = google.uploads
             assertFalse(CloudBackup.backupNow(onlyIfChanged = true))
-            assertEquals(1, google.uploads)
-            val mine = CloudBackup.backups().single()
-            assertTrue(mine.mine)
-            assertEquals("stream-goat-backup-$tv.json", google.files.values.single().getString("name"))
-            assertFalse(JSONObject(google.files.values.single().getString("content")).getJSONObject("stores").has("cloud_backup"))
+            assertEquals(uploads, google.uploads)
 
-            // "The phone" (another installation on the same account) has its own file: nothing is overwritten.
-            account.edit().putString("device_id", "phone-1").commit()
-            store.edit().putString("value", "phone").commit()
-            assertTrue(CloudBackup.backupNow())
-            account.edit().putString("device_id", tv).commit()
-            val all = CloudBackup.backups()
-            assertEquals(2, all.size)
-            // Both went into one "Stream Goat backups" folder in My Drive.
-            assertEquals(listOf("Stream Goat backups"), google.folders.values.toList())
-            val phone = all.first()
-            assertEquals("phone-1", phone.deviceId)
-            assertFalse(phone.mine)
-
-            // The TV restores the phone's backup (an expired token is refreshed on the way).
-            store.edit().putString("value", "changed on the tv").commit()
-            google.validAccess = "access-expired-on-server"
-            CloudBackup.restore(phone)
-            assertTrue(google.refreshes >= 1)
-            assertEquals("phone", store.getString("value", null))
-
-            // An old device's backup can be deleted; the TV's own stays and is updated in place.
-            CloudBackup.delete(phone)
-            assertEquals(listOf(tv), CloudBackup.backups().map { it.deviceId })
-            store.edit().putString("value", "tv again").commit()
+            // The TV removes the tablet's film and adds one; meanwhile this computer adds one. Both changes stay.
+            google.put(CloudBackup.SHARED, "Google TV Streamer", "tv", listStore("pc-film", "tv-film", "tv-new"), id = shared.key)
+            lib.edit().putString("bookmarks", list("pc-film", "tablet-film", "tv-film", "pc-new")).commit()
             assertTrue(CloudBackup.backupNow(onlyIfChanged = true))
-            assertEquals(1, google.files.size)
+            assertEquals(listOf("pc-film", "pc-new", "tv-film", "tv-new"), urlsHere())
+            assertEquals(listOf("pc-film", "pc-new", "tv-film", "tv-new"), urlsIn(google.stores(shared.key)))
+            assertEquals(1, google.files.size, "the same file, replaced")
+            // This computer's layout was never touched by the sync.
+            assertEquals("tv", device.getString("layout", null))
+
+            // Another device's change alone comes here too (an expired token is refreshed on the way).
+            google.put(CloudBackup.SHARED, "Lenovo", "tab", listStore("pc-film", "pc-new", "tv-film", "tv-new", "tablet-new"), id = shared.key)
+            google.validAccess = "access-expired-on-server"
+            assertTrue(CloudBackup.backupNow(onlyIfChanged = true))
+            assertTrue(google.refreshes >= 1)
+            assertEquals(listOf("pc-film", "pc-new", "tablet-new", "tv-film", "tv-new"), urlsHere())
+
+            // Restore replaces what's here with the shared backup.
+            lib.edit().putString("bookmarks", list("only-here")).commit()
+            CloudBackup.restore(CloudBackup.backups().single())
+            assertEquals(listOf("pc-film", "pc-new", "tablet-new", "tv-film", "tv-new"), urlsHere())
 
             CloudBackup.signOut()
             assertEquals("refresh-1", google.revoked)
             assertFalse(CloudBackup.state.value.signedIn)
-            assertEquals(tv, CloudBackup.deviceId, "signing out keeps this device's backup name")
             assertFailsWith<CloudBackup.CloudException> { CloudBackup.backupNow() }
         } finally {
-            store.edit().clear().commit()
+            lib.edit().clear().commit()
+            device.edit().apply { if (layout == null) remove("layout") else putString("layout", layout) }.commit()
             CloudBackup.endpoints = before
             google.server.stop(0)
         }

@@ -2,6 +2,9 @@ package io.github.sherazi5110.cloudstream.ui
 
 import androidx.compose.foundation.focusGroup
 import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -119,12 +122,30 @@ fun SourcesPanel(all: List<ExtractorLink>, currentUrl: String?, searching: Boole
     }
     val chips = remember(rows) { SourceFilters.chips(rows.map { it.tags }) }
     val shown = rows.filter { r -> picked.all { it in r.tags } && SourceFilters.matches(r.text, query) }
-    val first = remember { FocusRequester() }
-    LaunchedEffect(Unit) { runCatching { first.requestFocus() } }
+    val first = remember { FocusRequester() }   // where the remote starts: the source playing now, else the top one
+    val top = remember { FocusRequester() }     // the top source (↓ from the search box and the chips)
+    val close = remember { FocusRequester() }
+    // While no source has been found yet the remote waits on Close, and goes to the first source when one comes
+    // (unless you've moved it yourself). Typing a search never moves it.
+    val startUrl = remember { currentUrl?.takeIf { u -> rows.any { it.link.url == u } } }
+    var inside by remember { mutableStateOf(false) }
+    var parked by remember { mutableStateOf(false) }
+    LaunchedEffect(shown.isNotEmpty()) {
+        kotlinx.coroutines.delay(30)
+        runCatching {
+            when {
+                !inside -> if (shown.isNotEmpty()) first.requestFocus() else { close.requestFocus(); parked = true }
+                parked && shown.isNotEmpty() -> { parked = false; first.requestFocus() }
+            }
+        }
+    }
 
     Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.45f)).pointerInput(Unit) { detectTapGestures { onClose() } })
+    FocusOverlay("sources") { trap ->
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
-        Column(Modifier.fillMaxWidth().fillMaxHeight(0.8f).glassPanel(RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp), blur = false)
+        Column(Modifier.onFocusChanged { inside = it.hasFocus }.then(trap)
+            .onPreviewKeyEvent { if (inside && it.type == androidx.compose.ui.input.key.KeyEventType.KeyDown) parked = false; false }
+            .fillMaxWidth().fillMaxHeight(0.8f).glassPanel(RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp), blur = false)
             .pointerInput(Unit) { detectTapGestures { } }.padding(start = 20.dp, end = 20.dp, top = 14.dp)) {
             Box(Modifier.align(Alignment.CenterHorizontally).width(44.dp).padding(bottom = 10.dp).background(Palette.muted.copy(alpha = 0.5f), RoundedCornerShape(3.dp)).padding(vertical = 2.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -132,7 +153,7 @@ fun SourcesPanel(all: List<ExtractorLink>, currentUrl: String?, searching: Boole
                 Text(if (shown.size == rows.size) "  ${rows.size}" else "  ${shown.size} of ${rows.size}", style = MaterialTheme.typography.titleMedium, color = Palette.muted)
                 if (searching) Text("   still looking…", style = MaterialTheme.typography.bodySmall, color = Palette.accent)
                 Spacer(Modifier.weight(1f))
-                IconAction(Icons.Filled.Close, "Close") { onClose() }
+                Box(Modifier.focusRequester(close)) { IconAction(Icons.Filled.Close, "Close") { onClose() } }
             }
             val chipsFocus = remember { FocusRequester() }
             val searchFocus = remember { FocusRequester() }
@@ -141,10 +162,11 @@ fun SourcesPanel(all: List<ExtractorLink>, currentUrl: String?, searching: Boole
                 colors = OutlinedTextFieldDefaults.colors(unfocusedContainerColor = Palette.surfaceHigh, focusedContainerColor = Palette.surfaceHigh,
                     unfocusedBorderColor = Color.Transparent, focusedBorderColor = Palette.accent),
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp).focusRequester(searchFocus)
-                    .focusProperties { down = if (chips.isNotEmpty()) chipsFocus else first })
+                    .focusProperties { down = if (chips.isNotEmpty()) chipsFocus else top })
             if (chips.isNotEmpty()) LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(vertical = 10.dp),
-                modifier = Modifier.focusRequester(chipsFocus).focusProperties { up = searchFocus; down = first }.focusGroup()) {
-                items(chips) { tag ->
+                modifier = Modifier.focusRequester(chipsFocus).focusProperties { up = searchFocus; down = top }.focusGroup()) {
+                // Keyed by name: chips arriving with new sources don't change the one you're on.
+                items(chips, key = { it }) { tag ->
                     val on = tag in picked
                     Text(tag, style = MaterialTheme.typography.labelLarge, modifier = Modifier
                         .card(RoundedCornerShape(50)) { picked = if (on) picked - tag else picked + tag }
@@ -155,11 +177,18 @@ fun SourcesPanel(all: List<ExtractorLink>, currentUrl: String?, searching: Boole
             if (shown.isEmpty()) Text(
                 when { rows.isEmpty() && searching -> "Looking for sources…"; rows.isEmpty() -> "No sources found"; else -> "No source matches. Clear the search or a chip." },
                 style = MaterialTheme.typography.bodyLarge, color = Palette.muted, modifier = Modifier.padding(vertical = 20.dp))
-            LazyColumn(contentPadding = PaddingValues(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                items(shown.size, key = { i -> "${i}|${shown[i].link.url}" }) { i ->
+            val listState = remember { androidx.compose.foundation.lazy.LazyListState(shown.indexOfFirst { it.link.url == startUrl }.coerceAtLeast(0)) }
+            LazyColumn(state = listState, contentPadding = PaddingValues(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                // Keyed by the source itself (not its place): while sources are still being found they're re-ranked,
+                // and the one you're on keeps the selection instead of it jumping to another row.
+                val keys = run { val seen = HashMap<String, Int>(); shown.map { r -> val n = seen.merge(r.link.url, 1, Int::plus)!!; r.link.url + "#" + n } }
+                val startIndex = shown.indexOfFirst { it.link.url == startUrl }.coerceAtLeast(0)
+                items(shown.size, key = { i -> keys[i] }) { i ->
                     val r = shown[i]
                     val playing = r.link.url == currentUrl
-                    Row(Modifier.fillMaxWidth().then(if (i == 0) Modifier.focusRequester(first).focusProperties { up = if (chips.isNotEmpty()) chipsFocus else searchFocus } else Modifier)
+                    Row(Modifier.fillMaxWidth()
+                        .then(if (i == startIndex) Modifier.focusRequester(first) else Modifier)
+                        .then(if (i == 0) Modifier.focusRequester(top).focusProperties { up = if (chips.isNotEmpty()) chipsFocus else searchFocus } else Modifier)
                         .card(RoundedCornerShape(12.dp), focusScale = 1.01f) { onPick(r.link); onClose() }
                         .background(if (playing) Palette.accent.copy(alpha = 0.18f) else Palette.surfaceHigh, RoundedCornerShape(12.dp))
                         .padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -180,5 +209,6 @@ fun SourcesPanel(all: List<ExtractorLink>, currentUrl: String?, searching: Boole
                 }
             }
         }
+    }
     }
 }
