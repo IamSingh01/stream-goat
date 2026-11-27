@@ -36,10 +36,27 @@ object Os {
         }
     }
 
-    /** Rename existing user data on first launch; if the move fails, keep using the legacy folder. */
-    private fun migrate(current: File, legacy: File): File {
-        if (!current.exists() && legacy.isDirectory && !legacy.renameTo(current)) return legacy
-        return current
+    /**
+     * Select the current data directory without ever deleting legacy data.
+     *
+     * When the new directory already exists, keep it as the active directory and
+     * preserve the legacy directory beside it rather than silently overwriting either.
+     * A later explicit merge can reconcile the two sets of user data safely.
+     */
+    internal fun migrate(current: File, legacy: File): File {
+        if (current.exists()) return current
+        if (!legacy.isDirectory) return current
+        if (legacy.renameTo(current)) return current
+
+        // A cross-volume move or an OS lock can make renameTo fail. Fall back to a
+        // complete copy, then leave the original legacy directory untouched.
+        return try {
+            current.parentFile?.mkdirs()
+            legacy.copyRecursively(current, overwrite = false)
+            if (current.isDirectory) current else legacy
+        } catch (_: Exception) {
+            legacy
+        }
     }
 
     /**
@@ -112,7 +129,7 @@ object Os {
     /** What to do when VLC's libraries are missing. */
     val vlcHint: String get() = when {
         isWindows -> "VLC is included with RoarStream; reinstall RoarStream, or install VLC (64-bit) from videolan.org"
-        isMac -> "VLC is included with Stream Goat; reinstall Stream Goat, or install VLC from videolan.org into Applications"
+        isMac -> "VLC is included with RoarStream; reinstall RoarStream, or install VLC from videolan.org into Applications"
         else -> "sudo apt install libvlc5 vlc-plugin-base"
     }
 

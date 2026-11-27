@@ -42,8 +42,11 @@ object Settings {
         if (prefs.contains("profiles_migrated")) return
         val target = Platform.context.getSharedPreferences("profile_settings", 0).edit()
         prefs.getAll().forEach { (k, v) -> if (k in PROFILE_KEYS && v is String) target.putString(k, v) }
-        target.apply()
-        prefs.edit().putString("profiles_migrated", "true").apply()
+        // Commit the target first. The migration marker is written only once all copied
+        // profile values are durable, so a crash cannot mark an incomplete migration done.
+        if (target.commit()) {
+            prefs.edit().putString("profiles_migrated", "true").commit()
+        }
     }
 
     /** Lower-power playback for low-end PCs and battery: skip H.264 deblocking, buffer more. */

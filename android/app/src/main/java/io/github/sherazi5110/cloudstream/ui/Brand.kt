@@ -40,12 +40,12 @@ import kotlin.math.PI
 import kotlin.math.sin
 
 /**
- * The Stream Goat logo (Syed Ali Hamza's goat head): a white cut-out (assets/brand) painted in the theme's accent
- * colour, or a rainbow (Settings → Appearance → Logo), always on black.
+ * RoarStream brand mark, using the supplied lion emblem.
+ * The mark may be tinted with the theme accent or a rainbow, always on black.
  */
 object Brand {
-    val mark: ImageBitmap? by lazy { load("brand/goat-mark.png") }
-    val word: ImageBitmap? by lazy { load("brand/goat-word.png") }
+    val mark: ImageBitmap? by lazy { load("brand/roarstream-mark.png") }
+    val word: ImageBitmap? by lazy { load("brand/roarstream-word.png") }
     private fun load(name: String) = runCatching {
         App.context.assets.open(name).use { BitmapFactory.decodeStream(it) }.asImageBitmap()
     }.getOrNull()
@@ -67,7 +67,7 @@ object Brand {
 @Composable
 fun GoatMark(modifier: Modifier, tint: Color = Palette.accent, rainbow: Boolean = ThemeState.logoRainbow) {
     val mark = Brand.mark ?: return
-    if (!rainbow) Image(mark, "Stream Goat", modifier, colorFilter = ColorFilter.tint(tint))
+    if (!rainbow) Image(mark, "RoarStream", modifier, colorFilter = ColorFilter.tint(tint))
     else Image(mark, "Stream Goat", modifier.graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }.drawWithContent {
         drawContent()
         drawRect(Brush.linearGradient(Brand.rainbow, Offset.Zero, Offset(size.width, size.height)), blendMode = BlendMode.SrcIn)
