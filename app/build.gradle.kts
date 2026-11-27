@@ -91,8 +91,8 @@ val packageDeb by tasks.registering(Exec::class) {
         // jpackage picks up <name>.desktop from --resource-dir, so the link handler is registered on install.
         res.resolve("RoarStream.desktop").writeText(
             packaging.resolve("cloudstream-linux.desktop").readText()
-                .replace("@EXEC@", "/opt/roarstream/bin/RoarStream")
-                .replace("@ICON@", "/opt/roarstream/lib/RoarStream.png")
+                .replace("@EXEC@", "/opt/RoarStream/bin/RoarStream")
+                .replace("@ICON@", "/opt/RoarStream/lib/RoarStream.png")
         )
     }
     commandLine(buildList {
@@ -113,7 +113,6 @@ val packageDeb by tasks.registering(Exec::class) {
         ).joinToString(",")))
         if (type == "deb") {
             addAll(listOf("--linux-shortcut", "--linux-menu-group", "AudioVideo;Video", "--linux-app-category", "video"))
-            addAll(listOf("--linux-deb-maintainer", "roarstream@users.noreply.github.com"))
             addAll(listOf("--linux-package-deps", "libvlc5, vlc-plugin-base, libmpv2 | libmpv1"))
         }
         application.applicationDefaultJvmArgs.forEach { addAll(listOf("--java-options", it)) }
