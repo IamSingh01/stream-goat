@@ -257,7 +257,7 @@ val cloudConfig = tasks.register("cloudConfig") {
 val updateConfig = tasks.register("updateConfig") {
     val out = layout.buildDirectory.dir("generated/update")
     val sha = providers.environmentVariable("GITHUB_SHA").orElse("dev")
-    val cert = providers.environmentVariable("STREAMGOAT_UPDATE_CERT").orElse("")
+    val cert = providers.environmentVariable("ROARSTREAM_UPDATE_CERT").orElse("")
     inputs.property("sha", sha)
     inputs.property("cert", cert)
     outputs.dir(out)
