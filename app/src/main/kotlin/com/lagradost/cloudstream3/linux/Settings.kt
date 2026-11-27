@@ -160,7 +160,7 @@ object Settings {
      * watching.
      */
     var playerEngine: String
-        get() = string("player_engine", "AUTO")
+        get() = string("player_engine", if (Os.isMac) "IINA" else "AUTO")
         set(v) = put("player_engine", v)
 
     var playerZoom: String
