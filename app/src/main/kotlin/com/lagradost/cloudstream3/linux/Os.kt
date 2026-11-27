@@ -16,20 +16,30 @@ object Os {
     private val home: String get() = System.getProperty("user.home")
 
     /**
-     * Linux: ~/.local/share/cloudstream-linux (XDG; the original name, kept so updates keep everyone's data).
-     * Windows: %APPDATA%\Stream Goat; data from 7.1.0 (%APPDATA%\CloudStream) is moved there once.
-     * macOS: ~/Library/Application Support/Stream Goat.
+     * Linux: ~/.local/share/RoarStream; migrates cloudstream-linux data on first launch.
+     * Windows: %APPDATA%\RoarStream; migrates RoarStream or CloudStream data on first launch.
+     * macOS: ~/Library/Application Support/RoarStream; migrates Stream Goat data on first launch.
      */
     fun defaultDataDir(): File = when {
-        isMac -> File(home, "Library/Application Support/Stream Goat")
+        isMac -> migrate(File(home, "Library/Application Support/RoarStream"),
+            File(home, "Library/Application Support/Stream Goat"))
         isWindows -> {
             val appData = System.getenv("APPDATA") ?: "$home\\AppData\\Roaming"
-            val dir = File(appData, "Stream Goat")
-            val old = File(appData, "CloudStream")
-            if (!dir.exists() && old.isDirectory) runCatching { old.renameTo(dir) }
-            dir
+            val dir = File(appData, "RoarStream")
+            val previous = File(appData, "Stream Goat")
+            val older = File(appData, "CloudStream")
+            migrate(dir, if (previous.isDirectory) previous else older)
         }
-        else -> File((System.getenv("XDG_DATA_HOME") ?: "$home/.local/share"), "cloudstream-linux")
+        else -> {
+            val dataHome = System.getenv("XDG_DATA_HOME") ?: "$home/.local/share"
+            migrate(File(dataHome, "RoarStream"), File(dataHome, "cloudstream-linux"))
+        }
+    }
+
+    /** Rename existing user data on first launch; if the move fails, keep using the legacy folder. */
+    private fun migrate(current: File, legacy: File): File {
+        if (!current.exists() && legacy.isDirectory && !legacy.renameTo(current)) return legacy
+        return current
     }
 
     /**
