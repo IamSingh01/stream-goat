@@ -41,7 +41,7 @@ object SiteOverrides {
 /**
  * Updates from the project's GitHub releases (or its "test-build" pre-release, with Test builds on).
  *
- * When only Stream Goat's own code changed, the GitHub builds attach a signed patch for each system
+ * When only RoarStream's own code changed, the GitHub builds attach a signed patch for each system
  * (roarstream-update-<windows|mac|linux>.zip, a few MB): it's downloaded, checked and installed into the data
  * folder, and used from the next start (see Boot.java). Otherwise the full installer is offered, as before.
  */
@@ -90,7 +90,7 @@ object Updates {
         release.copy(patch = patch)
     }
 
-    /** A patch fits when every other jar it needs is exactly the one installed (only Stream Goat's own code changed). */
+    /** A patch fits when every other jar it needs is exactly the one installed (only RoarStream's own code changed). */
     private fun patchFits(props: java.util.Properties): Boolean {
         if (!com.lagradost.cloudstream3.linux.Boot.canVerify() || com.lagradost.cloudstream3.linux.Boot.installedAppJar() == null) return false
         val needed = props.stringPropertyNames().filter { it.startsWith("requires.") }.associate { it.removePrefix("requires.") to props.getProperty(it) }
