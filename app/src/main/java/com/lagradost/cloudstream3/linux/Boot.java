@@ -149,7 +149,7 @@ public final class Boot {
         }
         Files.write(starting.toPath(), new byte[0]);
         System.err.println("update: starting " + p.getProperty("version") + " (" + p.getProperty("build") + ")");
-        System.setProperty("streamgoat.patch", p.getProperty("version", "") + " " + p.getProperty("build", ""));
+        System.setProperty("roarstream.patch", p.getProperty("version", "") + " " + p.getProperty("build", ""));
         // Nothing is shared with the installed copies: every class (JavaFX, VLC, the app) comes from this loader.
         return new URLClassLoader("streamgoat-update", urls.toArray(new URL[0]), ClassLoader.getPlatformClassLoader());
     }
