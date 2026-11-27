@@ -163,12 +163,12 @@ val packageWindows by tasks.registering(Exec::class) {
             addAll(listOf("--app-image", out.get().asFile.resolve("RoarStream").path))
             addAll(listOf("--win-per-user-install", "--win-menu", "--win-menu-group", "RoarStream", "--win-shortcut"))
             addAll(listOf("--win-upgrade-uuid", "6f1c2b9e-4d1a-4c2e-9a57-3e5b8d0c7a41"))
-            addAll(listOf("--about-url", "https://github.com/sherazi5110/stream-goat"))
+            addAll(listOf("--about-url", "https://github.com/IamSingh01/stream-goat"))
         }
     })
 }
 
-// macOS (Apple Silicon): RoarStream.app with its own Java runtime and VLC, and a .dmg, built with the JDK's
+// macOS (Apple Silicon and Intel): RoarStream.app with its own Java runtime and VLC, and a .dmg, built with the JDK's
 // jpackage on a Mac (CI: .github/workflows/macos.yml). The VLC folder is VLC.app's Contents/MacOS (lib/, plugins/).
 //   ./gradlew :app:packageMac -PvlcDir=/path/to/vlc                      -> build/jpackage-mac/RoarStream.app
 //   ./gradlew :app:packageMac -PvlcDir=... -PjpackageType=dmg             -> build/jpackage-mac/RoarStream-<v>.dmg
