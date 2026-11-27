@@ -16,7 +16,7 @@ import kotlin.math.ceil
 import kotlin.math.sin
 
 /**
- * The Stream Goat logo (Syed Ali Hamza's goat head): the goat in the theme's accent colour (or a rainbow,
+ * The RoarBox lion emblem: the supplied white lion mark in the theme's accent colour (or a rainbow,
  * Settings → Appearance → Logo) on a black rounded tile. Follows theme changes.
  */
 class Logo(private val size: Double) : StackPane() {
@@ -47,22 +47,22 @@ class Logo(private val size: Double) : StackPane() {
 
 /** The logo artwork: white cut-outs in resources/ui/brand, painted here. */
 object Brand {
-    private val markSrc: Image by lazy { Image(Brand::class.java.getResourceAsStream("/ui/brand/goat-mark.png")) }
-    val word: Image by lazy { Image(Brand::class.java.getResourceAsStream("/ui/brand/goat-word.png")) }
+    private val markSrc: Image by lazy { Image(Brand::class.java.getResourceAsStream("/ui/brand/roarbox-mark.png")) }
+    val word: Image by lazy { Image(Brand::class.java.getResourceAsStream("/ui/brand/roarbox-word.png")) }
     private val cache = HashMap<String, Image>()
 
     val rainbow = listOf("#ff5f6d", "#ffc371", "#4ade80", "#38bdf8", "#a78bfa", "#f472b6").map { Color.web(it) }
 
     private fun accent(): Color = runCatching { Color.web(Theme.accent) }.getOrDefault(Color.web(Logo.DEFAULT_ACCENT))
 
-    /** The goat, [px] square, painted in the current logo style. */
+    /** The lion emblem, [px] square, painted in the current logo style. */
     fun mark(px: Int): Image {
         val rainbowStyle = Theme.logoRainbow
         val key = "m$px|$rainbowStyle|${Theme.accent}"
-        return cache.getOrPut(key) { paint(Image(Brand::class.java.getResourceAsStream("/ui/brand/goat-mark.png"), px.toDouble(), px.toDouble(), true, true), rainbowStyle, accent()) }
+        return cache.getOrPut(key) { paint(Image(Brand::class.java.getResourceAsStream("/ui/brand/roarbox-mark.png"), px.toDouble(), px.toDouble(), true, true), rainbowStyle, accent()) }
     }
 
-    /** The goat on its black rounded tile, [px] square (window icons). */
+    /** The lion emblem on its black rounded tile, [px] square (window icons). */
     fun tile(px: Int): Image {
         val key = "t$px|${Theme.logoRainbow}|${Theme.accent}"
         return cache.getOrPut(key) {
