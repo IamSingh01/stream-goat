@@ -8,8 +8,8 @@ import kotlin.test.assertTrue
 class SearchPaginationStateTest {
     @Test
     fun `only providers advertising another page can be paginated`() {
-        assertTrue(SearchPaginationState(firstHasNext = true).canLoadNext)
-        assertFalse(SearchPaginationState(firstHasNext = false).canLoadNext)
+        assertTrue(SearchPaginationState(hasNext = true).canLoadNext)
+        assertFalse(SearchPaginationState(hasNext = false).canLoadNext)
     }
 
     @Test
