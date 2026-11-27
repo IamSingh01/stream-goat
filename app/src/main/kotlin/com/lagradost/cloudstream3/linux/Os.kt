@@ -111,14 +111,14 @@ object Os {
 
     /** What to do when VLC's libraries are missing. */
     val vlcHint: String get() = when {
-        isWindows -> "VLC is included with Stream Goat; reinstall Stream Goat, or install VLC (64-bit) from videolan.org"
+        isWindows -> "VLC is included with RoarStream; reinstall RoarStream, or install VLC (64-bit) from videolan.org"
         isMac -> "VLC is included with Stream Goat; reinstall Stream Goat, or install VLC from videolan.org into Applications"
         else -> "sudo apt install libvlc5 vlc-plugin-base"
     }
 
     /**
      * VLC shipped inside the app, next to the app's jars: Windows <app>\vlc with libvlc.dll and plugins\;
-     * macOS Stream Goat.app/Contents/app/vlc/lib with libvlc.dylib, and vlc/plugins (VLC.app's own layout).
+     * macOS RoarStream.app/Contents/app/vlc/lib with libvlc.dylib, and vlc/plugins (VLC.app's own layout).
      * -Dcs.vlc.dir overrides it. Null when there's none (Linux uses the system's VLC).
      */
     fun bundledVlcDir(): File? {
@@ -146,7 +146,7 @@ object Os {
                 .inputStream.bufferedReader().readText()
             if (current.contains(exe, ignoreCase = true)) return
             fun reg(vararg args: String) = ProcessBuilder(listOf("reg", "add") + args.toList() + "/f").redirectErrorStream(true).start().waitFor()
-            reg(key, "/ve", "/d", "URL:Stream Goat repository")
+            reg(key, "/ve", "/d", "URL:RoarStream repository")
             reg(key, "/v", "URL Protocol", "/d", "")
             reg("$key\\DefaultIcon", "/ve", "/d", "\"$exe\",0")
             reg("$key\\shell\\open\\command", "/ve", "/d", command)
