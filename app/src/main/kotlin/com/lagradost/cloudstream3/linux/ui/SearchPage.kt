@@ -296,6 +296,12 @@ private class SearchResultsPage(
         if (renderedUrls.add(item.url)) grid.children += PosterCard.of(item) { Nav.open(api, item) }
     }
 
+    internal fun automationRetryButton() = retry
+    internal fun automationStatusLabel() = status
+    internal fun automationResultCount() = grid.children.size
+    internal fun automationHasNext() = session.hasNext
+    internal fun automationLoadNext() = loadMore()
+
     internal fun loadMore() {
         if (!session.hasNext) return
         retry.isVisible = false
