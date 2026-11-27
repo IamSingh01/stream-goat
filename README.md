@@ -1,9 +1,9 @@
 # RoarStream
 
-<p align="center"><img src="packaging/linux/cloudstream-linux.png" width="128" alt="RoarStream logo: a white goat head on black"></p>
+<p align="center"><img src="packaging/linux/cloudstream-linux.png" width="128" alt="RoarStream white lion emblem on black"></p>
 
 <p align="center"><b>Movies, series, anime and Live TV on Android phones, tablets and TV, Windows, Mac, Linux and the web.</b><br>
-Created by <b>Syed Ali Hamza</b></p>
+Developed by <b>Aman Singh</b></p>
 
 ![RoarStream: Home](docs/screenshots/home.jpg)
 
@@ -134,7 +134,7 @@ your iPhone's home screen. It plays Stremio add-ons with a full player.
 | `roarstream-linux-<tag>.tar` | Any Linux with Java 21 and VLC already installed |
 
 The `.deb` and Flatpak bring everything they need (VLC is installed with the `.deb`). The package is still named
-`cloudstream-linux`, so a new `.deb` updates an older install. Run it as **RoarStream** from your app menu, or
+`RoarStream`, with the new app identity and data migration from older installs. Run it as **RoarStream** from your app menu, or
 `roarstream` in a terminal. [More: INSTALL.md → Linux](INSTALL.md)
 
 ## More
