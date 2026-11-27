@@ -73,10 +73,28 @@ public final class Boot {
         return migrate(new File(base, "RoarStream"), new File(base, "cloudstream-linux"));
     }
 
-    /** Keep legacy user data usable if the first-launch rename cannot be completed. */
-    private static File migrate(File current, File legacy) {
-        if (!current.exists() && legacy.isDirectory() && !legacy.renameTo(current)) return legacy;
-        return current;
+    /**
+     * Keep legacy data accessible when the directory is renamed or copied on first launch.
+     * If both folders already exist, prefer the current folder but leave the legacy folder untouched.
+     */
+    static File migrate(File current, File legacy) {
+        if (current.exists() || !legacy.isDirectory()) return current;
+        if (legacy.renameTo(current)) return current;
+        try {
+            File parent = current.getParentFile();
+            if (parent != null) Files.createDirectories(parent.toPath());
+            Files.walk(legacy.toPath()).forEach(source -> {
+                try {
+                    java.nio.file.Path target = current.toPath().resolve(legacy.toPath().relativize(source));
+                    if (Files.isDirectory(source)) Files.createDirectories(target);
+                    else if (!Files.exists(target)) Files.copy(source, target);
+                } catch (Exception e) { throw new java.io.UncheckedIOException(new java.io.IOException(e)); }
+            });
+            return current.isDirectory() ? current : legacy;
+        } catch (Exception e) {
+            System.err.println("migration: couldn't copy legacy data; keeping the old folder: " + e);
+            return legacy;
+        }
     }
 
     static File updateDir() { return new File(dataDir(), "update"); }
