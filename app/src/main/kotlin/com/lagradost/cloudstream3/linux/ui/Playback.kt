@@ -7,6 +7,7 @@ import com.lagradost.cloudstream3.utils.ExtractorLinkPlayList
 import com.lagradost.cloudstream3.linux.Engine
 import com.lagradost.cloudstream3.linux.Playable
 import com.lagradost.cloudstream3.linux.Settings
+import com.lagradost.cloudstream3.linux.StreamProxy
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.Qualities
 import javafx.animation.Interpolator
