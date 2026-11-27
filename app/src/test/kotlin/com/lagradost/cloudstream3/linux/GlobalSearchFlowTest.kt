@@ -1,5 +1,8 @@
 package com.lagradost.cloudstream3.linux
 
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -77,4 +80,36 @@ class GlobalSearchFlowTest {
         assertEquals(listOf("first", "second"), session.items)
         assertEquals(2, attempts)
     }
+    @Test
+    fun `1000 independent search sessions complete without cross talk`() = runBlocking {
+        val flows = (0 until 1_000).map { user ->
+            async {
+                val providerName = "provider-$user"
+                val selection = GlobalSearchSourceSelection(
+                    listOf(Provider(providerName), Provider("other-$user"))
+                ) { it.name }
+                selection.selectIndex(1)
+
+                val session = ViewAllSearchSession(
+                    firstPage = listOf("$user-1"),
+                    firstHasNext = true,
+                    keyOf = { it },
+                ) { page ->
+                    delay(1)
+                    SearchPageResult(listOf("$user-$page"), hasNext = false)
+                }
+
+                Triple(selection.targets().single().name, session.loadNext(), session.items)
+            }
+        }
+
+        val results = flows.awaitAll()
+        assertEquals(1_000, results.size)
+        results.forEachIndexed { user, (provider, loaded, items) ->
+            assertEquals("provider-$user", provider)
+            assertTrue(loaded)
+            assertEquals(listOf("$user-1", "$user-2"), items)
+        }
+    }
+
 }
