@@ -18,11 +18,11 @@ library and downloads carry over.)*
 > [!NOTE]
 > **This is a personal project, and it isn't perfect.** I add features and fix things over time, so some parts may
 > not work as expected yet. If something breaks or you have an idea, please
-> **[report it / create an issue](https://github.com/sherazi5110/roarstream/issues/new)**. In the app you can also use
+> **[report it / create an issue](https://github.com/IamSingh01/stream-goat/issues/new)**. In the app you can also use
 > *Report a glitch* (Settings → About, shake your phone, or F12 on a computer), which fills in your version, device and a screenshot for you.
 
 <p align="center">
-<a href="https://sherazi5110.github.io/roarstream/"><img src="https://img.shields.io/badge/Website-e11d48?style=for-the-badge" alt="Website"></a>
+<a href="https://sherazi5110.github.io/stream-goat/"><img src="https://img.shields.io/badge/Website-e11d48?style=for-the-badge" alt="Website"></a>
 <a href="https://github.com/sherazi5110/roarstream/releases/latest"><img src="https://img.shields.io/badge/Download-16a34a?style=for-the-badge&logo=github&logoColor=white" alt="Download"></a>
 <a href="https://sherazi5110.github.io/roarstream/app/"><img src="https://img.shields.io/badge/Open%20the%20web%20version-2563eb?style=for-the-badge" alt="Open the web version"></a>
 <a href="INSTALL.md"><img src="https://img.shields.io/badge/Full%20install%20guide-7c3aed?style=for-the-badge" alt="Full install guide"></a>
@@ -115,7 +115,8 @@ RoarStream again. Only download RoarStream from this GitHub page or [the website
 
 | File | For |
 |---|---|
-| `roarstream-macos-arm64-<version>.dmg` | Macs with an M1 chip or newer. Open it and drag **RoarStream** to Applications. |
+| `roarstream-macos-arm64-<version>.dmg` | Macs with Apple Silicon (M1 or newer). |
+| `roarstream-macos-x86_64-<version>.dmg` | Intel Macs. |
 
 The app isn't signed with an Apple certificate yet: the first time, macOS blocks it. Open **System Settings → Privacy &
 Security**, scroll down and click **Open Anyway** (once).
