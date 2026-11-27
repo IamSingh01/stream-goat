@@ -1,8 +1,8 @@
 [Desktop Entry]
 Type=Application
-Name=Stream Goat
+Name=RoarStream
 GenericName=Media Center
-Comment=Movies, series, anime and Live TV from CloudStream extensions
+Comment=Movies, series, anime and live TV
 Exec=@EXEC@ %u
 Icon=@ICON@
 Terminal=false
