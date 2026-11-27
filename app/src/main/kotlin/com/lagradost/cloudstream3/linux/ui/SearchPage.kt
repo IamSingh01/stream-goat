@@ -320,7 +320,7 @@ internal class SearchResultsPage private constructor(
     }
 
     private fun add(item: com.lagradost.cloudstream3.SearchResponse) {
-        if (renderedUrls.add(item.url)) grid.children += PosterCard.of(item) { Nav.open(api, item) }
+        if (renderedUrls.add(item.url)) grid.children += PosterCard.of(item) { api?.let { Nav.open(it, item) } }
     }
 
     internal fun automationRetryButton() = retry
@@ -337,7 +337,7 @@ internal class SearchResultsPage private constructor(
         status.text = "Loading more from ${api?.name ?: "Test provider"}…"
         job = ui.launch {
             val loaded = try {
-                withTimeout(api.searchTimeoutMs ?: 45_000L) { session.loadNext() }
+                withTimeout(api?.searchTimeoutMs ?: 45_000L) { session.loadNext() }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Throwable) {
