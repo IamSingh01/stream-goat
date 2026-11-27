@@ -160,7 +160,7 @@ jobs:
           ./gradlew :app:packageMac -PvlcDir="$VLC_DIR" -PmpvDir="$MPV_DIR" -PjpackageType=dmg
           VERSION=$(grep -o 'VERSION = "[^"]*"' app/src/main/kotlin/com/lagradost/cloudstream3/linux/ui/AppWindow.kt | cut -d'"' -f2)
           mkdir -p build/macos
-          cp app/build/jpackage-mac/Stream\ Goat-*.dmg "build/macos/roarstream-macos-$MACOS_ARCH-$VERSION.dmg"
+          cp app/build/jpackage-mac/RoarStream-*.dmg "build/macos/roarstream-macos-$MACOS_ARCH-$VERSION.dmg"
           ls -la build/macos
           du -sh "$app"
 
