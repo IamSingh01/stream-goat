@@ -21,6 +21,9 @@ jobs:
             runner: macos-15-intel
             vlc_arch: intel64
     runs-on: ${{ matrix.runner }}
+    concurrency:
+      group: macos-${{ github.ref }}-${{ matrix.architecture }}
+      cancel-in-progress: true
     permissions:
       contents: write
     env:
