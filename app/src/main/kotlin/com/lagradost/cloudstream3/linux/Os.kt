@@ -16,20 +16,30 @@ object Os {
     private val home: String get() = System.getProperty("user.home")
 
     /**
-     * Linux: ~/.local/share/cloudstream-linux (XDG; the original name, kept so updates keep everyone's data).
-     * Windows: %APPDATA%\Stream Goat; data from 7.1.0 (%APPDATA%\CloudStream) is moved there once.
-     * macOS: ~/Library/Application Support/Stream Goat.
+     * RoarBox data lives in its own application-support folder. Existing Stream Goat data is moved
+     * once on macOS/Windows so profiles, extensions, history and settings survive the rebrand.
+     * Linux keeps its established XDG directory to avoid disrupting existing installations.
      */
     fun defaultDataDir(): File = when {
-        isMac -> File(home, "Library/Application Support/Stream Goat")
+        isMac -> {
+            val base = File(home, "Library/Application Support")
+            migrateLegacyDataDir(File(base, "RoarBox"), File(base, "Stream Goat"))
+        }
         isWindows -> {
             val appData = System.getenv("APPDATA") ?: "$home\\AppData\\Roaming"
-            val dir = File(appData, "Stream Goat")
-            val old = File(appData, "CloudStream")
-            if (!dir.exists() && old.isDirectory) runCatching { old.renameTo(dir) }
-            dir
+            val current = File(appData, "RoarBox")
+            val legacy = File(appData, "Stream Goat")
+            val older = File(appData, "CloudStream")
+            migrateLegacyDataDir(current, if (legacy.exists()) legacy else older)
         }
         else -> File((System.getenv("XDG_DATA_HOME") ?: "$home/.local/share"), "cloudstream-linux")
+    }
+
+    /** Move a legacy profile directory only when the new destination does not already exist. */
+    internal fun migrateLegacyDataDir(current: File, legacy: File): File {
+        if (current.exists() || !legacy.isDirectory) return current
+        current.parentFile?.mkdirs()
+        return if (runCatching { legacy.renameTo(current) }.getOrDefault(false)) current else legacy
     }
 
     /**
