@@ -4,8 +4,6 @@ import javafx.application.Platform
 import javafx.scene.Scene
 import javafx.scene.control.ComboBox
 import javafx.stage.Stage
-import org.junit.jupiter.api.AfterAll
-import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.testfx.framework.junit5.ApplicationExtension
 import org.junit.jupiter.api.extension.ExtendWith
@@ -23,36 +21,7 @@ import kotlin.test.assertTrue
  */
 @ExtendWith(ApplicationExtension::class)
 class SearchPageUiTest {
-    companion object {
-        private lateinit var page: SearchPage
-        private lateinit var stage: Stage
-
-        @JvmStatic
-        @BeforeAll
-        fun startFx() {
-            val ready = CountDownLatch(1)
-            Platform.startup {
-                stage = Stage()
-                page = SearchPage()
-                stage.scene = Scene(page, 1280.0, 800.0)
-                stage.show()
-                ready.countDown()
-            }
-            check(ready.await(20, TimeUnit.SECONDS)) { "JavaFX did not start" }
-        }
-
-        @JvmStatic
-        @AfterAll
-        fun stopFx() {
-            val done = CountDownLatch(1)
-            Platform.runLater {
-                stage.close()
-                done.countDown()
-            }
-            done.await(10, TimeUnit.SECONDS)
-            Platform.exit()
-        }
-    }
+    private val page = SearchPage()
 
     @Test
     fun `source dropdown is a live ComboBox and selection is reflected by shared model`(robot: FxRobot) {
