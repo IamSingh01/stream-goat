@@ -1062,6 +1062,25 @@ class BuiltinPlayer(
         flash("Subtitles: ${file.name}")
     }
 
+    /** Open the current stream in the user's installed IINA app on macOS.
+     * The local stream proxy preserves request headers and rewrites HLS playlists, so IINA
+     * does not need a separately installed mpv or VLC runtime.
+     */
+    private fun openInIina() {
+        val url = runCatching { streamUrl(current) }.getOrElse {
+            Toasts.show("Couldn't prepare this stream for IINA: ${it.message ?: it}")
+            return
+        }
+        runCatching {
+            ProcessBuilder("/usr/bin/open", "-a", "IINA", url).start()
+        }.onSuccess {
+            menu.close()
+            com.lagradost.cloudstream3.linux.Glitch.step("Opened ${current.name} in IINA")
+        }.onFailure {
+            Toasts.show("Couldn't open IINA. Make sure IINA is installed in Applications.")
+        }
+    }
+
     private fun showSources() {
         val links = sources.ranked()
         val items = links.map { link ->
@@ -1074,6 +1093,11 @@ class BuiltinPlayer(
             }
         }.toMutableList()
         if (!sources.finished) items += PlayerMenu.Item("Still searching for more sources…", enabled = false) {}
+        if (com.lagradost.cloudstream3.linux.Os.isMac) {
+            items += PlayerMenu.Item("Open current source in IINA", hint = "Use the IINA app installed on this Mac") {
+                openInIina()
+            }
+        }
         // Which player plays it: mpv (like ExoPlayer: reads streams itself) or VLC.
         EngineKind.entries.forEach { kind ->
             items += PlayerMenu.Item("Play with ${kind.label}", hint = if (kind == EngineKind.MPV) "best for extension streams" else "backup player",
