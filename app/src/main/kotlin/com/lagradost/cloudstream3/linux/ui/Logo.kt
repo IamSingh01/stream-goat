@@ -48,7 +48,6 @@ class Logo(private val size: Double) : StackPane() {
 /** The logo artwork: white cut-outs in resources/ui/brand, painted here. */
 object Brand {
     private val markSrc: Image by lazy { Image(Brand::class.java.getResourceAsStream("/ui/brand/roarbox-mark.png")) }
-    val word: Image by lazy { Image(Brand::class.java.getResourceAsStream("/ui/brand/roarbox-word.png")) }
     private val cache = HashMap<String, Image>()
 
     val rainbow = listOf("#ff5f6d", "#ffc371", "#4ade80", "#38bdf8", "#a78bfa", "#f472b6").map { Color.web(it) }
