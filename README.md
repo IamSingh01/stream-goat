@@ -23,11 +23,11 @@ library and downloads carry over.)*
 
 <p align="center">
 <a href="https://sherazi5110.github.io/stream-goat/"><img src="https://img.shields.io/badge/Website-e11d48?style=for-the-badge" alt="Website"></a>
-<a href="https://github.com/sherazi5110/roarstream/releases/latest"><img src="https://img.shields.io/badge/Download-16a34a?style=for-the-badge&logo=github&logoColor=white" alt="Download"></a>
-<a href="https://sherazi5110.github.io/roarstream/app/"><img src="https://img.shields.io/badge/Open%20the%20web%20version-2563eb?style=for-the-badge" alt="Open the web version"></a>
+<a href="https://github.com/IamSingh01/stream-goat/releases/latest"><img src="https://img.shields.io/badge/Download-16a34a?style=for-the-badge&logo=github&logoColor=white" alt="Download"></a>
+<a href="https://sherazi5110.github.io/stream-goat/app/"><img src="https://img.shields.io/badge/Open%20the%20web%20version-2563eb?style=for-the-badge" alt="Open the web version"></a>
 <a href="INSTALL.md"><img src="https://img.shields.io/badge/Full%20install%20guide-7c3aed?style=for-the-badge" alt="Full install guide"></a>
 <a href="https://discord.gg/PUmEQzJSa"><img src="https://img.shields.io/badge/Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord"></a>
-<a href="https://github.com/sherazi5110/roarstream/releases/tag/test-build"><img src="https://img.shields.io/badge/Test%20pre--release-f59e0b?style=for-the-badge" alt="Test pre-release"></a>
+<a href="https://github.com/IamSingh01/stream-goat/releases/tag/test-build"><img src="https://img.shields.io/badge/Test%20pre--release-f59e0b?style=for-the-badge" alt="Test pre-release"></a>
 </p>
 
 
@@ -70,7 +70,7 @@ library and downloads carry over.)*
 
 ## Download for your device
 
-Every file is on the **[latest release](https://github.com/sherazi5110/roarstream/releases/latest)** page.
+Every file is on the **[latest release](https://github.com/IamSingh01/stream-goat/releases/latest)** page.
 
 ### Windows 10 and 11
 
@@ -109,7 +109,7 @@ here for anyone to read. To install it anyway:
 3. App gone from the TV? Settings → Apps → See all apps: if it's there but disabled, press **Enable**; otherwise install it again.
 
 Turning Play Protect off is your choice (it also stops checking other apps); turned back on, it may disable or remove
-RoarStream again. Only download RoarStream from this GitHub page or [the website](https://sherazi5110.github.io/roarstream/).
+RoarStream again. Only download RoarStream from this GitHub page or [the website](https://sherazi5110.github.io/stream-goat/).
 
 ### Mac (Apple Silicon and Intel)
 
@@ -123,7 +123,7 @@ Security**, scroll down and click **Open Anyway** (once).
 
 ### Web version
 
-No install: open **[the web version](https://sherazi5110.github.io/roarstream/app/)** in any browser, or add it to
+No install: open **[the web version](https://sherazi5110.github.io/stream-goat/app/)** in any browser, or add it to
 your iPhone's home screen. It plays Stremio add-ons with a full player.
 
 ### Linux
@@ -142,7 +142,7 @@ The `.deb` and Flatpak bring everything they need (VLC is installed with the `.d
 
 - [INSTALL.md](INSTALL.md): installing on every system, and building from source.
 - [docs/](docs/): setup guides (Google Drive, WeTrakr, server mode) and release notes.
-- Questions and ideas: the [Discord](https://discord.gg/PUmEQzJSa) or [GitHub issues](https://github.com/sherazi5110/roarstream/issues).
+- Questions and ideas: the [Discord](https://discord.gg/PUmEQzJSa) or [GitHub issues](https://github.com/IamSingh01/stream-goat/issues).
 
 ## Support
 
