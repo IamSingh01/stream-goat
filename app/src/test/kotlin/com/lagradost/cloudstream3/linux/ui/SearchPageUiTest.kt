@@ -55,36 +55,41 @@ class SearchPageUiTest {
     }
 
     @Test
-    fun `View All retry control is exposed as a real JavaFX button`() {
+    fun `View All retry button recovers from a failed provider page`() {
+        var attempts = 0
         val viewAll = page.automationViewAllForTest(
             firstPage = emptyList(),
             firstHasNext = true,
             fetchPage = { pageNumber ->
                 assertEquals(2, pageNumber)
+                attempts++
+                if (attempts == 1) error("temporary provider failure")
                 com.lagradost.cloudstream3.linux.SearchPageResult(emptyList(), hasNext = false)
             },
         )
-        val retry = viewAll.automationRetryButton()
-        assertNotNull(retry)
-        assertEquals("view-all-retry", retry.id)
-        assertEquals("Try again", retry.text)
-        assertEquals(0, viewAll.automationResultCount())
-        assertTrue(viewAll.automationHasNext())
         val viewAllStage = Stage()
         onFx {
             viewAllStage.scene = Scene(viewAll, 1000.0, 700.0)
             viewAllStage.show()
-            retry.isVisible = true
-            retry.isManaged = true
         }
-        // Click the real retry control, then wait for the deterministic page response.
+        val failureDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+        while (System.nanoTime() < failureDeadline && !onFx { viewAll.automationRetryButton().isVisible }) {
+            Thread.sleep(25)
+        }
+        val retry = viewAll.automationRetryButton()
+        assertNotNull(retry)
+        assertEquals("view-all-retry", retry.id)
+        assertEquals("Couldn't load more results.", onFx { viewAll.automationStatusLabel().text })
+        assertTrue(onFx { retry.isVisible })
+        // Click the same JavaFX Retry control a user sees after a failed provider request.
         robot.clickOn(retry)
-        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
-        while (System.nanoTime() < deadline && onFx { viewAll.automationHasNext() }) {
+        val successDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+        while (System.nanoTime() < successDeadline && onFx { viewAll.automationHasNext() }) {
             Thread.sleep(25)
         }
         assertTrue(!onFx { viewAll.automationHasNext() })
         assertEquals("That's everything · 0 titles", onFx { viewAll.automationStatusLabel().text })
+        assertEquals(2, attempts)
         onFx { viewAllStage.close() }
     }
 
