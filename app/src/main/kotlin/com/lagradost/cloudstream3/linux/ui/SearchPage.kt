@@ -192,6 +192,15 @@ class SearchPage : StackPane(), Refreshable {
         promptText()
     }
 
+    /** Test seam for creating the provider-backed View All screen with deterministic page results. */
+    internal fun automationViewAllForTest(
+        firstPage: List<com.lagradost.cloudstream3.SearchResponse> = emptyList(),
+        fetchPage: suspend (Int) -> SearchPageResult<com.lagradost.cloudstream3.SearchResponse> = {
+            SearchPageResult(emptyList(), hasNext = false)
+        },
+        firstHasNext: Boolean = true,
+    ): SearchResultsPage = SearchResultsPage.forAutomation(firstPage, firstHasNext, fetchPage)
+
     fun run(query: String = field.text.trim()) {
         if (query.length < 2) return
         if (field.text.trim() != query) field.text = query
@@ -246,11 +255,12 @@ class SearchPage : StackPane(), Refreshable {
 }
  
 /** Full, provider-paginated search results for one provider. */
-private class SearchResultsPage(
-    private val api: MainAPI,
+internal class SearchResultsPage private constructor(
+    private val api: MainAPI?,
     private val query: String,
     firstPage: List<com.lagradost.cloudstream3.SearchResponse>,
     firstHasNext: Boolean,
+    fetchPage: suspend (Int) -> SearchPageResult<com.lagradost.cloudstream3.SearchResponse>,
 ) : StackPane(), Disposable {
     private val grid = FlowPane(18.0, 22.0)
     private val renderedUrls = HashSet<String>()
@@ -258,10 +268,26 @@ private class SearchResultsPage(
         firstPage = firstPage,
         firstHasNext = firstHasNext,
         keyOf = { it.url },
-    ) { nextPage ->
+        fetchPage = fetchPage,
+    )
+    constructor(
+        api: MainAPI,
+        query: String,
+        firstPage: List<com.lagradost.cloudstream3.SearchResponse>,
+        firstHasNext: Boolean,
+    ) : this(api, query, firstPage, firstHasNext, { nextPage ->
         val response = api.search(query, nextPage) ?: error("Provider returned no search response")
         SearchPageResult(ContentFilter.filter(response.items), response.hasNext)
+    })
+
+    companion object {
+        internal fun forAutomation(
+            firstPage: List<com.lagradost.cloudstream3.SearchResponse>,
+            firstHasNext: Boolean,
+            fetchPage: suspend (Int) -> SearchPageResult<com.lagradost.cloudstream3.SearchResponse>,
+        ) = SearchResultsPage(null, "automation", firstPage, firstHasNext, fetchPage)
     }
+
     private var job: Job? = null
     private val spinner = ProgressIndicator().apply { setPrefSize(22.0, 22.0); setMaxSize(22.0, 22.0) }
     private val status = label("", "muted")
@@ -284,7 +310,7 @@ private class SearchResultsPage(
         val header = hbox(14.0,
             button(null, Icons.BACK, "btn-ghost") { Nav.window.back() },
             label(query, "h2"),
-            label(api.name, "tag"),
+            label(api?.name ?: "Test provider", "tag"),
         )
         scroll = pageScroll(vbox(24.0, header, grid, footer).pad(22.0, 36.0, 40.0, 36.0))
         children += scroll
@@ -308,7 +334,7 @@ private class SearchResultsPage(
         retry.isManaged = false
         spinner.isVisible = true
         spinner.isManaged = true
-        status.text = "Loading more from ${api.name}…"
+        status.text = "Loading more from ${api?.name ?: "Test provider"}…"
         job = ui.launch {
             val loaded = try {
                 withTimeout(api.searchTimeoutMs ?: 45_000L) { session.loadNext() }
