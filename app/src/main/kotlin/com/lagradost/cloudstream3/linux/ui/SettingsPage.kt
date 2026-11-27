@@ -372,11 +372,11 @@ class SettingsPage : StackPane(), Refreshable {
                 row("Player engine", if (!vlcEngine) "VLC's libraries aren't available, so videos can't play. " + com.lagradost.cloudstream3.linux.Os.vlcHint else
                     "Videos play inside this window using VLC${if (Vlc.isLoaded) " " + Vlc.version.orEmpty() else ""}: every format VLC plays, hardware decoding, source switching, online subtitles, audio languages, speed and zoom.",
                     engineLabel),
-                row("Which player plays a video", "mpv (FFmpeg inside) reads streams itself, like ExoPlayer on Android: separate audio " +
-                    "languages (NetMirror), subtitle tracks, the real length and exact seeking. VLC is the backup: if one can't play a source, " +
-                    "the other is tried. You can also switch while watching (Sources menu)." +
-                    (if (Mpv.available) "" else " mpv isn't installed here, so VLC plays everything."),
-                    combo(listOf("AUTO", "VLC"), Settings.playerEngine.let { if (it == "VLC") it else "AUTO" }, { when (it) { "VLC" -> "VLC"; else -> "mpv (recommended)" } }) {
+                row("Which player plays a video", if (com.lagradost.cloudstream3.linux.Os.isMac)
+                    "IINA opens streams in the IINA app already installed on this Mac. No separate VLC or mpv installation is needed. Choose Built-in to use RoarStream's embedded player instead."
+                    else "mpv (FFmpeg inside) reads streams itself, like ExoPlayer on Android; VLC is the backup. If one can't play a source, the other is tried.",
+                    combo(if (com.lagradost.cloudstream3.linux.Os.isMac) listOf("IINA", "AUTO", "VLC") else listOf("AUTO", "VLC"),
+                        Settings.playerEngine, { when (it) { "IINA" -> "IINA (external app)"; "VLC" -> "VLC"; else -> "Built-in (mpv / VLC)" } }) {
                         Settings.playerEngine = it
                     }),
                 row("Battery saver", "For low-end PCs and laptops on battery: skips the H.264 deblocking filter (much less CPU), buffers longer and does no extra processing. Hardware decoding stays on.",
