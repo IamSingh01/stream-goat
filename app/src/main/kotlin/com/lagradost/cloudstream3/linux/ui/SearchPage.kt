@@ -60,10 +60,39 @@ class SearchPage : StackPane(), Refreshable {
 
     init {
         val searchIcon = icon(Icons.SEARCH, 20.0).apply { styleClass += "faint-icon" }
-        val fieldBox = StackPane(field, searchIcon).apply { maxWidth = 760.0 }
+        val clearButton = button(null, Icons.CLOSE, "btn-ghost", "btn-small") {
+            field.clear()
+            field.requestFocus()
+        }.apply {
+            id = "search-clear-button"
+            isVisible = false
+            isManaged = false
+            tooltip("Clear search")
+        }
+        val fieldBox = StackPane(field, searchIcon, clearButton).apply { maxWidth = 760.0 }
         StackPane.setAlignment(searchIcon, Pos.CENTER_LEFT)
         StackPane.setMargin(searchIcon, javafx.geometry.Insets(0.0, 0.0, 0.0, 16.0))
-        field.textProperty().addListener { _, _, _ -> if (!picking) debounce.playFromStart() }
+        StackPane.setAlignment(clearButton, Pos.CENTER_RIGHT)
+        StackPane.setMargin(clearButton, javafx.geometry.Insets(0.0, 8.0, 0.0, 0.0))
+        field.textProperty().addListener { _, _, value ->
+            val query = value?.trim().orEmpty()
+            clearButton.isVisible = query.isNotEmpty()
+            clearButton.isManaged = clearButton.isVisible
+            if (query.isEmpty()) {
+                // Clearing the field exits search mode immediately instead of leaving
+                // stale results or an in-flight provider search on screen.
+                debounce.stop()
+                suggestJob?.cancel()
+                hideSuggestions()
+                job?.cancel()
+                job = null
+                lastQuery = ""
+                status.children.clear()
+                showRecent()
+            } else if (!picking) {
+                debounce.playFromStart()
+            }
+        }
         field.setOnAction {
             debounce.stop()
             val pick = suggestions.getOrNull(highlighted)
