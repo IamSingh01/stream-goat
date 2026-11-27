@@ -6,13 +6,16 @@ import com.lagradost.cloudstream3.linux.PluginManager
 import com.lagradost.cloudstream3.linux.SearchHistory
 import javafx.animation.PauseTransition
 import javafx.geometry.Pos
+import javafx.scene.control.ComboBox
 import javafx.scene.control.ProgressIndicator
 import javafx.scene.control.TextField
+import javafx.scene.layout.FlowPane
 import javafx.scene.layout.StackPane
 import javafx.scene.layout.VBox
 import javafx.util.Duration
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
 
 /** Searches every provider in parallel; each provider's row appears the moment it answers. */
 class SearchPage : StackPane(), Refreshable {
@@ -20,7 +23,13 @@ class SearchPage : StackPane(), Refreshable {
         styleClass.setAll("text-field", "search-field")
         promptText = "Search movies, series, anime…"
     }
-    private val filter = ChipGroup { promptText(); run() }
+    private val sourceSelector = ComboBox<String>().apply {
+        styleClass += "source-selector"
+        promptText = "All sources"
+        prefWidth = 220.0
+        minWidth = 190.0
+        setOnAction { if (!changingSource) { promptText(); run() } }
+    }
     private var apis: List<MainAPI> = emptyList()
     private val status = hbox(10.0)
     private val results = VBox(30.0)
@@ -33,6 +42,7 @@ class SearchPage : StackPane(), Refreshable {
     private val debounce = PauseTransition(Duration.millis(220.0)).apply { setOnFinished { suggest() } }
     private var lastQuery = ""
     private var picking = false
+    private var changingSource = false
 
     init {
         val searchIcon = icon(Icons.SEARCH, 20.0).apply { styleClass += "faint-icon" }
@@ -55,7 +65,12 @@ class SearchPage : StackPane(), Refreshable {
             }
         }
         field.focusedProperty().addListener { _, _, f -> if (!f) PauseTransition(Duration.millis(150.0)).apply { setOnFinished { hideSuggestions() } }.play() }
-        val top = vbox(16.0, label("Search", "h2"), vbox(6.0, fieldBox, suggestBox), filter, status)
+        val top = vbox(12.0,
+            label("Search", "h2"),
+            hbox(12.0, fieldBox, sourceSelector),
+            suggestBox,
+            status,
+        )
         children += pageScroll(vbox(26.0, top, results).pad(22.0, 36.0, 40.0, 36.0))
         ui.launch { PluginManager.version.collect { refreshProviders() } }
     }
@@ -68,14 +83,16 @@ class SearchPage : StackPane(), Refreshable {
     /** Search only [provider] (Home's Search button), or every extension (null). Runs again if there's a search. */
     fun scopeTo(provider: String?) {
         val index = provider?.let { name -> apis.indexOfFirst { it.name == name } }?.takeIf { it >= 0 }
-        filter.select((index ?: -1) + 1, notify = false)
+        changingSource = true
+        sourceSelector.selectionModel.select((index ?: -1) + 1)
+        changingSource = false
         promptText()
         if (field.text.trim().length >= 2 && lastQuery.isNotEmpty()) run()
         javafx.application.Platform.runLater { focusField() }
     }
 
     private fun promptText() {
-        val one = apis.getOrNull(filter.selected - 1)
+        val one = apis.getOrNull(sourceSelector.selectionModel.selectedIndex - 1)
         field.promptText = if (one != null) "Search in ${one.name}…" else "Search movies, series, anime…"
     }
 
@@ -147,14 +164,19 @@ class SearchPage : StackPane(), Refreshable {
 
     private fun refreshProviders() {
         apis = Engine.providers()
-        val names = listOf("All") + apis.map { it.name }
-        filter.setItems(names, filter.selected.coerceAtLeast(0))
+        val selected = sourceSelector.selectionModel.selectedIndex.coerceAtLeast(0)
+        val names = listOf("All sources") + apis.map { it.name }
+        changingSource = true
+        sourceSelector.items.setAll(names)
+        sourceSelector.selectionModel.select(selected.coerceAtMost(names.lastIndex))
+        changingSource = false
+        promptText()
     }
 
     fun run(query: String = field.text.trim()) {
         if (query.length < 2) return
         if (field.text.trim() != query) field.text = query
-        val selected = filter.selected
+        val selected = sourceSelector.selectionModel.selectedIndex
         val targets = if (selected <= 0) apis else listOfNotNull(apis.getOrNull(selected - 1))
         if (targets.isEmpty()) {
             results.children.setAll(emptyState(Icons.EXTENSION, "No extensions installed", "Install extensions from a repository first.",
@@ -188,7 +210,12 @@ class SearchPage : StackPane(), Refreshable {
                     empty += batch.api.name
                 } else {
                     found += batch.results.size
-                    results.children += Shelf(batch.api.name, trailing = label("${batch.results.size}", "tag")).apply {
+                    results.children += Shelf(
+                        batch.api.name,
+                        onViewAll = { Nav.window.push(SearchResultsPage(batch.api, query, batch.results, batch.hasNext)) },
+                        trailing = label("${batch.results.size}", "tag"),
+                        captureHorizontalWheel = true,
+                    ).apply {
                         batch.results.forEach { item -> add(PosterCard.of(item) { Nav.open(batch.api, item) }) }
                     }
                 }
@@ -198,5 +225,89 @@ class SearchPage : StackPane(), Refreshable {
                 if (!com.lagradost.cloudstream3.linux.Network.online()) offlineState { run(query) }
                 else emptyState(Icons.SEARCH, "No results for \"$query\"", "Try a different spelling, or check that the extensions' sites are reachable (Settings → DNS)."))
         }
+    }
+}
+ 
+/** Full, paginated search results for one provider. */
+private class SearchResultsPage(
+    private val api: MainAPI,
+    private val query: String,
+    firstPage: List<com.lagradost.cloudstream3.SearchResponse>,
+    firstHasNext: Boolean,
+) : StackPane(), Disposable {
+    private val grid = FlowPane(18.0, 22.0)
+    private val seen = HashSet<String>()
+    private var page = 1
+    private var loading = false
+    private var hasNext = firstHasNext
+    private var finished = !firstHasNext
+    private var job: Job? = null
+    private val spinner = ProgressIndicator().apply { setPrefSize(22.0, 22.0); setMaxSize(22.0, 22.0) }
+    private val status = label("", "muted")
+    private val retry = button("Try again", Icons.REFRESH, "btn-ghost") { loadMore() }.apply {
+        isVisible = false
+        isManaged = false
+    }
+    private val footer = hbox(10.0, spinner, status, retry).apply { alignment = Pos.CENTER; minHeight = 44.0 }
+    private val scroll: javafx.scene.control.ScrollPane
+
+    init {
+        firstPage.forEach { add(it) }
+        val header = hbox(14.0,
+            button(null, Icons.BACK, "btn-ghost") { Nav.window.back() },
+            label(query, "h2"),
+            label(api.name, "tag"),
+        )
+        scroll = pageScroll(vbox(24.0, header, grid, footer).pad(22.0, 36.0, 40.0, 36.0))
+        children += scroll
+        idle()
+        // Fetch every page the provider advertises through SearchResponseList.hasNext.
+        if (hasNext) javafx.application.Platform.runLater { loadMore() }
+    }
+
+    private fun add(item: com.lagradost.cloudstream3.SearchResponse): Boolean {
+        if (!seen.add(item.url)) return false
+        grid.children += PosterCard.of(item) { Nav.open(api, item) }
+        return true
+    }
+
+    private fun loadMore() {
+        if (loading || finished) return
+        loading = true
+        retry.isVisible = false
+        retry.isManaged = false
+        spinner.isVisible = true
+        spinner.isManaged = true
+        status.text = "Loading more from ${api.name}…"
+        job = ui.launch {
+            val response = runCatching {
+                withTimeout(api.searchTimeoutMs ?: 45_000L) { api.search(query, page + 1) }
+            }.getOrNull()
+            loading = false
+            if (response == null) {
+                spinner.isVisible = false
+                spinner.isManaged = false
+                status.text = "Couldn't load more results."
+                retry.isVisible = true
+                retry.isManaged = true
+                return@launch
+            }
+            page++
+            hasNext = response.hasNext
+            response.items.let(ContentFilter::filter).forEach { add(it) }
+            finished = !hasNext
+            idle()
+            if (hasNext) loadMore()
+        }
+    }
+
+    private fun idle() {
+        spinner.isVisible = false
+        spinner.isManaged = false
+        status.text = if (finished) "That's everything · ${grid.children.size} titles" else ""
+    }
+
+    override fun dispose() {
+        job?.cancel()
     }
 }
