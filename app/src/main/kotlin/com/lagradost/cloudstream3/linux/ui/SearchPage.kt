@@ -240,8 +240,8 @@ private class SearchResultsPage(
     private val seen = HashSet<String>()
     private var page = 1
     private var loading = false
-    private var hasNext = firstHasNext
-    private var finished = !firstHasNext
+    private var finished = false
+    private var pagesFetched = 1
     private var job: Job? = null
     private val spinner = ProgressIndicator().apply { setPrefSize(22.0, 22.0); setMaxSize(22.0, 22.0) }
     private val status = label("", "muted")
@@ -262,8 +262,9 @@ private class SearchResultsPage(
         scroll = pageScroll(vbox(24.0, header, grid, footer).pad(22.0, 36.0, 40.0, 36.0))
         children += scroll
         idle()
-        // Fetch every page the provider advertises through SearchResponseList.hasNext.
-        if (hasNext) javafx.application.Platform.runLater { loadMore() }
+        // Probe page 2 even if the provider's first-page hasNext flag is missing or wrong.
+        // Continue until the provider returns no new items, with a safety cap for broken APIs.
+        javafx.application.Platform.runLater { loadMore() }
     }
 
     private fun add(item: com.lagradost.cloudstream3.SearchResponse): Boolean {
@@ -273,7 +274,10 @@ private class SearchResultsPage(
     }
 
     private fun loadMore() {
-        if (loading || finished) return
+        if (loading || finished || pagesFetched >= 100) {
+            if (pagesFetched >= 100) { finished = true; idle() }
+            return
+        }
         loading = true
         retry.isVisible = false
         retry.isManaged = false
@@ -294,11 +298,15 @@ private class SearchResultsPage(
                 return@launch
             }
             page++
-            hasNext = response.hasNext
+            pagesFetched++
+            val before = seen.size
             response.items.let(ContentFilter::filter).forEach { add(it) }
-            finished = !hasNext
+            val added = seen.size - before
+            // Some extensions misreport hasNext. Trust the actual page contents and stop
+            // when a page is empty or repeats items; this retrieves all distinct source pages.
+            finished = response.items.isEmpty() || added == 0 || pagesFetched >= 100
             idle()
-            if (hasNext) loadMore()
+            if (!finished) loadMore()
         }
     }
 
