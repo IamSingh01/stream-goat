@@ -78,7 +78,7 @@ modules:
     build-commands:
       - mkdir -p /app/RoarStream /app/bin
       - cp -a app/. /app/RoarStream/
-      - ln -s /app/RoarStream/bin/cloudstream-linux /app/bin/cloudstream-linux
+      - ln -s /app/RoarStream/bin/RoarStream /app/bin/RoarStream
       - install -Dm644 icon.png /app/share/icons/hicolor/512x512/apps/io.github.sherazi5110.CloudStreamLinux.png
       - install -Dm644 io.github.sherazi5110.CloudStreamLinux.desktop -t /app/share/applications
       - install -Dm644 io.github.sherazi5110.CloudStreamLinux.metainfo.xml -t /app/share/metainfo
