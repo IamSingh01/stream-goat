@@ -120,7 +120,7 @@ val packageDeb by tasks.registering(Exec::class) {
     })
 }
 
-// Windows: the app image (Stream Goat\Stream Goat.exe with its own Java runtime and VLC) and the .msi installer,
+// Windows: the app image (RoarStream\RoarStream.exe with its own Java runtime and VLC) and the .msi installer,
 // built with the JDK's jpackage on Windows (CI: the "windows" job in .github/workflows/build.yml).
 //   ./gradlew :app:packageWindows -PvlcDir=C:\path\to\vlc                 -> build\jpackage-win\Stream Goat\
 //   ./gradlew :app:packageWindows -PvlcDir=... -PjpackageType=msi          -> build\jpackage-win\RoarStream-<v>.msi
