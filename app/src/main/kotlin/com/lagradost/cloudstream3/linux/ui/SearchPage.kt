@@ -292,6 +292,7 @@ internal class SearchResultsPage private constructor(
     private val spinner = ProgressIndicator().apply { setPrefSize(22.0, 22.0); setMaxSize(22.0, 22.0) }
     private val status = label("", "muted")
     private val retry = button("Try again", Icons.REFRESH, "btn-ghost") { loadMore() }.apply {
+        id = "view-all-retry"
         isVisible = false
         isManaged = false
     }
@@ -326,7 +327,6 @@ internal class SearchResultsPage private constructor(
     internal fun automationStatusLabel() = status
     internal fun automationResultCount() = grid.children.size
     internal fun automationHasNext() = session.hasNext
-    internal fun automationLoadNext() = loadMore()
 
     internal fun loadMore() {
         if (!session.hasNext) return
