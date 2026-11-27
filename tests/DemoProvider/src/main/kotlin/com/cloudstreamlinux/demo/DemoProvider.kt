@@ -8,6 +8,8 @@ import com.lagradost.cloudstream3.MainPageRequest
 import com.lagradost.cloudstream3.Score
 import com.lagradost.cloudstream3.SearchQuality
 import com.lagradost.cloudstream3.SearchResponse
+import com.lagradost.cloudstream3.SearchResponseList
+import com.lagradost.cloudstream3.newSearchResponseList
 import com.lagradost.cloudstream3.SubtitleFile
 import com.lagradost.cloudstream3.TvType
 import com.lagradost.cloudstream3.app
@@ -86,6 +88,16 @@ class DemoProvider : MainAPI() {
 
     override suspend fun search(query: String): List<SearchResponse> =
         titles.filter { it.name.contains(query, ignoreCase = true) }.map { toSearch(it) }
+
+    /** A deterministic paginated search fixture used by the desktop integration tests. */
+    override suspend fun search(query: String, page: Int): SearchResponseList {
+        val matching = if (query.equals("paged", ignoreCase = true)) titles
+            else titles.filter { it.name.contains(query, ignoreCase = true) }
+        val pageSize = 4
+        val items = matching.drop((page - 1) * pageSize).take(pageSize)
+            .mapIndexed { index, title -> toSearch(title, "/search-$page-$index") }
+        return newSearchResponseList(items, hasNext = page * pageSize < matching.size)
+    }
 
     override suspend fun load(url: String): LoadResponse? {
         val t = titles.find { url.endsWith("/${it.id}") } ?: return null
