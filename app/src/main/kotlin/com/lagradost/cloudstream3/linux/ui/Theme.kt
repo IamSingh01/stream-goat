@@ -55,7 +55,7 @@ object Theme {
         get() = prefs.getString("theme_accent", null)?.takeIf { it.matches(Regex("#[0-9a-fA-F]{6}")) } ?: Accent.OCEAN.hex
         set(v) { prefs.edit().putString("theme_accent", v).apply(); changed() }
 
-    /** The goat logo's circle: the artwork's own rainbow, or the accent colour (circle and inner ears). */
+    /** The RoarBox logo treatment: the artwork's white mark, or the accent colour. */
     var logoRainbow: Boolean
         get() = prefs.getString("theme_logo", null) != "accent"
         set(v) { prefs.edit().putString("theme_logo", if (v) "rainbow" else "accent").apply(); changed() }
