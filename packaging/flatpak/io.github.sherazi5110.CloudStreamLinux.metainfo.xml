@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
   <id>io.github.sherazi5110.CloudStreamLinux</id>
-  <name>Stream Goat</name>
-  <summary>Movies, series, anime and Live TV from CloudStream extensions</summary>
+  <name>RoarStream</name>
+  <summary>Movies, series, anime and live TV</summary>
   <developer id="io.github.sherazi5110">
-    <name>Syed Ali Hamza</name>
+    <name>Aman Singh</name>
   </developer>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>GPL-3.0-only</project_license>
@@ -25,11 +25,11 @@
     </ul>
   </description>
   <launchable type="desktop-id">io.github.sherazi5110.CloudStreamLinux.desktop</launchable>
-  <url type="homepage">https://github.com/sherazi5110/stream-goat</url>
+  <url type="homepage">https://github.com/IamSingh01/stream-goat</url>
   <url type="bugtracker">https://github.com/sherazi5110/stream-goat/issues</url>
   <screenshots>
     <screenshot type="default">
-      <image>https://raw.githubusercontent.com/sherazi5110/stream-goat/main/docs/screenshots/home.jpg</image>
+      <image>https://raw.githubusercontent.com/IamSingh01/stream-goat/main/docs/screenshots/home.jpg</image>
       <caption>Home</caption>
     </screenshot>
     <screenshot>
