@@ -3,7 +3,7 @@
 <p align="center"><img src="packaging/linux/cloudstream-linux.png" width="128" alt="Stream Goat logo: a white goat head on black"></p>
 
 <p align="center"><b>Movies, series, anime and Live TV on Android phones, tablets and TV, Windows, Mac, Linux and the web.</b><br>
-Created by <b>Syed Ali Hamza</b></p>
+Created by <b>Aman Singh</b></p>
 
 ![Stream Goat: Home](docs/screenshots/home.jpg)
 
@@ -96,11 +96,16 @@ get the newest version. The app has a touch layout for phones and a remote-frien
 ExoPlayer and VLC, and real **HDR** on HDR screens. **Updating:** 10.0.0 and later install new versions from inside the
 app (Settings → Updates and backup); coming from 9.x, uninstall once first (back up, then restore). [More: INSTALL.md → Android](INSTALL.md#android-phones-tablets-and-android-tv)
 
-### Mac (Apple Silicon, from 9.0.1)
+### Mac (Apple Silicon and Intel, from 9.0.1)
 
 | File | For |
 |---|---|
-| `streamgoat-macos-arm64-<version>.dmg` | Macs with an M1 chip or newer. Open it and drag **Stream Goat** to Applications. |
+| `streamgoat-macos-arm64-<version>.dmg` | Apple Silicon Macs (M1 or newer). |
+| `streamgoat-macos-x86_64-<version>.dmg` | Intel-based Macs. |
+
+Download the file matching your Mac (Apple menu → **About This Mac** shows **Chip: Apple M…** or **Processor: Intel**),
+open it and drag **Stream Goat** to Applications. Each build includes its matching Java runtime, JavaFX, VLC and mpv;
+the app runs natively without Rosetta.
 
 The app isn't signed with an Apple certificate yet: the first time, macOS blocks it. Open **System Settings → Privacy &
 Security**, scroll down and click **Open Anyway** (once).
@@ -141,4 +146,4 @@ GPL-3.0, the same as CloudStream, whose library sources this project compiles.
 
 The built-in player uses [libVLC](https://www.videolan.org/vlc/libvlc.html) (LGPL-2.1, from your system's VLC packages) through [vlcj](https://github.com/caprica/vlcj) (GPL-3.0). Online subtitles come from the OpenSubtitles Stremio addon.
 
-Made by Tennant Creek.
+Made by Aman Singh.

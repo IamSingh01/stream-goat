@@ -40,9 +40,9 @@ import java.util.logging.Logger
 import kotlin.system.exitProcess
 
 object AppInfo {
-    const val NAME = "Stream Goat"
+    const val NAME = "RoarBox"
     const val VERSION = "10.0.1"
-    const val CREDIT = "Syed Ali Hamza"
+    const val CREDIT = "Aman Singh"
 }
 
 class DesktopApp : Application() {
@@ -423,9 +423,9 @@ class AppWindow(val stage: Stage) : StackPane() {
                 System.getenv("CS_SCREENSHOT") == null) {
                 Updates.lastCheck = System.currentTimeMillis()
                 runCatching { Updates.check(AppInfo.VERSION) }.getOrNull()?.let { r ->
-                    if (r.patch != null) Toasts.show("Stream Goat ${r.version} is available (${"%.1f".format(r.patch.size / 1048576.0)} MB)",
+                    if (r.patch != null) Toasts.show("RoarBox ${r.version} is available (${"%.1f".format(r.patch.size / 1048576.0)} MB)",
                         "Settings" to { show(Tab.SETTINGS) }, 15.0)
-                    else Toasts.show("Stream Goat ${r.version} is available", "Download" to { openUrl(r.url) }, 15.0)
+                    else Toasts.show("RoarBox ${r.version} is available", "Download" to { openUrl(r.url) }, 15.0)
                 }
             }
             Screenshots.runIfRequested(this@AppWindow)

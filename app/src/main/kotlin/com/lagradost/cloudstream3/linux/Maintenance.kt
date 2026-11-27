@@ -42,7 +42,7 @@ object SiteOverrides {
  * Updates from the project's GitHub releases (or its "test-build" pre-release, with Test builds on).
  *
  * When only Stream Goat's own code changed, the GitHub builds attach a signed patch for each system
- * (streamgoat-update-<windows|mac|linux>.zip, a few MB): it's downloaded, checked and installed into the data
+ * (streamgoat-update-<windows|mac|mac-x86_64|linux>.zip, a few MB): it's downloaded, checked and installed into the data
  * folder, and used from the next start (see Boot.java). Otherwise the full installer is offered, as before.
  */
 object Updates {
@@ -62,7 +62,14 @@ object Updates {
         }.getOrNull()?.takeIf { it.isNotBlank() } ?: "dev"
     }
 
-    private val osKey get() = when { Os.isWindows -> "windows"; Os.isMac -> "mac"; else -> "linux" }
+    // Keep the existing "mac" key for Apple Silicon; Intel uses a separate patch whose JavaFX/native
+    // dependency hashes match the x86_64 installation.
+    private val osKey get() = when {
+        Os.isWindows -> "windows"
+        Os.isMac && System.getProperty("os.arch") in setOf("x86_64", "amd64") -> "mac-x86_64"
+        Os.isMac -> "mac"
+        else -> "linux"
+    }
 
     /** The newest version if it's newer than [current] (with Test builds: a different, not older, test build). */
     suspend fun check(current: String): Release? = withContext(Dispatchers.IO) {

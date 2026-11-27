@@ -354,6 +354,33 @@
 .combo-box-popup .list-cell { -fx-background-color: -cs-surface-2; -fx-text-fill: -cs-text; -fx-padding: 8 12 8 12; }
 .combo-box-popup .list-cell:hover, .combo-box-popup .list-cell:selected { -fx-background-color: -cs-accent-soft; }
 
+.combo-box.source-selector {
+    -fx-background-color: -cs-surface-2;
+    -fx-background-radius: 9;
+    -fx-border-color: -cs-line;
+    -fx-border-radius: 9;
+    -fx-border-width: 1;
+    -fx-padding: 3 5 3 9;
+    -fx-cursor: hand;
+}
+.combo-box.source-selector:hover {
+    -fx-border-color: -cs-accent;
+    -fx-background-color: -cs-surface-3;
+}
+.combo-box.source-selector:focused {
+    -fx-border-color: -cs-accent;
+    -fx-effect: dropshadow(gaussian, -cs-accent-soft, 8, 0.12, 0, 0);
+}
+.combo-box.source-selector .list-cell {
+    -fx-font-size: 12px;
+    -fx-font-weight: bold;
+    -fx-padding: 5 7 5 5;
+}
+.combo-box.source-selector .arrow-button {
+    -fx-padding: 0 7 0 5;
+}
+
+
 /* Small radius on purpose: SliderSkin pads the track by its corner radius on each side. */
 .slider .track { -fx-background-color: -cs-surface-3; -fx-background-radius: 3; -fx-pref-height: 6; }
 .slider .thumb { -fx-background-color: -cs-accent; -fx-background-radius: 999; }

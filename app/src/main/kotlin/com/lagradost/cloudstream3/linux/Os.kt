@@ -16,20 +16,30 @@ object Os {
     private val home: String get() = System.getProperty("user.home")
 
     /**
-     * Linux: ~/.local/share/cloudstream-linux (XDG; the original name, kept so updates keep everyone's data).
-     * Windows: %APPDATA%\Stream Goat; data from 7.1.0 (%APPDATA%\CloudStream) is moved there once.
-     * macOS: ~/Library/Application Support/Stream Goat.
+     * RoarBox data lives in its own application-support folder. Existing Stream Goat data is moved
+     * once on macOS/Windows so profiles, extensions, history and settings survive the rebrand.
+     * Linux keeps its established XDG directory to avoid disrupting existing installations.
      */
     fun defaultDataDir(): File = when {
-        isMac -> File(home, "Library/Application Support/Stream Goat")
+        isMac -> {
+            val base = File(home, "Library/Application Support")
+            migrateLegacyDataDir(File(base, "RoarBox"), File(base, "Stream Goat"))
+        }
         isWindows -> {
             val appData = System.getenv("APPDATA") ?: "$home\\AppData\\Roaming"
-            val dir = File(appData, "Stream Goat")
-            val old = File(appData, "CloudStream")
-            if (!dir.exists() && old.isDirectory) runCatching { old.renameTo(dir) }
-            dir
+            val current = File(appData, "RoarBox")
+            val legacy = File(appData, "Stream Goat")
+            val older = File(appData, "CloudStream")
+            migrateLegacyDataDir(current, if (legacy.exists()) legacy else older)
         }
         else -> File((System.getenv("XDG_DATA_HOME") ?: "$home/.local/share"), "cloudstream-linux")
+    }
+
+    /** Move a legacy profile directory only when the new destination does not already exist. */
+    internal fun migrateLegacyDataDir(current: File, legacy: File): File {
+        if (current.exists() || !legacy.isDirectory) return current
+        current.parentFile?.mkdirs()
+        return if (runCatching { legacy.renameTo(current) }.getOrDefault(false)) current else legacy
     }
 
     /**
@@ -101,8 +111,8 @@ object Os {
 
     /** What to do when VLC's libraries are missing. */
     val vlcHint: String get() = when {
-        isWindows -> "VLC is included with Stream Goat; reinstall Stream Goat, or install VLC (64-bit) from videolan.org"
-        isMac -> "VLC is included with Stream Goat; reinstall Stream Goat, or install VLC from videolan.org into Applications"
+        isWindows -> "VLC is included with RoarBox; reinstall RoarBox, or install VLC (64-bit) from videolan.org"
+        isMac -> "VLC is included with RoarBox; reinstall RoarBox, or install VLC from videolan.org into Applications"
         else -> "sudo apt install libvlc5 vlc-plugin-base"
     }
 
@@ -136,7 +146,7 @@ object Os {
                 .inputStream.bufferedReader().readText()
             if (current.contains(exe, ignoreCase = true)) return
             fun reg(vararg args: String) = ProcessBuilder(listOf("reg", "add") + args.toList() + "/f").redirectErrorStream(true).start().waitFor()
-            reg(key, "/ve", "/d", "URL:Stream Goat repository")
+            reg(key, "/ve", "/d", "URL:RoarBox")
             reg(key, "/v", "URL Protocol", "/d", "")
             reg("$key\\DefaultIcon", "/ve", "/d", "\"$exe\",0")
             reg("$key\\shell\\open\\command", "/ve", "/d", command)

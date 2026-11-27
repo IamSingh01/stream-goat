@@ -6,6 +6,7 @@ import com.lagradost.cloudstream3.linux.Engine
 import com.lagradost.cloudstream3.linux.Playable
 import com.lagradost.cloudstream3.linux.Settings
 import com.lagradost.cloudstream3.utils.ExtractorLink
+import com.lagradost.cloudstream3.utils.ExtractorLinkPlayList
 import com.lagradost.cloudstream3.utils.Qualities
 import javafx.animation.Interpolator
 import javafx.animation.PauseTransition
@@ -37,6 +38,36 @@ object Playback {
 
     fun start(api: MainAPI, response: LoadResponse, playable: Playable, sources: SourceCollector, link: ExtractorLink) {
         Nav.window.closeOverlay()
+        if (com.lagradost.cloudstream3.linux.Os.isMac) {
+            sources.cancel()
+            val appDirs = listOf(
+                java.io.File("/Applications/IINA.app"),
+                java.io.File(System.getProperty("user.home"), "Applications/IINA.app"),
+            )
+            if (appDirs.none { it.isDirectory }) {
+                Toasts.show("IINA was not found in Applications. Install or move IINA.app into Applications.", seconds = 12.0)
+                return
+            }
+            val rawUrl = ((link as? ExtractorLinkPlayList)?.playlist?.firstOrNull()?.url ?: link.url)
+                .removeSuffix(com.lagradost.cloudstream3.linux.LiveApi.EXPIRED_MARK)
+            val headers = link.getAllHeaders().toMutableMap()
+            if (headers.keys.none { it.equals("User-Agent", true) }) headers["User-Agent"] = com.lagradost.cloudstream3.USER_AGENT
+            val streamUrl = if (rawUrl.startsWith("data:", true)) {
+                com.lagradost.cloudstream3.linux.StreamProxy.wrapData(rawUrl, headers)
+            } else {
+                com.lagradost.cloudstream3.linux.StreamProxy.wrap(
+                    rawUrl, headers, link.name == com.lagradost.cloudstream3.linux.LiveApi.EXPIRED
+                )
+            }
+            if (streamUrl == null) {
+                Toasts.show("Couldn't prepare this stream for IINA.", seconds = 10.0)
+                return
+            }
+            runCatching { ProcessBuilder("open", "-a", "IINA", streamUrl).start() }
+                .onSuccess { Toasts.show("Opened in IINA. Playback controls are available in IINA.") }
+                .onFailure { Toasts.show("Couldn't launch IINA: ${it.message}", seconds = 12.0) }
+            return
+        }
         if (Vlc.factory == null) {
             sources.cancel()
             Toasts.show("Playing needs VLC's libraries: " + com.lagradost.cloudstream3.linux.Os.vlcHint, seconds = 12.0)

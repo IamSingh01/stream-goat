@@ -195,16 +195,27 @@ class WideCard(
 }
 
 /**
- * A titled horizontal row. Mouse-wheel scrolling passes through to the page, while
- * trackpad horizontal swipes, shift+wheel and the arrow buttons move the row.
+ * A titled horizontal row. Horizontal gestures can be captured by this shelf when
+ * explicitly enabled; normal vertical wheel scrolling always remains with the page.
  */
-class Shelf(title: String, private val onViewAll: (() -> Unit)? = null, trailing: Node? = null) : VBox(12.0) {
+class Shelf(
+    title: String,
+    private val onViewAll: (() -> Unit)? = null,
+    trailing: Node? = null,
+    private val captureHorizontalWheel: Boolean = false,
+) : VBox(12.0) {
     val row = HBox(14.0).apply { alignment = Pos.TOP_LEFT }
     // The viewport is as tall as its row (measured, not bound: a binding lags one layout pass,
     // which left rows squashed when their cards arrived after the first layout).
     private val viewport = object : Pane(row) {
+        // Keep the long poster row clipped to the available page width.
+        override fun computeMinWidth(height: Double) = 0.0
+        override fun computePrefWidth(height: Double) = 0.0
         override fun computeMinHeight(width: Double) = row.prefHeight(-1.0)
         override fun computePrefHeight(width: Double) = row.prefHeight(-1.0)
+    }.apply {
+        minWidth = 0.0
+        isPickOnBounds = true
     }
     private var target = 0.0
     private var animation: Timeline? = null
@@ -212,7 +223,9 @@ class Shelf(title: String, private val onViewAll: (() -> Unit)? = null, trailing
     init {
         val header = HBox(10.0, label(title, "shelf-title"), spacer()).apply { styleClass += "shelf-header" }
         trailing?.let { header.children += it }
-        onViewAll?.let { header.children += label("View all", "link-button").onClick(it) }
+        onViewAll?.let { action ->
+            header.children += button("View all", null, "btn-ghost", "btn-small", action = action)
+        }
         val clip = Rectangle()
         clip.widthProperty().bind(viewport.widthProperty())
         clip.heightProperty().bind(viewport.heightProperty().add(30))
@@ -230,11 +243,21 @@ class Shelf(title: String, private val onViewAll: (() -> Unit)? = null, trailing
         stack.setOnMouseExited { left.opacity = 0.0; right.opacity = 0.0 }
         row.translateXProperty().addListener { _, _, _ -> if (stack.isHover) updateArrows(left, right, true) }
 
-        viewport.addEventFilter(ScrollEvent.SCROLL) { e ->
-            val dx = if (e.isShiftDown) e.deltaY else e.deltaX
-            if (dx == 0.0) return@addEventFilter
-            move(target + dx * 2.5)
-            e.consume()
+        if (captureHorizontalWheel) {
+            viewport.addEventFilter(ScrollEvent.SCROLL) { e ->
+                // This handler is enabled only for Global Search shelves. Prefer the
+                // trackpad's horizontal axis even when Shift is held; some macOS gestures
+                // report both axes, and choosing deltaY first lets the parent page scroll.
+                val delta = when {
+                    kotlin.math.abs(e.deltaX) > 0.5 -> e.deltaX
+                    e.isShiftDown -> e.deltaY
+                    else -> 0.0
+                }
+                if (kotlin.math.abs(delta) > 0.5) {
+                    move(target + delta * 2.0)
+                    e.consume()
+                }
+            }
         }
         children.addAll(header, stack)
     }

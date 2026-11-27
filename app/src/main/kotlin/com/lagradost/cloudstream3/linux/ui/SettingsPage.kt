@@ -206,7 +206,7 @@ class SettingsPage : StackPane(), Refreshable {
             section("Startup",
                 row("Ask who's watching", "With more than one profile, show the profile picker when the app starts. It always shows when the last profile has a PIN.",
                     Switch(Profiles.askOnStart) { Profiles.askOnStart = it }),
-                row("Startup animation", "The short Stream Goat intro when the app opens (a click or key skips it).",
+                row("Startup animation", "The short RoarBox intro when the app opens (a click or key skips it).",
                     Switch(Settings.startupAnimation) { Settings.startupAnimation = it })),
             section("What belongs to a profile", label(
                 "Each profile has its own history, continue watching, list, home layout, theme and player preferences (subtitles, audio, volume). " +
@@ -339,8 +339,8 @@ class SettingsPage : StackPane(), Refreshable {
                 row("Mode", "Dark, true-black AMOLED (saves power on OLED screens), midnight blue, light, or liquid glass (translucent panels over a soft colour backdrop or your wallpaper).", Region()),
                 modes.pad(0.0, 0.0, 12.0, 0.0),
                 row("Accent colour", "Buttons, highlights and the player's progress bar. Enter a hex colour for your own.", accents),
-                row("Logo", "The circle behind the goat (and its inner ears): the artwork's rainbow, or your accent colour. " +
-                    "The start animation and the offline goat follow it too.", logoChoice()),
+                row("Logo", "The RoarBox lion emblem: shown in the artwork's white style or tinted with your accent colour. " +
+                    "The start animation and offline artwork follow this style too.", logoChoice()),
             ),
             section("Home & details",
                 row("Featured slider", "Rotate the big banner on Home through the first catalog's top titles.",
@@ -372,31 +372,37 @@ class SettingsPage : StackPane(), Refreshable {
     }
 
     private fun playback(): List<Node> {
-        // Never start VLC on the window's thread (it can take many seconds on Windows): show "Starting…" and fill
-        // the row in when it's ready.
-        val engineLabel = label("Starting…", "muted")
+        // macOS playback is handed to the installed IINA app; VLC is not required there.
+        // Other platforms keep the existing bundled/system VLC readiness check.
+        val engineLabel = label(if (com.lagradost.cloudstream3.linux.Os.isMac) "External · IINA" else "Starting…", "muted")
         val vlcEngine = !Vlc.isLoaded || Vlc.factory != null
-        if (!Vlc.isLoaded) Vlc.warmUp { javafx.application.Platform.runLater {
-            val ok = Vlc.factory != null
-            engineLabel.text = if (ok) "Ready" else "Not installed"
-            engineLabel.styleClass.setAll("label", if (ok) "good-text" else "error-text")
-        } } else {
-            engineLabel.text = if (Vlc.factory != null) "Ready" else "Not installed"
-            engineLabel.styleClass.setAll("label", if (Vlc.factory != null) "good-text" else "error-text")
+        if (!com.lagradost.cloudstream3.linux.Os.isMac) {
+            if (!Vlc.isLoaded) Vlc.warmUp { javafx.application.Platform.runLater {
+                val ok = Vlc.factory != null
+                engineLabel.text = if (ok) "Ready" else "Not installed"
+                engineLabel.styleClass.setAll("label", if (ok) "good-text" else "error-text")
+            } } else {
+                engineLabel.text = if (Vlc.factory != null) "Ready" else "Not installed"
+                engineLabel.styleClass.setAll("label", if (Vlc.factory != null) "good-text" else "error-text")
+            }
         }
         val qualities = listOf(0, 2160, 1440, 1080, 720, 480)
         return listOf(
             section("Player",
-                row("Player engine", if (!vlcEngine) "VLC's libraries aren't available, so videos can't play. " + com.lagradost.cloudstream3.linux.Os.vlcHint else
-                    "Videos play inside this window using VLC${if (Vlc.isLoaded) " " + Vlc.version.orEmpty() else ""}: every format VLC plays, hardware decoding, source switching, online subtitles, audio languages, speed and zoom.",
+                row("Player engine", if (com.lagradost.cloudstream3.linux.Os.isMac)
+                    "Videos open in IINA, which handles playback externally. VLC is not required."
+                    else if (!vlcEngine) "VLC's libraries aren't available, so videos can't play. " + com.lagradost.cloudstream3.linux.Os.vlcHint
+                    else "Videos play inside this window using VLC${if (Vlc.isLoaded) " " + Vlc.version.orEmpty() else ""}: every format VLC plays, hardware decoding, source switching, online subtitles, audio languages, speed and zoom.",
                     engineLabel),
-                row("Which player plays a video", "mpv (FFmpeg inside) reads streams itself, like ExoPlayer on Android: separate audio " +
-                    "languages (NetMirror), subtitle tracks, the real length and exact seeking. VLC is the backup: if one can't play a source, " +
-                    "the other is tried. You can also switch while watching (Sources menu)." +
-                    (if (Mpv.available) "" else " mpv isn't installed here, so VLC plays everything."),
-                    combo(listOf("AUTO", "VLC"), Settings.playerEngine.let { if (it == "VLC") it else "AUTO" }, { when (it) { "VLC" -> "VLC"; else -> "mpv (recommended)" } }) {
-                        Settings.playerEngine = it
-                    }),
+                *(if (com.lagradost.cloudstream3.linux.Os.isMac) emptyArray<javafx.scene.Node>() else arrayOf<javafx.scene.Node>(
+                    row("Which player plays a video", "mpv (FFmpeg inside) reads streams itself, like ExoPlayer on Android: separate audio " +
+                        "languages (NetMirror), subtitle tracks, the real length and exact seeking. VLC is the backup: if one can't play a source, " +
+                        "the other is tried. You can also switch while watching (Sources menu)." +
+                        (if (Mpv.available) "" else " mpv isn't installed here, so VLC plays everything."),
+                        combo(listOf("AUTO", "VLC"), Settings.playerEngine.let { if (it == "VLC") it else "AUTO" }, { when (it) { "VLC" -> "VLC"; else -> "mpv (recommended)" } }) {
+                            Settings.playerEngine = it
+                        })
+                )),
                 row("Battery saver", "For low-end PCs and laptops on battery: skips the H.264 deblocking filter (much less CPU), buffers longer and does no extra processing. Hardware decoding stays on.",
                     Switch(Settings.batterySaver) { Settings.batterySaver = it; Vlc.optionsChanged(Playback.active != null) }),
                 row("Find sources before you press Play", "When a title's page opens, its sources are looked up in the background, so Play starts sooner. Found sources are kept for 20 minutes.",
@@ -1053,7 +1059,7 @@ class SettingsPage : StackPane(), Refreshable {
         vbox(10.0, Logo(96.0), label(AppInfo.NAME, "h1"), label("Created by ${AppInfo.CREDIT}", "about-credit"),
             label("Version ${AppInfo.VERSION} for ${com.lagradost.cloudstream3.linux.Os.name}", "muted")).apply { alignment = javafx.geometry.Pos.CENTER_LEFT; pad(4.0, 0.0, 10.0, 0.0) },
         section(AppInfo.NAME,
-            row("Version ${AppInfo.VERSION}", "Movies, series, anime and Live TV from CloudStream extensions and Stremio add-ons, on Linux, Windows and Android. Free software under GPL-3.0.",
+            row("Version ${AppInfo.VERSION}", "Movies, series, anime and Live TV from compatible extensions and Stremio add-ons, on Linux, Windows and macOS. Free software under GPL-3.0.",
                 label("v${AppInfo.VERSION}", "tag", "accent")),
             row("Created by", AppInfo.CREDIT, label("", "muted")),
             row("Built on", "The upstream CloudStream library, libVLC through vlcj (player), JavaFX. Online subtitles: OpenSubtitles via the Stremio addon protocol.", label("", "muted")),
@@ -1062,7 +1068,7 @@ class SettingsPage : StackPane(), Refreshable {
                 button("Report", Icons.BUG, "btn-ghost", "btn-small") { GlitchWindow.reportWithoutPicture(Nav.window.stage) }),
         ),
         section("Updates",
-            row("Check for updates", "Small updates (only Stream Goat's own code changed) install from here and apply when the app restarts; " +
+            row("Check for updates", "Small RoarBox updates install from here and apply when the app restarts; " +
                 "bigger ones open the download page. You have ${AppInfo.VERSION} (build ${Updates.build}).", updateButton()),
             row("Check automatically", "Once a day when the app starts.", Switch(Settings.checkUpdates) { Settings.checkUpdates = it }),
             row("Test builds", "Get the newest test versions (may have bugs) instead of releases.", Switch(Settings.testBuilds) { Settings.testBuilds = it }),
@@ -1135,7 +1141,7 @@ class SettingsPage : StackPane(), Refreshable {
             Triple("Player", "G  /  H", "Subtitles earlier / later"),
             Triple("Player", "0 – 9", "Jump to 0 % – 90 %"),
             Triple("Player", "Home", "Back to the start"),
-            Triple("Player", "Shift + S", "Screenshot to Pictures/Stream Goat"),
+            Triple("Player", "Shift + S", "Screenshot to Pictures/RoarBox"),
             Triple("Player", "N", "Next episode"),
         )
         val list = VBox()

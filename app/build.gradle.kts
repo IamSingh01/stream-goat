@@ -26,10 +26,15 @@ dependencies {
     // JavaFX ships per-system native code: build on Windows for the Windows version.
     val windows = System.getProperty("os.name").startsWith("Windows", ignoreCase = true)
     val mac = System.getProperty("os.name").startsWith("Mac", ignoreCase = true)
-    val arm = System.getProperty("os.arch") == "aarch64"
+    val arch = System.getProperty("os.arch")
+    val arm = arch == "aarch64"
     val fxPlatform = when {
         windows -> "win"
-        mac -> if (arm) "mac-aarch64" else "mac"
+        mac -> when (arch) {
+            "aarch64" -> "mac-aarch64"
+            "x86_64", "amd64" -> "mac"
+            else -> error("Unsupported macOS architecture for JavaFX: $arch")
+        }
         arm -> "linux-aarch64"
         else -> "linux"
     }
@@ -144,7 +149,7 @@ val packageWindows by tasks.registering(Exec::class) {
     }
     commandLine(buildList {
         addAll(listOf("jpackage", "--type", type, "--name", "Stream Goat", "--app-version", version))
-        addAll(listOf("--vendor", "Syed Ali Hamza", "--dest", out.get().asFile.path))
+        addAll(listOf("--vendor", "Aman Singh", "--dest", out.get().asFile.path))
         addAll(listOf("--description", "Stream Goat: movies, series, anime and Live TV from CloudStream extensions"))
         if (type == "app-image") {
             addAll(listOf("--input", input.get().asFile.path, "--main-jar", "app.jar", "--main-class", application.mainClass.get()))
@@ -169,10 +174,10 @@ val packageWindows by tasks.registering(Exec::class) {
     })
 }
 
-// macOS (Apple Silicon): Stream Goat.app with its own Java runtime and VLC, and a .dmg, built with the JDK's
+// macOS (Apple Silicon): RoarBox.app with its own Java runtime and VLC, and a .dmg, built with the JDK's
 // jpackage on a Mac (CI: .github/workflows/macos.yml). The VLC folder is VLC.app's Contents/MacOS (lib/, plugins/).
-//   ./gradlew :app:packageMac -PvlcDir=/path/to/vlc                      -> build/jpackage-mac/Stream Goat.app
-//   ./gradlew :app:packageMac -PvlcDir=... -PjpackageType=dmg             -> build/jpackage-mac/Stream Goat-<v>.dmg
+//   ./gradlew :app:packageMac -PvlcDir=/path/to/vlc                      -> build/jpackage-mac/RoarBox.app
+//   ./gradlew :app:packageMac -PvlcDir=... -PjpackageType=dmg             -> build/jpackage-mac/RoarBox-<v>.dmg
 val packageMac by tasks.registering(Exec::class) {
     group = "distribution"
     dependsOn(tasks.installDist)
@@ -182,23 +187,28 @@ val packageMac by tasks.registering(Exec::class) {
     val version = file("src/main/kotlin/com/lagradost/cloudstream3/linux/ui/AppWindow.kt").readText()
         .let { Regex("VERSION = \"([0-9.]+)").find(it)!!.groupValues[1] }
     val type = (findProperty("jpackageType") as String?) ?: "app-image"
+    val roarBoxIcon = layout.buildDirectory.file("generated/branding/RoarBox.icns")
     doFirst {
+        val mark = file("src/main/resources/ui/brand/roarbox-mark.png")
+        check(mark.isFile) { "Missing RoarBox logo: " + mark.path }
+        roarBoxIcon.get().asFile.parentFile.mkdirs()
+        project.exec { commandLine("sips", "-s", "format", "icns", mark.path, "--out", roarBoxIcon.get().asFile.path) }
         val inDir = input.get().asFile.apply { deleteRecursively(); mkdirs() }
         lib.get().asFile.copyRecursively(inDir)
-        // VLC's lib/ and plugins/ go into Stream Goat.app/Contents/app/vlc; see Os.bundledVlcDir.
+        // VLC's lib/ and plugins/ go into RoarBox.app/Contents/app/vlc; see Os.bundledVlcDir.
         (findProperty("vlcDir") as String?)?.let { file(it).copyRecursively(inDir.resolve("vlc")) }
         // libmpv (the main player, see ui/Mpv.kt) goes into <app>/mpv.
         (findProperty("mpvDir") as String?)?.let { file(it).copyRecursively(inDir.resolve("mpv")) }
         if (type == "app-image") out.get().asFile.deleteRecursively()
     }
     commandLine(buildList {
-        addAll(listOf("jpackage", "--type", type, "--name", "Stream Goat", "--app-version", version))
-        addAll(listOf("--vendor", "Syed Ali Hamza", "--dest", out.get().asFile.path))
-        addAll(listOf("--description", "Stream Goat: movies, series, anime and Live TV from CloudStream extensions"))
+        addAll(listOf("jpackage", "--type", type, "--name", "RoarBox", "--app-version", version))
+        addAll(listOf("--vendor", "Aman Singh", "--dest", out.get().asFile.path))
+        addAll(listOf("--description", "RoarBox: movies, series, anime and Live TV from CloudStream extensions"))
         if (type == "app-image") {
             addAll(listOf("--input", input.get().asFile.path, "--main-jar", "app.jar", "--main-class", application.mainClass.get()))
-            addAll(listOf("--icon", rootProject.file("packaging/macos/StreamGoat.icns").path))
-            addAll(listOf("--mac-package-identifier", "io.github.sherazi5110.streamgoat", "--mac-package-name", "Stream Goat"))
+            addAll(listOf("--icon", roarBoxIcon.get().asFile.path))
+            addAll(listOf("--mac-package-identifier", "com.roarbox.desktop", "--mac-package-name", "RoarBox"))
             addAll(listOf("--mac-app-category", "public.app-category.entertainment"))
             addAll(listOf("--jlink-options", "--strip-debug --no-man-pages --no-header-files --strip-native-commands"))
             addAll(listOf("--add-modules", listOf(
@@ -209,7 +219,7 @@ val packageMac by tasks.registering(Exec::class) {
             application.applicationDefaultJvmArgs.forEach { addAll(listOf("--java-options", it)) }
         } else {
             // The .dmg wraps the app image built (and signed) first, with a link to Applications to drag it to.
-            addAll(listOf("--app-image", out.get().asFile.resolve("Stream Goat.app").path))
+            addAll(listOf("--app-image", out.get().asFile.resolve("RoarBox.app").path))
         }
     })
 }

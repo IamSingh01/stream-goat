@@ -3,6 +3,8 @@
 | Your device | Download |
 |---|---|
 | **Windows 10 or 11** | `streamgoat-windows-{{VERSION}}.msi` (installer) or `streamgoat-windows-{{VERSION}}-portable.zip` |
+| **Mac with Apple Silicon** | `streamgoat-macos-arm64-{{VERSION}}.dmg` |
+| **Mac with Intel processor** | `streamgoat-macos-x86_64-{{VERSION}}.dmg` |
 | **Ubuntu, Debian, Mint, Pop!_OS, Zorin, ChromeOS (Linux)** | `streamgoat-linux_{{VERSION}}_amd64.deb` |
 | **Any Linux with Flatpak** (Fedora, Arch, openSUSE, Steam Deck…) | `streamgoat-linux.flatpak` |
 | **Linux with Java 21 already installed** | `streamgoat-linux-{{TAG}}.tar` |
@@ -22,6 +24,20 @@
 
 To update, install the new `.msi` the same way (extensions, profiles and library are kept in `%APPDATA%\Stream Goat`).
 To remove: Settings → Apps → Stream Goat → Uninstall.
+</details>
+
+<details>
+<summary><b>Install on macOS</b> (Apple Silicon or Intel)</summary>
+
+1. Choose the matching file: `streamgoat-macos-arm64-{{VERSION}}.dmg` for Apple Silicon (M1 or newer), or
+   `streamgoat-macos-x86_64-{{VERSION}}.dmg` for an Intel Mac. Check Apple menu → **About This Mac**.
+2. Open the DMG and drag **Stream Goat** to **Applications**.
+3. The first launch may be blocked because the app isn't notarized. Open **System Settings → Privacy & Security**,
+   choose **Open Anyway**, then confirm.
+
+The DMG includes the matching Java runtime, JavaFX, VLC and mpv. Your settings and library stay in
+`~/Library/Application Support/Stream Goat` when you replace the app.
+
 </details>
 
 <details>
