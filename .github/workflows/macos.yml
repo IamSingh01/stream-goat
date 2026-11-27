@@ -23,7 +23,7 @@ jobs:
             runner: macos-15-intel
             vlc_arch: intel64
             fx_classifier: mac
-            update_key: mac-x86_64
+            update_key: mac
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: write
