@@ -14,7 +14,7 @@ class SearchPaginationStateTest {
 
     @Test
     fun `loading cannot be started twice and next flag controls continuation`() {
-        val first = SearchPaginationState(firstHasNext = true)
+        val first = SearchPaginationState(hasNext = true)
         val loading = first.beginLoading()
         assertFalse(loading.canLoadNext)
         assertEquals(loading, loading.beginLoading())
@@ -30,7 +30,7 @@ class SearchPaginationStateTest {
 
     @Test
     fun `failed page can be retried without advancing page count`() {
-        val initial = SearchPaginationState(firstHasNext = true)
+        val initial = SearchPaginationState(hasNext = true)
         val failed = initial.beginLoading().pageFailed()
         assertTrue(failed.canLoadNext)
         assertEquals(1, failed.pagesFetched)
@@ -38,7 +38,7 @@ class SearchPaginationStateTest {
 
     @Test
     fun `pagination stops at the safety limit`() {
-        val capped = SearchPaginationState(firstHasNext = true, pagesFetched = 100)
+        val capped = SearchPaginationState(hasNext = true, pagesFetched = 100)
         assertFalse(capped.canLoadNext)
     }
 }
