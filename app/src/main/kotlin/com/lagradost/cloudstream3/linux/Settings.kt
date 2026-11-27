@@ -40,8 +40,12 @@ object Settings {
     /** Before profiles (v5 and older) these were app-wide: they become the first profile's. */
     fun migrateToProfiles() {
         if (prefs.contains("profiles_migrated")) return
-        val target = Platform.context.getSharedPreferences("profile_settings", 0).edit()
-        prefs.getAll().forEach { (k, v) -> if (k in PROFILE_KEYS && v is String) target.putString(k, v) }
+        val existingProfile = Platform.context.getSharedPreferences("profile_settings", 0)
+        val target = existingProfile.edit()
+        // A partially restored/new profile wins over legacy values; migrate only absent keys.
+        prefs.getAll().forEach { (k, v) ->
+            if (k in PROFILE_KEYS && v is String && !existingProfile.contains(k)) target.putString(k, v)
+        }
         // Commit the target first. The migration marker is written only once all copied
         // profile values are durable, so a crash cannot mark an incomplete migration done.
         if (target.commit()) {
