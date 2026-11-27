@@ -323,11 +323,6 @@ internal class SearchResultsPage private constructor(
         if (renderedUrls.add(item.url)) grid.children += PosterCard.of(item) { api?.let { Nav.open(it, item) } }
     }
 
-    internal fun automationRetryButton() = retry
-    internal fun automationStatusLabel() = status
-    internal fun automationResultCount() = grid.children.size
-    internal fun automationHasNext() = session.hasNext
-
     internal fun loadMore() {
         if (!session.hasNext) return
         retry.isVisible = false
