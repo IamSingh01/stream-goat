@@ -17,6 +17,7 @@ import javafx.scene.layout.FlowPane
 import javafx.scene.layout.StackPane
 import javafx.scene.layout.VBox
 import javafx.util.Duration
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
@@ -289,9 +290,13 @@ private class SearchResultsPage(
         spinner.isManaged = true
         status.text = "Loading more from ${api.name}…"
         job = ui.launch {
-            val loaded = runCatching {
+            val loaded = try {
                 withTimeout(api.searchTimeoutMs ?: 45_000L) { session.loadNext() }
-            }.getOrDefault(false)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Throwable) {
+                false
+            }
             if (!loaded) {
                 spinner.isVisible = false
                 spinner.isManaged = false
