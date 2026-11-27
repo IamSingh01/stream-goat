@@ -26,6 +26,8 @@ android {
         // Google Drive backup: the project's Google sign-in client (GitHub secrets, docs/google-drive-setup.md).
         // For an installed app Google doesn't treat the client secret as secret; it ships in the app.
         fun quoted(name: String) = "\"" + (System.getenv(name) ?: "").replace("\"", "") + "\""
+        // Which build this is (the commit, from GitHub's build): the test channel's update check compares it exactly.
+        buildConfigField("String", "BUILD_ID", "\"${System.getenv("GITHUB_SHA")?.take(12).orEmpty()}\"")
         buildConfigField("String", "GOOGLE_CLIENT_ID", quoted("GOOGLE_CLIENT_ID"))
         buildConfigField("String", "GOOGLE_CLIENT_SECRET", quoted("GOOGLE_CLIENT_SECRET"))
         // WeTrakr sync: the app key (client_id) of the Stream Goat app registered on wetrakr.com (GitHub secret

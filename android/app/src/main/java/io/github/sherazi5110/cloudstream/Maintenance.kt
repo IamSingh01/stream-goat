@@ -107,7 +107,12 @@ object Updates {
             val props = (0 until assets.length()).map { assets.getJSONObject(it) }.firstOrNull { it.optString("name") == "streamgoat-android.properties" }
                 ?.let { a -> runCatching { java.util.Properties().apply { load(java.io.StringReader(app.get(a.optString("browser_download_url"), timeout = 15).text)) } }.getOrNull() }
             val theirCode = props?.getProperty("versionCode")?.toLongOrNull()
-            val newer = (theirCode != null && theirCode > myCode) || updated > installed + 10 * 60_000L
+            val theirBuild = props?.getProperty("build")?.takeIf { it.isNotBlank() }
+            val mine = BuildConfig.BUILD_ID.takeIf { it.isNotBlank() }
+            // Both builds known (from this version on): newer exactly when it's another build of the same or a higher
+            // version. Else as before: a higher version, or published 10+ minutes after this copy was installed.
+            val newer = if (theirBuild != null && mine != null) theirBuild != mine && (theirCode == null || theirCode >= myCode)
+                else (theirCode != null && theirCode > myCode) || updated > installed + 10 * 60_000L
             return if (newer)
                 withPatch(Release("test build " + (props?.getProperty("versionName")?.let { "$it " } ?: "") + "of " + java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.MEDIUM, java.text.DateFormat.SHORT).format(java.util.Date(updated)),
                     json.optString("html_url"), apk, size, test = true), assets) else null
