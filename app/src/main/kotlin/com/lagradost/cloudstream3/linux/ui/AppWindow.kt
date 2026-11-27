@@ -40,7 +40,7 @@ import java.util.logging.Logger
 import kotlin.system.exitProcess
 
 object AppInfo {
-    const val NAME = "Stream Goat"
+    const val NAME = "RoarBox"
     const val VERSION = "10.0.1"
     const val CREDIT = "Aman Singh"
 }
