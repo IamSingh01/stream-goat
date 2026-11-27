@@ -21,19 +21,20 @@ class RoarBoxBrandingTest {
             "RoarBox primary logo resource is missing"
         )?.close()
     }
+
     @Test
     fun `legacy desktop data directory migrates without losing files`() {
         val root = Files.createTempDirectory("roarbox-brand-migration").toFile()
         try {
             val legacy = java.io.File(root, "Stream Goat").apply { mkdirs() }
-            java.io.File(legacy, "settings.json").writeText("{\\"kept\\":true}")
+            java.io.File(legacy, "settings.json").writeText("""{"kept":true}""")
             val current = java.io.File(root, "RoarBox")
 
             val migrated = Os.migrateLegacyDataDir(current, legacy)
 
             assertEquals(current, migrated)
             assertTrue(java.io.File(current, "settings.json").isFile)
-            assertEquals("{\\"kept\\":true}", java.io.File(current, "settings.json").readText())
+            assertEquals("""{"kept":true}""", java.io.File(current, "settings.json").readText())
             assertTrue(!legacy.exists())
         } finally {
             root.deleteRecursively()
