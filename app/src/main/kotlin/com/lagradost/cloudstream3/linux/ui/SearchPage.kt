@@ -3,9 +3,11 @@ package com.lagradost.cloudstream3.linux.ui
 import com.lagradost.cloudstream3.MainAPI
 import com.lagradost.cloudstream3.linux.ContentFilter
 import com.lagradost.cloudstream3.linux.Engine
+import com.lagradost.cloudstream3.linux.GlobalSearchSourceSelection
+import com.lagradost.cloudstream3.linux.SearchPageResult
+import com.lagradost.cloudstream3.linux.ViewAllSearchSession
 import com.lagradost.cloudstream3.linux.PluginManager
 import com.lagradost.cloudstream3.linux.SearchHistory
-import com.lagradost.cloudstream3.linux.SearchPaginationState
 import javafx.animation.PauseTransition
 import javafx.geometry.Pos
 import javafx.scene.control.ComboBox
@@ -30,9 +32,16 @@ class SearchPage : StackPane(), Refreshable {
         promptText = "All sources"
         prefWidth = 220.0
         minWidth = 190.0
-        setOnAction { if (!changingSource) { promptText(); run() } }
+        setOnAction {
+            if (!changingSource) {
+                sourceSelection.selectIndex(selectionModel.selectedIndex)
+                promptText()
+                run()
+            }
+        }
     }
     private var apis: List<MainAPI> = emptyList()
+    private val sourceSelection = GlobalSearchSourceSelection<MainAPI>(emptyList()) { it.name }
     private val status = hbox(10.0)
     private val results = VBox(30.0)
     private var job: Job? = null
@@ -84,9 +93,9 @@ class SearchPage : StackPane(), Refreshable {
 
     /** Search only [provider] (Home's Search button), or every extension (null). Runs again if there's a search. */
     fun scopeTo(provider: String?) {
-        val index = provider?.let { name -> apis.indexOfFirst { it.name == name } }?.takeIf { it >= 0 }
+        sourceSelection.selectProvider(provider)
         changingSource = true
-        sourceSelector.selectionModel.select((index ?: -1) + 1)
+        sourceSelector.selectionModel.select(sourceSelection.options.indexOf(sourceSelection.selectedName ?: GlobalSearchSourceSelection.ALL_SOURCES))
         changingSource = false
         promptText()
         if (field.text.trim().length >= 2 && lastQuery.isNotEmpty()) run()
@@ -94,7 +103,7 @@ class SearchPage : StackPane(), Refreshable {
     }
 
     private fun promptText() {
-        val one = apis.getOrNull(sourceSelector.selectionModel.selectedIndex - 1)
+        val one = sourceSelection.selectedName?.let { name -> apis.firstOrNull { it.name == name } }
         field.promptText = if (one != null) "Search in ${one.name}…" else "Search movies, series, anime…"
     }
 
@@ -166,11 +175,11 @@ class SearchPage : StackPane(), Refreshable {
 
     private fun refreshProviders() {
         apis = Engine.providers()
-        val selectedName = sourceSelector.selectionModel.selectedItem
-        val names = listOf("All sources") + apis.map { it.name }
+        sourceSelection.refresh(apis)
+        val names = sourceSelection.options
         changingSource = true
         sourceSelector.items.setAll(names)
-        sourceSelector.selectionModel.select(names.indexOf(selectedName).takeIf { it >= 0 } ?: 0)
+        sourceSelector.selectionModel.select(names.indexOf(sourceSelection.selectedName ?: GlobalSearchSourceSelection.ALL_SOURCES).coerceAtLeast(0))
         changingSource = false
         promptText()
     }
@@ -178,8 +187,7 @@ class SearchPage : StackPane(), Refreshable {
     fun run(query: String = field.text.trim()) {
         if (query.length < 2) return
         if (field.text.trim() != query) field.text = query
-        val selected = sourceSelector.selectionModel.selectedIndex
-        val targets = if (selected <= 0) apis else listOfNotNull(apis.getOrNull(selected - 1))
+        val targets = sourceSelection.targets()
         if (targets.isEmpty()) {
             results.children.setAll(emptyState(Icons.EXTENSION, "No extensions installed", "Install extensions from a repository first.",
                 button("Open Extensions", Icons.EXTENSION, "btn-accent") { Nav.window.show(Tab.EXTENSIONS) }))
@@ -237,9 +245,15 @@ private class SearchResultsPage(
     firstHasNext: Boolean,
 ) : StackPane(), Disposable {
     private val grid = FlowPane(18.0, 22.0)
-    private val seen = HashSet<String>()
-    private var page = 1
-    private var pagination = SearchPaginationState(hasNext = firstHasNext)
+    private val renderedUrls = HashSet<String>()
+    private val session = ViewAllSearchSession(
+        firstPage = firstPage,
+        firstHasNext = firstHasNext,
+        keyOf = { it.url },
+    ) { nextPage ->
+        val response = api.search(query, nextPage) ?: error("Provider returned no search response")
+        SearchPageResult(ContentFilter.filter(response.items), response.hasNext)
+    }
     private var job: Job? = null
     private val spinner = ProgressIndicator().apply { setPrefSize(22.0, 22.0); setMaxSize(22.0, 22.0) }
     private val status = label("", "muted")
@@ -260,46 +274,42 @@ private class SearchResultsPage(
         scroll = pageScroll(vbox(24.0, header, grid, footer).pad(22.0, 36.0, 40.0, 36.0))
         children += scroll
         idle()
-        if (pagination.canLoadNext) javafx.application.Platform.runLater { loadMore() }
+        if (session.hasNext) javafx.application.Platform.runLater { loadMore() }
     }
 
     private fun add(item: com.lagradost.cloudstream3.SearchResponse) {
-        if (seen.add(item.url)) grid.children += PosterCard.of(item) { Nav.open(api, item) }
+        if (renderedUrls.add(item.url)) grid.children += PosterCard.of(item) { Nav.open(api, item) }
     }
 
     private fun loadMore() {
-        if (!pagination.canLoadNext) return
-        pagination = pagination.beginLoading()
+        if (!session.hasNext) return
         retry.isVisible = false
         retry.isManaged = false
         spinner.isVisible = true
         spinner.isManaged = true
         status.text = "Loading more from ${api.name}…"
         job = ui.launch {
-            val response = runCatching {
-                withTimeout(api.searchTimeoutMs ?: 45_000L) { api.search(query, page + 1) }
-            }.getOrNull()
-            if (response == null) {
-                pagination = pagination.pageFailed()
+            val loaded = runCatching {
+                withTimeout(api.searchTimeoutMs ?: 45_000L) { session.loadNext() }
+            }.getOrDefault(false)
+            if (!loaded) {
                 spinner.isVisible = false
                 spinner.isManaged = false
                 status.text = "Couldn't load more results."
-                retry.isVisible = pagination.canLoadNext
+                retry.isVisible = session.hasNext
                 retry.isManaged = retry.isVisible
                 return@launch
             }
-            page++
-            response.items.let(ContentFilter::filter).forEach { add(it) }
-            pagination = pagination.pageLoaded(response.hasNext)
+            session.items.forEach { add(it) }
             idle()
-            if (pagination.canLoadNext) loadMore()
+            if (session.hasNext) loadMore()
         }
     }
 
     private fun idle() {
         spinner.isVisible = false
         spinner.isManaged = false
-        status.text = if (!pagination.hasNext || pagination.pagesFetched >= 100) {
+        status.text = if (!session.hasNext) {
             "That's everything · ${grid.children.size} titles"
         } else ""
     }
