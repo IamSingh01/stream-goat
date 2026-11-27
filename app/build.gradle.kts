@@ -77,7 +77,7 @@ tasks.test {
 }
 
 // Self-contained .deb (bundles a Java runtime) built with the JDK's jpackage:
-//   ./gradlew :app:packageDeb  ->  app/build/jpackage/cloudstream-linux_<version>_amd64.deb
+//   ./gradlew :app:packageDeb  ->  app/build/jpackage/RoarStream_<version>_amd64.deb
 val packageDeb by tasks.registering(Exec::class) {
     group = "distribution"
     dependsOn(tasks.installDist)
@@ -102,7 +102,7 @@ val packageDeb by tasks.registering(Exec::class) {
         addAll(listOf("--input", lib.get().asFile.path, "--main-jar", "app.jar"))
         addAll(listOf("--main-class", application.mainClass.get(), "--dest", out.get().asFile.path))
         addAll(listOf("--resource-dir", resources.get().asFile.path))
-        addAll(listOf("--icon", packaging.resolve("RoarStream.png").path))
+        addAll(listOf("--icon", rootProject.file("app/src/main/resources/ui/icon.png").path))
         addAll(listOf("--description", "RoarStream: movies, series, anime and live TV"))
         addAll(listOf("--jlink-options", "--strip-debug --no-man-pages --no-header-files --strip-native-commands"))
         // Android gives extensions roughly java.base; the rest is for Swing, TLS, Jackson, Rhino and okhttp.
@@ -242,14 +242,14 @@ val cloudConfig = tasks.register("cloudConfig") {
     val out = layout.buildDirectory.dir("generated/cloud")
     val id = providers.environmentVariable("GOOGLE_CLIENT_ID").orElse("")
     val secret = providers.environmentVariable("GOOGLE_CLIENT_SECRET").orElse("")
-    // WeTrakr sync: the app key of the Stream Goat app on wetrakr.com (GitHub secret WETRAKR_CLIENT_ID).
+    // WeTrakr sync: the app key of the RoarStream app on wetrakr.com (GitHub secret WETRAKR_CLIENT_ID).
     val wetrakr = providers.environmentVariable("WETRAKR_CLIENT_ID").orElse("")
     inputs.property("id", id)
     inputs.property("secret", secret)
     inputs.property("wetrakr", wetrakr)
     outputs.dir(out)
     doLast {
-        out.get().file("stream-goat-cloud.properties").asFile.apply { parentFile.mkdirs() }
+        out.get().file("roarstream-cloud.properties").asFile.apply { parentFile.mkdirs() }
             .writeText("GOOGLE_CLIENT_ID=${id.get()}\nGOOGLE_CLIENT_SECRET=${secret.get()}\nWETRAKR_CLIENT_ID=${wetrakr.get()}\n")
     }
 }
@@ -264,8 +264,8 @@ val updateConfig = tasks.register("updateConfig") {
     outputs.dir(out)
     doLast {
         val dir = out.get().asFile.apply { deleteRecursively(); mkdirs() }
-        dir.resolve("stream-goat-build.properties").writeText("build=${sha.get().take(12)}\n")
-        cert.get().takeIf { it.isNotBlank() }?.let(::file)?.takeIf { it.isFile }?.copyTo(dir.resolve("stream-goat-update.pem"))
+        dir.resolve("roarstream-build.properties").writeText("build=${sha.get().take(12)}\n")
+        cert.get().takeIf { it.isNotBlank() }?.let(::file)?.takeIf { it.isFile }?.copyTo(dir.resolve("roarstream-update.pem"))
     }
 }
 sourceSets.main { resources.srcDir(cloudConfig); resources.srcDir(updateConfig) }
