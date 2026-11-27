@@ -8,7 +8,7 @@ import java.util.Properties
  */
 object CloudConfig {
     private val built: Properties by lazy {
-        Properties().apply { CloudConfig::class.java.getResourceAsStream("/stream-goat-cloud.properties")?.use { load(it) } }
+        Properties().apply { CloudConfig::class.java.getResourceAsStream("/roarstream-cloud.properties")?.use { load(it) } }
     }
 
     fun value(name: String): String =
