@@ -17,7 +17,7 @@ object Os {
 
     /**
      * Linux: ~/.local/share/RoarStream; migrates cloudstream-linux data on first launch.
-     * Windows: %APPDATA%\RoarStream; migrates RoarStream or CloudStream data on first launch.
+     * Windows: %APPDATA%\RoarStream; migrates Stream Goat or CloudStream data on first launch.
      * macOS: ~/Library/Application Support/RoarStream; migrates Stream Goat data on first launch.
      */
     fun defaultDataDir(): File = when {
