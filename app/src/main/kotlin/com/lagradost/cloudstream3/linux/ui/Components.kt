@@ -253,7 +253,7 @@ class Shelf(
     title: String,
     private val onViewAll: (() -> Unit)? = null,
     trailing: Node? = null,
-    private val captureHorizontalWheel: Boolean = false,
+    private val captureHorizontalWheel: Boolean = true,
 ) : VBox(12.0) {
     val row = HBox(14.0).apply { alignment = Pos.TOP_LEFT }
     // The viewport is as tall as its row (measured, not bound: a binding lags one layout pass,
@@ -288,15 +288,10 @@ class Shelf(
 
         if (captureHorizontalWheel) {
             viewport.addEventFilter(ScrollEvent.SCROLL) { e ->
-                val delta = when {
-                    kotlin.math.abs(e.deltaX) > 0.5 -> e.deltaX
-                    e.isShiftDown -> e.deltaY
-                    else -> 0.0
-                }
-                if (kotlin.math.abs(delta) > 0.5) {
-                    move(target + delta * 2.0)
-                    e.consume()
-                }
+                val dx = if (e.isShiftDown) e.deltaY else e.deltaX
+                if (dx == 0.0) return@addEventFilter
+                move(target + dx * 2.5)
+                e.consume()
             }
         }
         children.addAll(header, stack)
