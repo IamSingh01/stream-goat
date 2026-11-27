@@ -1,5 +1,7 @@
 package com.lagradost.cloudstream3.linux
 
+import java.util.concurrent.CancellationException
+
 /** Maps the Global Search source dropdown to the provider set used by the search action. */
 class GlobalSearchSourceSelection<T>(
     providers: List<T>,
