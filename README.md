@@ -1,6 +1,6 @@
 # RoarStream
 
-<p align="center"><img src="packaging/linux/cloudstream-linux.png" width="128" alt="RoarStream white lion emblem on black"></p>
+<p align="center"><img src="app/src/main/resources/ui/icon.png" width="128" alt="RoarStream white lion emblem on black"></p>
 
 <p align="center"><b>Movies, series, anime and Live TV on Android phones, tablets and TV, Windows, Mac, Linux and the web.</b><br>
 Developed by <b>Aman Singh</b></p>
