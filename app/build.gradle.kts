@@ -148,7 +148,7 @@ val packageWindows by tasks.registering(Exec::class) {
         addAll(listOf("--description", "RoarStream: movies, series, anime and live TV"))
         if (type == "app-image") {
             addAll(listOf("--input", input.get().asFile.path, "--main-jar", "app.jar", "--main-class", application.mainClass.get()))
-            addAll(listOf("--icon", rootProject.file("packaging/windows/cloudstream.ico").path))
+            addAll(listOf("--icon", rootProject.file("packaging/windows/RoarStream.ico").path))
             // A second launcher with a console window for the command line (roarstream-cli.exe doctor, install…).
             addAll(listOf("--add-launcher", "roarstream-cli=" + rootProject.file("packaging/windows/cli-launcher.properties").path))
             addAll(listOf("--jlink-options", "--strip-debug --no-man-pages --no-header-files --strip-native-commands"))
