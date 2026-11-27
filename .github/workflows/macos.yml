@@ -3,7 +3,7 @@ name: macOS
 # Native macOS builds for Apple Silicon (arm64) and Intel (x86_64). Each DMG bundles matching Java, JavaFX, VLC and mpv.
 on:
   push:
-    branches: [main, macos, picture-keys, compat/macos-intel-x86_64-11.0]
+    branches: [main, macos, picture-keys]
     tags: ["v*", "V*", "[0-9]*"]
   pull_request:
 
