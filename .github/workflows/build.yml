@@ -161,20 +161,20 @@ jobs:
           mkdir -p ../build/apk
           for f in app/build/outputs/apk/release/app-*-release.apk; do
             abi=$(basename "$f" | sed -E 's/app-(.+)-release\.apk/\1/')
-            cp "$f" "../build/apk/streamgoat-android-$abi.apk"
+            cp "$f" "../build/apk/roarstream-android-$abi.apk"
           done
           # The version of these APKs, for the apps' update check (a higher version is a newer test build).
           aapt2=$(ls "$ANDROID_HOME"/build-tools/*/aapt2 | sort -V | tail -1)
-          badging=$("$aapt2" dump badging ../build/apk/streamgoat-android-universal.apk | head -1)
+          badging=$("$aapt2" dump badging ../build/apk/roarstream-android-universal.apk | head -1)
           printf 'versionCode=%s\nversionName=%s\nbuild=%s\n' \
             "$(echo "$badging" | sed -E "s/.*versionCode='([0-9]+)'.*/\1/")" \
-            "$(echo "$badging" | sed -E "s/.*versionName='([^']+)'.*/\1/")" "${GITHUB_SHA:0:12}" > ../build/apk/streamgoat-android.properties
-          cat ../build/apk/streamgoat-android.properties
+            "$(echo "$badging" | sed -E "s/.*versionName='([^']+)'.*/\1/")" "${GITHUB_SHA:0:12}" > ../build/apk/roarstream-android.properties
+          cat ../build/apk/roarstream-android.properties
           ls -la ../build/apk
 
       - uses: actions/upload-artifact@v4
         with:
-          name: streamgoat-android
+          name: roarstream-android
           path: build/apk/*.apk
 
       - name: Update patches
@@ -192,12 +192,12 @@ jobs:
             FROM=test-build
           fi
           mkdir -p build/old build/old-release build/patches
-          [ -n "$FROM" ] && gh release download "$FROM" -R "$GITHUB_REPOSITORY" -p 'streamgoat-android-*.apk' -D build/old || true
+          [ -n "$FROM" ] && gh release download "$FROM" -R "$GITHUB_REPOSITORY" -p 'roarstream-android-*.apk' -D build/old || true
           # A test build also patches from the latest release, so a phone on the release updates in a few MB too.
           if [[ "$FROM" == test-build ]]; then
-            gh release download -R "$GITHUB_REPOSITORY" -p 'streamgoat-android-*.apk' -D build/old-release || true
+            gh release download -R "$GITHUB_REPOSITORY" -p 'roarstream-android-*.apk' -D build/old-release || true
           fi
-          for new in build/apk/streamgoat-android-*.apk; do
+          for new in build/apk/roarstream-android-*.apk; do
             name=$(basename "$new")
             [[ "$name" == *universal* ]] && continue
             for old in "build/old/$name" "build/old-release/$name"; do
@@ -221,7 +221,7 @@ jobs:
         with:
           files: |
             build/apk/*.apk
-            build/apk/streamgoat-android.properties
+            build/apk/roarstream-android.properties
             build/patches/*.patch
 
       - name: Test build (pull requests)
@@ -238,10 +238,10 @@ jobs:
           make_latest: false
           body: |
             For testing only: commit ${{ github.event.pull_request.head.sha || github.sha }} of the picture-keys branch.
-            Android TV / Fire TV with Downloader: `https://github.com/${{ github.repository }}/releases/download/test-build/streamgoat-android-armeabi-v7a.apk` (or `...-arm64-v8a.apk`, or `...-universal.apk` if unsure).
+            Android TV / Fire TV with Downloader: `https://github.com/${{ github.repository }}/releases/download/test-build/roarstream-android-armeabi-v7a.apk` (or `...-arm64-v8a.apk`, or `...-universal.apk` if unsure).
           files: |
             build/apk/*.apk
-            build/apk/streamgoat-android.properties
+            build/apk/roarstream-android.properties
             build/patches/*.patch
 
   flatpak:
