@@ -111,8 +111,8 @@ object Os {
 
     /** What to do when VLC's libraries are missing. */
     val vlcHint: String get() = when {
-        isWindows -> "VLC is included with Stream Goat; reinstall Stream Goat, or install VLC (64-bit) from videolan.org"
-        isMac -> "VLC is included with Stream Goat; reinstall Stream Goat, or install VLC from videolan.org into Applications"
+        isWindows -> "VLC is included with RoarBox; reinstall RoarBox, or install VLC (64-bit) from videolan.org"
+        isMac -> "VLC is included with RoarBox; reinstall RoarBox, or install VLC from videolan.org into Applications"
         else -> "sudo apt install libvlc5 vlc-plugin-base"
     }
 
@@ -146,7 +146,7 @@ object Os {
                 .inputStream.bufferedReader().readText()
             if (current.contains(exe, ignoreCase = true)) return
             fun reg(vararg args: String) = ProcessBuilder(listOf("reg", "add") + args.toList() + "/f").redirectErrorStream(true).start().waitFor()
-            reg(key, "/ve", "/d", "URL:Stream Goat repository")
+            reg(key, "/ve", "/d", "URL:RoarBox")
             reg(key, "/v", "URL Protocol", "/d", "")
             reg("$key\\DefaultIcon", "/ve", "/d", "\"$exe\",0")
             reg("$key\\shell\\open\\command", "/ve", "/d", command)
