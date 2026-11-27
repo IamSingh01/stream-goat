@@ -16,6 +16,7 @@ import javafx.scene.control.Alert
 import javafx.scene.control.ButtonType
 import javafx.scene.control.ComboBox
 import javafx.scene.control.ProgressIndicator
+import javafx.scene.control.ScrollPane
 import javafx.scene.control.TextField
 import javafx.scene.image.ImageView
 import javafx.scene.layout.FlowPane
@@ -66,6 +67,9 @@ class ExtensionsPage : StackPane(), Refreshable {
     private var rows: List<ExtRow> = emptyList()
     private var shown = PAGE
     private val grid = FlowPane(14.0, 14.0)
+    private lateinit var scroll: ScrollPane
+    // Reuse card nodes across provider-state updates instead of rebuilding dozens of controls.
+    private val cardCache = mutableMapOf<String, VBox>()
     private val stats = label("", "muted")
     private val busy = mutableSetOf<String>()
     private var available: List<PluginWrapper> = emptyList()
@@ -102,7 +106,8 @@ class ExtensionsPage : StackPane(), Refreshable {
             id = "ext-kind"
         }
         val page = VBox(18.0, kind, body).pad(22.0, 36.0, 32.0, 36.0)
-        children += pageScroll(page)
+        scroll = pageScroll(page)
+        children += scroll
         ui.launch { PluginManager.version.collect { applyFilter() } }
     }
 
@@ -203,13 +208,26 @@ class ExtensionsPage : StackPane(), Refreshable {
     /** Renders cards a page at a time: big repositories list hundreds of extensions. */
     private fun renderGrid() {
         val w = cardWidth()
-        val nodes = rows.take(shown).map { card(it).apply { prefWidth = w } }.toMutableList<Node>()
+        val nodes = rows.take(shown).map { row ->
+            cardCache.getOrPut(row.internalName) { card(row) }.apply { prefWidth = w }
+        }.toMutableList<Node>()
         if (rows.isEmpty()) nodes += label(if (available.isEmpty() && loadingRepos) "Loading extensions…" else "No extensions match these filters", "muted")
         if (rows.size > shown) nodes += button("Show ${minOf(PAGE, rows.size - shown)} more (${rows.size - shown} left)", null, "btn-ghost") {
             shown += PAGE
             renderGrid()
         }
+        // Provider progress can emit repeatedly while a user is scrolling. If the visible
+        // nodes have not changed, don't detach/re-add them: that causes layout jitter.
+        if (grid.children.size == nodes.size && grid.children.indices.all { grid.children[it] === nodes[it] }) return
+        val content = scroll.content as? Region
+        val viewport = scroll.viewportBounds.height
+        val oldOffset = if (content != null) scroll.vvalue * (content.height - viewport).coerceAtLeast(0.0) else 0.0
         grid.children.setAll(nodes)
+        javafx.application.Platform.runLater {
+            val nextContent = scroll.content as? Region ?: return@runLater
+            val range = (nextContent.height - scroll.viewportBounds.height).coerceAtLeast(0.0)
+            if (range > 0.0) scroll.vvalue = (oldOffset / range).coerceIn(0.0, 1.0)
+        }
     }
 
     private fun languageName(code: String) =
@@ -251,10 +269,12 @@ class ExtensionsPage : StackPane(), Refreshable {
     private fun install(wrapper: PluginWrapper) {
         val name = wrapper.plugin.internalName
         if (!busy.add(name)) return
+        cardCache.remove(name)
         renderGrid()
         ui.launch {
             val result = withContext(Engine.dispatcher) { PluginManager.install(wrapper) }
             busy.remove(name)
+            cardCache.remove(name)
             result.fold(
                 { Toasts.show("Installed ${wrapper.plugin.name}" + it.providers.takeIf { p -> p.isNotEmpty() }?.let { p -> " · ${p.joinToString { a -> a.name }}" }.orEmpty()) },
                 { Toasts.show("${wrapper.plugin.name} failed: ${it.message ?: it}", seconds = 8.0) },
@@ -270,6 +290,7 @@ class ExtensionsPage : StackPane(), Refreshable {
 
     private fun uninstall(row: ExtRow) {
         PluginManager.uninstall(row.internalName)
+        cardCache.remove(row.internalName)
         Toasts.show("Uninstalled ${row.name}")
         applyFilter()
     }
