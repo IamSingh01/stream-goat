@@ -272,6 +272,13 @@ private class SearchResultsPage(
     private val footer = hbox(10.0, spinner, status, retry).apply { alignment = Pos.CENTER; minHeight = 44.0 }
     private val scroll: javafx.scene.control.ScrollPane
 
+    /** Stable controls and actions for real JavaFX UI automation. */
+    internal fun automationRetryButton() = retry
+    internal fun automationStatusLabel() = status
+    internal fun automationResultCount() = grid.children.size
+    internal fun automationHasNext() = session.hasNext
+    internal fun automationLoadNext() = loadMore()
+
     init {
         firstPage.forEach { add(it) }
         val header = hbox(14.0,
@@ -289,7 +296,7 @@ private class SearchResultsPage(
         if (renderedUrls.add(item.url)) grid.children += PosterCard.of(item) { Nav.open(api, item) }
     }
 
-    private fun loadMore() {
+    internal fun loadMore() {
         if (!session.hasNext) return
         retry.isVisible = false
         retry.isManaged = false
