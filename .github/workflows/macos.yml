@@ -153,14 +153,31 @@ jobs:
         run: |
           ./gradlew :app:packageMac -PvlcDir="$VLC_DIR" -PmpvDir="$MPV_DIR"
           app="app/build/jpackage-mac/RoarStream.app"
-          # No Apple developer certificate: sign it "ad hoc" so Apple Silicon runs it (macOS then asks once, in
-          # System Settings → Privacy & Security → Open Anyway).
+          icon="app/build/generated/branding/RoarStream.icns"
+          test -s "$icon"
+          iconutil -test -v -i "$icon"
+          sips -g pixelWidth -g pixelHeight "$icon"
+          # Confirm the iconset includes all expected standard and Retina renditions.
+          for size in icon_16x16.png icon_16x16@2x.png icon_32x32.png icon_32x32@2x.png \
+                      icon_128x128.png icon_128x128@2x.png icon_256x256.png icon_256x256@2x.png \
+                      icon_512x512.png icon_512x512@2x.png; do
+            test -s "app/build/generated/branding/RoarStream.iconset/$size"
+          done
+          # No Apple developer certificate: sign it ad hoc for CI installation and execution.
           codesign --force --deep --sign - "$app"
           codesign --verify --deep --strict "$app" && echo "signature OK"
           ./gradlew :app:packageMac -PvlcDir="$VLC_DIR" -PmpvDir="$MPV_DIR" -PjpackageType=dmg
           VERSION=$(grep -o 'VERSION = "[^"]*"' app/src/main/kotlin/com/lagradost/cloudstream3/linux/ui/AppWindow.kt | cut -d'"' -f2)
           mkdir -p build/macos
           cp app/build/jpackage-mac/RoarStream-*.dmg "build/macos/roarstream-macos-$MACOS_ARCH-$VERSION.dmg"
+          dmg="build/macos/roarstream-macos-$MACOS_ARCH-$VERSION.dmg"
+          test -s "$dmg"
+          hdiutil verify "$dmg"
+          hdiutil attach -nobrowse -readonly -mountpoint /Volumes/roarstream-check "$dmg"
+          test -d /Volumes/roarstream-check/RoarStream.app
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' /Volumes/roarstream-check/RoarStream.app/Contents/Info.plist | grep -Fx 'RoarStream'
+          hdiutil detach /Volumes/roarstream-check
+          shasum -a 256 "$icon" "$dmg"
           ls -la build/macos
           du -sh "$app"
 
