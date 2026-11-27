@@ -182,7 +182,8 @@ object Settings {
 
     var lastHomeProvider: String?
         get() = string("last_home_provider", "").ifBlank { null }
-        set(v) = put("last_home_provider", v ?: "")
+        // This selection is made immediately before an app may be closed; persist it before returning.
+        set(v) { store("last_home_provider").edit().putString("last_home_provider", v ?: "").commit() }
 
     /** Extension languages to show (lowercase codes such as "en", "hi"); empty = all, like the official app. */
     var extensionLanguages: Set<String>
