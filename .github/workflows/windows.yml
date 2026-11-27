@@ -8,6 +8,11 @@ on:
     tags: ["v*", "V*", "[0-9]*"]
   pull_request:
 
+# Cancel an older run when a newer commit arrives for the same PR or branch.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   windows:
     runs-on: windows-2022
