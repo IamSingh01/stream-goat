@@ -234,6 +234,26 @@
       <p style="color:var(--muted);margin:10px 0 0;font-size:14px">It always gets the newest version. If the TV says "App not installed", uninstall the old Stream Goat first
         (back up first: Settings → Updates and backup), or type the code <span class="code" style="font-size:15px">2193283</span> instead (the universal version: works on every device, bigger download; or the address <span class="code" style="font-size:15px">sherazi5110.github.io/stream-goat/apk</span>).</p>
     </div>
+    <div class="tvbox" id="playprotect">
+      <h3>🛡️ Google Play Protect warning or block</h3>
+      <p style="color:var(--muted);margin:0">On some phones and TVs, Google Play Protect warns that Stream Goat "can install harmful apps",
+        blocks the install or its updates, or later disables or removes the app by itself (it "disappears" from the TV).</p>
+      <p style="margin:10px 0 0"><b>Why:</b> Stream Goat isn't on the Play Store, it installs its own updates (so it needs Android's
+        "install unknown apps" permission), and it downloads extensions, like CloudStream. Play Protect flags apps that work this way.
+        Stream Goat is free and open source: anyone can read its code on GitHub.</p>
+      <ol>
+        <li><b>At the warning:</b> press <b>More details</b>, then <b>Install anyway</b>.</li>
+        <li><b>Still blocked, or the app keeps disappearing?</b> Turn off Play Protect's scanning:
+          <b>Phone or tablet:</b> Play Store → your profile picture → Play Protect → ⚙ (top right) → turn off <b>Scan apps with Play Protect</b>.
+          <b>Google TV / Android TV:</b> Play Store → your profile → Settings → Google Play Protect → turn off scanning.
+          Then install Stream Goat again.</li>
+        <li><b>App gone from the TV?</b> Settings → Apps → See all apps: if Stream Goat is there but disabled, press <b>Enable</b>;
+          if it isn't there, install it again.</li>
+      </ol>
+      <p style="color:var(--muted);margin:10px 0 0;font-size:14px">Turning Play Protect off is your choice: it also stops it checking
+        other apps. If you turn it back on, it may disable or remove Stream Goat again. Only download Stream Goat from this website or
+        its GitHub page.</p>
+    </div>
     <p class="note">Step-by-step help for every device: <a href="https://github.com/sherazi5110/stream-goat/blob/main/INSTALL.md">install guide</a>.
       iPhone and iPad: use the <a href="app/">web version</a> and add it to your home screen.</p>
     <p class="note"><b>Updating?</b> From 10.0.0 on, new versions install over the old one from inside the app (Settings → Updates

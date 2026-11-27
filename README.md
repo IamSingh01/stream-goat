@@ -96,6 +96,20 @@ get the newest version. The app has a touch layout for phones and a remote-frien
 ExoPlayer and VLC, and real **HDR** on HDR screens. **Updating:** 10.0.0 and later install new versions from inside the
 app (Settings → Updates and backup); coming from 9.x, uninstall once first (back up, then restore). [More: INSTALL.md → Android](INSTALL.md#android-phones-tablets-and-android-tv)
 
+**Google Play Protect warning or block:** on some devices Play Protect says Stream Goat "can install harmful apps",
+blocks the install or its updates, or later disables or removes the app by itself (it "disappears" from the TV). That's
+because Stream Goat isn't on the Play Store, installs its own updates (Android's "install unknown apps" permission) and
+downloads extensions, like CloudStream; Play Protect flags apps that work this way. The app is open source: its code is
+here for anyone to read. To install it anyway:
+1. At the warning, press **More details → Install anyway**.
+2. Still blocked, or the app keeps disappearing? Turn off Play Protect's scanning, then install again:
+   **phone/tablet:** Play Store → profile picture → Play Protect → ⚙ → turn off *Scan apps with Play Protect*;
+   **Google TV / Android TV:** Play Store → profile → Settings → Google Play Protect → turn off scanning.
+3. App gone from the TV? Settings → Apps → See all apps: if it's there but disabled, press **Enable**; otherwise install it again.
+
+Turning Play Protect off is your choice (it also stops checking other apps); turned back on, it may disable or remove
+Stream Goat again. Only download Stream Goat from this GitHub page or [the website](https://sherazi5110.github.io/stream-goat/).
+
 ### Mac (Apple Silicon, from 9.0.1)
 
 | File | For |
