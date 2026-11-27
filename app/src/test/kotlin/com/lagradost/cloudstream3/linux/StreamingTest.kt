@@ -47,6 +47,23 @@ class StreamingTest {
     ).getOrThrow().providers.single()
 
     @Test
+    fun `global search receives provider pagination metadata and can fetch every page`() = runBlocking {
+        val api = demo()
+        val first = Engine.search("paged", listOf(api)).toList().single()
+
+        assertEquals(4, first.results.size)
+        assertTrue(first.hasNext, "first provider page must advertise more results")
+
+        val second = api.search("paged", 2)!!
+        val third = api.search("paged", 3)!!
+        assertEquals(4, second.items.size)
+        assertTrue(second.hasNext)
+        assertEquals(4, third.items.size)
+        assertTrue(!third.hasNext)
+        assertEquals(12, (first.results + second.items + third.items).distinctBy { it.url }.size)
+    }
+
+    @Test
     fun `sources stream in and a dead host cannot hang the search`() = runBlocking {
         val api = demo()
         val started = System.nanoTime()
