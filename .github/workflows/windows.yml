@@ -133,7 +133,7 @@ jobs:
       - name: Check the packaged app
         # The packaged app's own checker must find its Java, extensions folder and the bundled VLC.
         run: |
-          app="app/build/jpackage-win/Stream Goat"
+          app="app/build/jpackage-win/RoarStream"
           out=$(CLOUDSTREAM_HOME="$(cygpath -w "$PWD/doctor-home")" "$app/roarstream-cli.exe" doctor 2>&1 || true)
           echo "$out"
           ls "$app/app/vlc" | head
@@ -149,7 +149,7 @@ jobs:
         run: |
           mkdir -p shots
           export CS_SCREENSHOT="$(cygpath -w "$PWD/shots")\\win" CS_SCREENSHOT_ONLY=settings7 CLOUDSTREAM_HOME="$(cygpath -w "$PWD/shot-home")"
-          timeout 180 "app/build/jpackage-win/Stream Goat/RoarStream.exe" || true
+          timeout 180 "app/build/jpackage-win/RoarStream/RoarStream.exe" || true
           ls shots
           [ -n "$(ls shots)" ] || { echo "::error::No screenshots were taken"; exit 1; }
           # A drawn window has many colours and the app's dark background; a blank one doesn't.
