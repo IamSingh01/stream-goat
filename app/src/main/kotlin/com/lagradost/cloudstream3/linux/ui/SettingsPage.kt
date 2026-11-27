@@ -206,7 +206,7 @@ class SettingsPage : StackPane(), Refreshable {
             section("Startup",
                 row("Ask who's watching", "With more than one profile, show the profile picker when the app starts. It always shows when the last profile has a PIN.",
                     Switch(Profiles.askOnStart) { Profiles.askOnStart = it }),
-                row("Startup animation", "The short Stream Goat intro when the app opens (a click or key skips it).",
+                row("Startup animation", "The short RoarBox intro when the app opens (a click or key skips it).",
                     Switch(Settings.startupAnimation) { Settings.startupAnimation = it })),
             section("What belongs to a profile", label(
                 "Each profile has its own history, continue watching, list, home layout, theme and player preferences (subtitles, audio, volume). " +
@@ -339,8 +339,8 @@ class SettingsPage : StackPane(), Refreshable {
                 row("Mode", "Dark, true-black AMOLED (saves power on OLED screens), midnight blue, light, or liquid glass (translucent panels over a soft colour backdrop or your wallpaper).", Region()),
                 modes.pad(0.0, 0.0, 12.0, 0.0),
                 row("Accent colour", "Buttons, highlights and the player's progress bar. Enter a hex colour for your own.", accents),
-                row("Logo", "The circle behind the goat (and its inner ears): the artwork's rainbow, or your accent colour. " +
-                    "The start animation and the offline goat follow it too.", logoChoice()),
+                row("Logo", "The RoarBox lion emblem: shown in the artwork's white style or tinted with your accent colour. " +
+                    "The start animation and offline artwork follow this style too.", logoChoice()),
             ),
             section("Home & details",
                 row("Featured slider", "Rotate the big banner on Home through the first catalog's top titles.",
@@ -1059,7 +1059,7 @@ class SettingsPage : StackPane(), Refreshable {
         vbox(10.0, Logo(96.0), label(AppInfo.NAME, "h1"), label("Created by ${AppInfo.CREDIT}", "about-credit"),
             label("Version ${AppInfo.VERSION} for ${com.lagradost.cloudstream3.linux.Os.name}", "muted")).apply { alignment = javafx.geometry.Pos.CENTER_LEFT; pad(4.0, 0.0, 10.0, 0.0) },
         section(AppInfo.NAME,
-            row("Version ${AppInfo.VERSION}", "Movies, series, anime and Live TV from CloudStream extensions and Stremio add-ons, on Linux, Windows and Android. Free software under GPL-3.0.",
+            row("Version ${AppInfo.VERSION}", "Movies, series, anime and Live TV from compatible extensions and Stremio add-ons, on Linux, Windows and macOS. Free software under GPL-3.0.",
                 label("v${AppInfo.VERSION}", "tag", "accent")),
             row("Created by", AppInfo.CREDIT, label("", "muted")),
             row("Built on", "The upstream CloudStream library, libVLC through vlcj (player), JavaFX. Online subtitles: OpenSubtitles via the Stremio addon protocol.", label("", "muted")),
@@ -1068,7 +1068,7 @@ class SettingsPage : StackPane(), Refreshable {
                 button("Report", Icons.BUG, "btn-ghost", "btn-small") { GlitchWindow.reportWithoutPicture(Nav.window.stage) }),
         ),
         section("Updates",
-            row("Check for updates", "Small updates (only Stream Goat's own code changed) install from here and apply when the app restarts; " +
+            row("Check for updates", "Small RoarBox updates install from here and apply when the app restarts; " +
                 "bigger ones open the download page. You have ${AppInfo.VERSION} (build ${Updates.build}).", updateButton()),
             row("Check automatically", "Once a day when the app starts.", Switch(Settings.checkUpdates) { Settings.checkUpdates = it }),
             row("Test builds", "Get the newest test versions (may have bugs) instead of releases.", Switch(Settings.testBuilds) { Settings.testBuilds = it }),
@@ -1141,7 +1141,7 @@ class SettingsPage : StackPane(), Refreshable {
             Triple("Player", "G  /  H", "Subtitles earlier / later"),
             Triple("Player", "0 – 9", "Jump to 0 % – 90 %"),
             Triple("Player", "Home", "Back to the start"),
-            Triple("Player", "Shift + S", "Screenshot to Pictures/Stream Goat"),
+            Triple("Player", "Shift + S", "Screenshot to Pictures/RoarBox"),
             Triple("Player", "N", "Next episode"),
         )
         val list = VBox()
