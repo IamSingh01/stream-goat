@@ -187,7 +187,12 @@ val packageMac by tasks.registering(Exec::class) {
     val version = file("src/main/kotlin/com/lagradost/cloudstream3/linux/ui/AppWindow.kt").readText()
         .let { Regex("VERSION = \"([0-9.]+)").find(it)!!.groupValues[1] }
     val type = (findProperty("jpackageType") as String?) ?: "app-image"
+    val roarBoxIcon = layout.buildDirectory.file("generated/branding/RoarBox.icns")
     doFirst {
+        val mark = file("src/main/resources/ui/brand/roarbox-mark.png")
+        check(mark.isFile) { "Missing RoarBox logo: " + mark.path }
+        roarBoxIcon.get().asFile.parentFile.mkdirs()
+        project.exec { commandLine("sips", "-s", "format", "icns", mark.path, "--out", roarBoxIcon.get().asFile.path) }
         val inDir = input.get().asFile.apply { deleteRecursively(); mkdirs() }
         lib.get().asFile.copyRecursively(inDir)
         // VLC's lib/ and plugins/ go into RoarBox.app/Contents/app/vlc; see Os.bundledVlcDir.
@@ -202,7 +207,7 @@ val packageMac by tasks.registering(Exec::class) {
         addAll(listOf("--description", "RoarBox: movies, series, anime and Live TV from CloudStream extensions"))
         if (type == "app-image") {
             addAll(listOf("--input", input.get().asFile.path, "--main-jar", "app.jar", "--main-class", application.mainClass.get()))
-            addAll(listOf("--icon", rootProject.file("packaging/macos/RoarBox.icns").path))
+            addAll(listOf("--icon", roarBoxIcon.get().asFile.path))
             addAll(listOf("--mac-package-identifier", "com.roarbox.desktop", "--mac-package-name", "RoarBox"))
             addAll(listOf("--mac-app-category", "public.app-category.entertainment"))
             addAll(listOf("--jlink-options", "--strip-debug --no-man-pages --no-header-files --strip-native-commands"))
