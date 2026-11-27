@@ -52,12 +52,12 @@ jobs:
         run: |
           ./scripts/build-deb.sh
           ./gradlew :app:distTar
-          mv app/build/distributions/cloudstream-linux.tar "app/build/distributions/streamgoat-linux-${GITHUB_REF_NAME//\//-}.tar"
+          mv app/build/distributions/RoarStream.tar "app/build/distributions/roarstream-linux-${GITHUB_REF_NAME//\//-}.tar"
           # The self-contained app image, for the Flatpak job (a tar keeps file permissions).
-          tar -C app/build/jpackage -cf build/cloudstream-linux-app.tar cloudstream-linux
+          tar -C app/build/jpackage -cf build/roarstream-linux-app.tar RoarStream
 
       - name: Update patch
-        # Stream Goat's own jars, signed: what the app downloads for a small update (Settings → Updates).
+        # RoarStream's own jars, signed: what the app downloads for a small update (Settings → Updates).
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -68,12 +68,12 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: app-image
-          path: build/cloudstream-linux-app.tar
+          path: build/roarstream-linux-app.tar
           retention-days: 3
 
       - uses: actions/upload-artifact@v4
         with:
-          name: streamgoat-linux
+          name: roarstream-linux
           path: |
             build/*.deb
             app/build/distributions/*.tar
@@ -82,7 +82,7 @@ jobs:
         # Install instructions for every file (.github/release-install.md) above GitHub's generated changes.
         if: startsWith(github.ref, 'refs/tags/')
         run: |
-          VERSION=$(ls build/*.deb | sed -E 's/.*streamgoat-linux_(.+)_amd64\.deb/\1/')
+          VERSION=$(ls build/*.deb | sed -E 's/.*roarstream-linux_(.+)_amd64\.deb/\1/')
           # What's new (docs/releases/<version>.md, when there is one) goes first.
           : > build/release-notes.md
           if [ -f "docs/releases/${VERSION}.md" ]; then cat "docs/releases/${VERSION}.md" >> build/release-notes.md; echo >> build/release-notes.md; fi
@@ -273,11 +273,11 @@ jobs:
       - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
         with:
           manifest-path: packaging/flatpak/io.github.sherazi5110.CloudStreamLinux.yml
-          bundle: streamgoat-linux.flatpak
+          bundle: roarstream-linux.flatpak
           cache-key: flatpak-builder-${{ hashFiles('packaging/flatpak/*.yml') }}
 
       - name: Publish release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: streamgoat-linux.flatpak
+          files: roarstream-linux.flatpak
