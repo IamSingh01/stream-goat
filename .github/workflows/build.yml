@@ -40,7 +40,16 @@ jobs:
       - name: Test
         # Loads real .cs3/.jar extensions, checks the Android shims, streaming sources
         # against a mock site with a dead host, the header proxy, online subtitles,
-        # catalogs, and libVLC playback of a protected HLS stream.
+        # catalogs, provider pagination, the JavaFX dropdown/View All interactions,
+        # and libVLC playback of a protected HLS stream.
+        env:
+          # TestFX + Monocle runs actual JavaFX controls without a physical display.
+          JAVA_TOOL_OPTIONS: >-
+            -Dglass.platform=Monocle
+            -Dmonocle.platform=Headless
+            -Dprism.order=sw
+            -Dtestfx.robot=glass
+            -Dtestfx.headless=true
         run: ./gradlew :app:test
 
       - name: Build .deb and tarball
