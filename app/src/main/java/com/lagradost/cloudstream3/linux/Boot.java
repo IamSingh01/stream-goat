@@ -170,7 +170,7 @@ public final class Boot {
 
     /** True when this build can check updates' signatures (built by the project's GitHub builds). */
     public static boolean canVerify() {
-        return Boot.class.getResource("/stream-goat-update.pem") != null;
+        return Boot.class.getResource("/roarstream-update.pem") != null;
     }
 
     public static String sha256(File file) throws Exception {
