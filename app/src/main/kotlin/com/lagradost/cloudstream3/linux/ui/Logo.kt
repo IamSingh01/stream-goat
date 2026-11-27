@@ -41,7 +41,7 @@ class Logo(private val size: Double) : StackPane() {
     companion object {
         const val DEFAULT_ACCENT = "#3b82f6"
 
-        /** The logo as an image (black tile + goat), e.g. for the window icon. */
+        /** The logo as an image (black tile + lion emblem), e.g. for the window icon. */
         fun image(size: Double): Image = Brand.tile(size.toInt())
     }
 }
