@@ -3,14 +3,14 @@
 # The sandbox can't see the system's VLC, so libVLC is built here (engine only, no
 # VLC interface) and the codecs come from the runtime's FFmpeg. The app itself is the
 # self-contained jpackage image (it bundles its own Java), packed by
-# scripts/build-flatpak.sh into build/cloudstream-linux-app.tar.
+# scripts/build-flatpak.sh into build/roarstream-linux-app.tar.
 #
 #   ./scripts/build-flatpak.sh   ->  build/cloudstream-linux.flatpak
 id: io.github.sherazi5110.CloudStreamLinux
 runtime: org.freedesktop.Platform
 runtime-version: '25.08'
 sdk: org.freedesktop.Sdk
-command: cloudstream-linux
+command: RoarStream
 
 finish-args:
   - --share=network
@@ -76,23 +76,19 @@ modules:
   - name: cloudstream-linux
     buildsystem: simple
     build-commands:
-      - mkdir -p /app/cloudstream-linux /app/bin
-      - cp -a app/. /app/cloudstream-linux/
-      - ln -s /app/cloudstream-linux/bin/cloudstream-linux /app/bin/cloudstream-linux
+      - mkdir -p /app/RoarStream /app/bin
+      - cp -a app/. /app/RoarStream/
+      - ln -s /app/RoarStream/bin/cloudstream-linux /app/bin/cloudstream-linux
       - install -Dm644 icon.png /app/share/icons/hicolor/512x512/apps/io.github.sherazi5110.CloudStreamLinux.png
-      - install -Dm644 icon.svg /app/share/icons/hicolor/scalable/apps/io.github.sherazi5110.CloudStreamLinux.svg
       - install -Dm644 io.github.sherazi5110.CloudStreamLinux.desktop -t /app/share/applications
       - install -Dm644 io.github.sherazi5110.CloudStreamLinux.metainfo.xml -t /app/share/metainfo
     sources:
       - type: archive
-        path: ../../build/cloudstream-linux-app.tar
+        path: ../../build/roarstream-linux-app.tar
         dest: app
       - type: file
-        path: ../linux/cloudstream-linux.png
+        path: ../../app/src/main/resources/ui/icon.png
         dest-filename: icon.png
-      - type: file
-        path: ../linux/cloudstream-linux.svg
-        dest-filename: icon.svg
       - type: file
         path: io.github.sherazi5110.CloudStreamLinux.desktop
       - type: file
