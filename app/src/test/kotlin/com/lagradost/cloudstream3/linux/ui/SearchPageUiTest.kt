@@ -85,6 +85,26 @@ class SearchPageUiTest {
         assertEquals("automation query", field.text)
     }
 
+    @Test
+    fun `View All retry control is exposed as a real JavaFX button`() {
+        val viewAll = page.automationViewAllForTest(
+            firstPage = emptyList(),
+            firstHasNext = true,
+            fetchPage = { pageNumber ->
+                assertEquals(2, pageNumber)
+                com.lagradost.cloudstream3.linux.SearchPageResult(emptyList(), hasNext = false)
+            },
+        )
+        val retry = viewAll.automationRetryButton()
+        assertNotNull(retry)
+        assertEquals("view-all-retry", retry.id)
+        assertEquals("Try again", retry.text)
+        assertEquals(0, viewAll.automationResultCount())
+        assertTrue(viewAll.automationHasNext())
+        // This button is the actual retry control shown by the View All screen.
+        // A separate page-session test verifies retry after a simulated provider failure.
+    }
+
     private fun <T> onFx(block: () -> T): T {
         if (Platform.isFxApplicationThread()) return block()
         val latch = CountDownLatch(1)
