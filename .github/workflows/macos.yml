@@ -152,7 +152,7 @@ jobs:
           WETRAKR_CLIENT_ID: ${{ secrets.WETRAKR_CLIENT_ID }}
         run: |
           ./gradlew :app:packageMac -PvlcDir="$VLC_DIR" -PmpvDir="$MPV_DIR"
-          app="app/build/jpackage-mac/Stream Goat.app"
+          app="app/build/jpackage-mac/RoarStream.app"
           # No Apple developer certificate: sign it "ad hoc" so Apple Silicon runs it (macOS then asks once, in
           # System Settings → Privacy & Security → Open Anyway).
           codesign --force --deep --sign - "$app"
@@ -160,12 +160,12 @@ jobs:
           ./gradlew :app:packageMac -PvlcDir="$VLC_DIR" -PmpvDir="$MPV_DIR" -PjpackageType=dmg
           VERSION=$(grep -o 'VERSION = "[^"]*"' app/src/main/kotlin/com/lagradost/cloudstream3/linux/ui/AppWindow.kt | cut -d'"' -f2)
           mkdir -p build/macos
-          cp app/build/jpackage-mac/Stream\ Goat-*.dmg "build/macos/streamgoat-macos-$MACOS_ARCH-$VERSION.dmg"
+          cp app/build/jpackage-mac/Stream\ Goat-*.dmg "build/macos/roarstream-macos-$MACOS_ARCH-$VERSION.dmg"
           ls -la build/macos
           du -sh "$app"
 
       - name: Update patch
-        # Stream Goat's own jars, signed: what the app downloads for a small update (Settings → Updates).
+        # RoarStream's own jars, signed: what the app downloads for a small update (Settings → Updates).
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -175,8 +175,8 @@ jobs:
 
       - name: Check packaged macOS architecture
         run: |
-          app="app/build/jpackage-mac/Stream Goat.app"
-          lipo -verify_arch "$MACOS_ARCH" "$app/Contents/MacOS/Stream Goat"
+          app="app/build/jpackage-mac/RoarStream.app"
+          lipo -verify_arch "$MACOS_ARCH" "$app/Contents/MacOS/RoarStream"
           runtime="$app/Contents/runtime/Contents/Home"
           lipo -verify_arch "$MACOS_ARCH" "$runtime/bin/java"
           while IFS= read -r -d '' library; do
@@ -211,8 +211,8 @@ jobs:
       - name: Check the packaged app
         # The packaged app's own checker must find its Java, extensions folder and the bundled VLC.
         run: |
-          app="app/build/jpackage-mac/Stream Goat.app"
-          out=$(CLOUDSTREAM_HOME="$PWD/doctor-home" "$app/Contents/MacOS/Stream Goat" doctor 2>&1 || true)
+          app="app/build/jpackage-mac/RoarStream.app"
+          out=$(CLOUDSTREAM_HOME="$PWD/doctor-home" "$app/Contents/MacOS/RoarStream" doctor 2>&1 || true)
           echo "$out"
           ls "$app/Contents/app/vlc/lib" | head
           if ! echo "$out" | grep -q "libVLC    3\."; then
@@ -227,11 +227,11 @@ jobs:
         continue-on-error: true
         run: |
           mkdir -p shots
-          app="$PWD/app/build/jpackage-mac/Stream Goat.app/Contents/MacOS/Stream Goat"
+          app="$PWD/app/build/jpackage-mac/RoarStream.app/Contents/MacOS/RoarStream"
           ls -la "$(dirname "$app")"
           for tour in nav settings7; do
             # macOS has no timeout command: perl's alarm ends the app if a tour hangs. exec { name } list keeps
-            # the path whole (a lone string would be split at the space in "Stream Goat").
+            # the path whole (a lone string would be split at the space in "RoarStream").
             start=$(date +%s)
             set +e
             CS_SCREENSHOT="$PWD/shots/mac-$tour" CS_SCREENSHOT_ONLY=$tour CLOUDSTREAM_HOME="$PWD/shot-home" \
@@ -259,7 +259,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: streamgoat-macos-${{ matrix.arch }}
+          name: roarstream-macos-${{ matrix.arch }}
           path: |
             build/macos/*.dmg
             shots/*.png
