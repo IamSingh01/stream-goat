@@ -1,5 +1,7 @@
 package com.lagradost.cloudstream3.linux.ui
 
+import com.lagradost.cloudstream3.linux.BrandIdentity
+
 import javafx.animation.AnimationTimer
 import javafx.scene.canvas.Canvas
 import javafx.scene.image.Image
