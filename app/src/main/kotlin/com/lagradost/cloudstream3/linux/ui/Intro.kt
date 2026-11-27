@@ -99,11 +99,11 @@ class SplashScreen(animate: Boolean = Settings.startupAnimation) : StackPane() {
         styleClass += "splash"
         style = "-fx-background-color: black;"
         isFocusTraversable = true
-        val logo = Logo(150.0).apply { opacity = 0.0 }
-        val word = javafx.scene.image.ImageView(Brand.word).apply { fitWidth = 230.0; isPreserveRatio = true; isSmooth = true }
+        val logo = Logo(210.0).apply { opacity = 0.0 }
+        // The supplied artwork is the emblem, not a wordmark: show it once.
         val credit = label("Created by ${AppInfo.CREDIT}", "splash-credit")
-        val words = vbox(10.0, word, credit).apply { alignment = Pos.CENTER; opacity = 0.0 }
-        val centre = vbox(22.0, logo, words).apply { alignment = Pos.CENTER; isMouseTransparent = true }
+        val words = vbox(10.0, credit).apply { alignment = Pos.CENTER; opacity = 0.0 }
+        val centre = vbox(28.0, logo, words).apply { alignment = Pos.CENTER; isMouseTransparent = true }
         val bottom = vbox(8.0, statusLabel).apply { alignment = Pos.BOTTOM_CENTER; isMouseTransparent = true; padding = javafx.geometry.Insets(0.0, 0.0, 28.0, 0.0) }
         children.addAll(waves, centre, bottom)
         if (animate) {
