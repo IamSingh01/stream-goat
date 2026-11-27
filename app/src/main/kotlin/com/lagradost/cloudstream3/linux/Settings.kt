@@ -156,8 +156,7 @@ object Settings {
 
     /** Built-in player zoom mode, a [com.lagradost.cloudstream3.linux.ui.Zoom] name. */
     /**
-     * Which player plays a source: "AUTO" (mpv, VLC when mpv isn't there) or "VLC". The player menu can switch while
-     * watching.
+     * Which player plays a source: "IINA" (external macOS app), "AUTO" (mpv, VLC when mpv isn't there), or "VLC".
      */
     var playerEngine: String
         get() = string("player_engine", if (Os.isMac) "IINA" else "AUTO")
