@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -131,6 +132,7 @@ private fun PhoneHome(state: HomeState) {
         }
         if (state.loading && state.sections.isEmpty()) item { Spinner(Modifier.fillMaxWidth().height(200.dp)) }
         if (state.offline && state.sections.isEmpty()) item { OfflineState(Modifier.fillMaxWidth()) { state.catalogVersion++ } }
+        if (nothingCame(state)) item { NothingCame(state) }
     }
 }
 
@@ -351,6 +353,7 @@ internal fun WideHome(state: HomeState) {
             }
             if (state.loading && state.sections.isEmpty()) item { Spinner(Modifier.fillMaxWidth().height(200.dp)) }
             if (state.offline && state.sections.isEmpty()) item { OfflineState(Modifier.fillMaxWidth()) { state.catalogVersion++ } }
+            if (nothingCame(state)) item { NothingCame(state) }
         }
         }
         // Fixed top bar; it gets a backdrop as soon as the page scrolls, so nothing shows through it.
@@ -544,6 +547,28 @@ private fun HomeEditor(state: HomeState, onClose: () -> Unit) {
                     onClose()
                 }
             }
+        }
+    }
+}
+
+/** Online, finished loading, and the extension gave Home nothing (its site down or blocked, or every catalog off). */
+private fun nothingCame(state: HomeState) = !state.loading && !state.offline && state.sections.isEmpty() && state.api != null
+
+/** Instead of an empty, black Home: what happened and what to do. */
+@Composable
+private fun NothingCame(state: HomeState) {
+    val api = state.api ?: return
+    Column(Modifier.fillMaxWidth().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text("Nothing came from ${api.name}", style = MaterialTheme.typography.titleLarge)
+        Text("Its website may be down or blocked on this network, or all its catalogs are switched off (Catalogs, top left). " +
+            "Try again, or pick another extension at the top left.",
+            style = MaterialTheme.typography.bodyMedium, textAlign = androidx.compose.ui.text.style.TextAlign.Center, color = Palette.muted)
+        io.github.sherazi5110.cloudstream.Engine.homeErrors[api.name]?.let {
+            Text("Last problem: $it", style = MaterialTheme.typography.bodySmall, textAlign = androidx.compose.ui.text.style.TextAlign.Center, color = Palette.muted)
+        }
+        PillButton("Try again", Icons.Filled.Refresh, compact = true, modifier = Modifier.padding(top = 6.dp)) {
+            io.github.sherazi5110.cloudstream.Engine.homeErrors.remove(api.name)
+            state.catalogVersion++
         }
     }
 }

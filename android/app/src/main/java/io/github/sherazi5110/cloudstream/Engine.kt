@@ -138,12 +138,16 @@ object Engine {
         try {
             withTimeoutOrNull(api.getMainPageTimeoutMs ?: DEFAULT_TIMEOUT) {
                 api.getMainPage(page, MainPageRequest(section.name, section.data, section.horizontalImages))
-            }
+            } ?: null.also { homeErrors[api.name] = "\"${section.name}\" didn't answer in time" }
         } catch (t: Throwable) {
             log(api, "home '${section.name}'", t)
+            if (t !is CancellationException) homeErrors[api.name] = "\"${section.name}\": ${t.message ?: t.javaClass.simpleName}".take(200)
             null
         }
     }
+
+    /** The last thing that went wrong loading an extension's Home (shown when Home stays empty). */
+    val homeErrors = java.util.concurrent.ConcurrentHashMap<String, String>()
 
     /** One batch per provider, in completion order. */
     fun search(query: String, apis: List<MainAPI> = providers()): Flow<SearchBatch> = channelFlow {
