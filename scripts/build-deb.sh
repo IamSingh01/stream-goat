@@ -2,7 +2,7 @@
 # Builds a self-contained .deb (bundled Java runtime) without needing fakeroot:
 # jpackage makes the app image, dpkg-deb --root-owner-group packages it.
 #   ./scripts/build-deb.sh  ->  build/roarstream-linux_<version>_<arch>.deb
-# The package keeps its original name (RoarStream) so apt upgrades existing installs in place.
+# The Debian package keeps its original name (cloudstream-linux) so apt upgrades existing installs in place.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -18,9 +18,9 @@ rm -rf build/deb && mkdir -p "$STAGE/DEBIAN" "$STAGE/opt" "$STAGE/usr/bin" \
 cp -r app/build/jpackage/RoarStream "$STAGE/opt/RoarStream"
 ln -s /opt/RoarStream/bin/RoarStream "$STAGE/usr/bin/RoarStream"
 ln -s /opt/RoarStream/bin/RoarStream "$STAGE/usr/bin/roarstream"
-cp packaging/linux/RoarStream.png "$STAGE/usr/share/icons/hicolor/512x512/apps/RoarStream.png"
+cp app/src/main/resources/ui/icon.png "$STAGE/usr/share/icons/hicolor/512x512/apps/RoarStream.png"
 sed -e "s|@EXEC@|/opt/RoarStream/bin/RoarStream|" -e "s|@ICON@|RoarStream|" \
-  packaging/linux/RoarStream.desktop > "$STAGE/usr/share/applications/RoarStream.desktop"
+  packaging/linux/cloudstream-linux.desktop > "$STAGE/usr/share/applications/RoarStream.desktop"
 
 cat > "$STAGE/DEBIAN/control" <<CONTROL
 Package: cloudstream-linux
