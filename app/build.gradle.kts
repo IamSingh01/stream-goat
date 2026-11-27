@@ -41,6 +41,8 @@ dependencies {
     // Built-in player: libVLC 3 (from the system's VLC packages) through JNA.
     implementation("uk.co.caprica:vlcj:4.12.1")
     testImplementation(kotlin("test"))
+    testImplementation("org.testfx:testfx-core:4.0.18")
+    testImplementation("org.testfx:testfx-junit5:4.0.18")
 }
 
 application {
