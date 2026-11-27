@@ -24,11 +24,13 @@ import kotlinx.coroutines.withTimeout
 
 /** Searches every provider in parallel; each provider's row appears the moment it answers. */
 class SearchPage : StackPane(), Refreshable {
-    private val field = TextField().apply {
+    internal val field = TextField().apply {
+        id = "search-query-field"
         styleClass.setAll("text-field", "search-field")
         promptText = "Search movies, series, anime…"
     }
-    private val sourceSelector = ComboBox<String>().apply {
+    internal val sourceSelector = ComboBox<String>().apply {
+        id = "search-source-selector"
         styleClass += "source-selector"
         promptText = "All sources"
         prefWidth = 220.0
@@ -91,6 +93,11 @@ class SearchPage : StackPane(), Refreshable {
         field.requestFocus()
         field.selectAll()
     }
+
+    /** Stable JavaFX controls exposed for headless integration tests; not part of end-user navigation. */
+    internal fun automationSourceSelector(): ComboBox<String> = sourceSelector
+    internal fun automationSearchField(): TextField = field
+    internal fun automationRefreshProviders() = refreshProviders()
 
     /** Search only [provider] (Home's Search button), or every extension (null). Runs again if there's a search. */
     fun scopeTo(provider: String?) {
