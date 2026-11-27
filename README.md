@@ -146,7 +146,7 @@ The `.deb` and Flatpak bring everything they need (VLC is installed with the `.d
 
 ## Support
 
-RoarStream is free, with no ads and no tracking. If you enjoy it, you can support it here:
+RoarStream is free, with no ads and no tracking.
 
 
 [![Join the Discord](https://img.shields.io/badge/Discord-Join%20the%20community-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/PUmEQzJSa)
