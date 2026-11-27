@@ -13,7 +13,7 @@ import java.util.zip.*;
  *   make <libdir> <outdir> <os> <version> <build> <keystore> <storepass> <alias> <keypass>
  *       outdir/roarstream-update-<os>.zip: RoarStream's own jars, patch.properties (version, build, the jars'
  *       SHA-256 and the SHA-256 of every other jar it needs unchanged) and patch.sig, its signature;
- *       outdir/streamgoat-update-<os>.properties: the same properties, for checking without the download.
+ *       outdir/roarstream-update-<os>.properties: the same properties, for checking without the download.
  *
  * The key is the Android signing key (GitHub secrets), so no new secret is needed and nobody else can sign one.
  */
@@ -65,8 +65,8 @@ public class UpdateTool {
         s.initSign(key);
         s.update(text);
         byte[] sig = s.sign();
-        Files.write(out.resolve("streamgoat-update-" + os + ".properties"), text);
-        try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(out.resolve("streamgoat-update-" + os + ".zip")))) {
+        Files.write(out.resolve("roarstream-update-" + os + ".properties"), text);
+        try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(out.resolve("roarstream-update-" + os + ".zip")))) {
             put(zip, "patch.properties", text);
             put(zip, "patch.sig", sig);
             for (Path jar : jars) if (OURS.contains(jar.getFileName().toString())) put(zip, jar.getFileName().toString(), Files.readAllBytes(jar));
