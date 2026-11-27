@@ -1,0 +1,50 @@
+name: Sync macOS compatibility branch
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-macos-compat
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: macos-15-intel
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Fetch upstream sources
+        run: ./scripts/fetch-upstream.sh
+
+      - name: Merge latest upstream release into compatibility branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin main compat/11.0-macos-intel-x86_64
+          git switch --create compat/11.0-macos-intel-x86_64 --track origin/compat/11.0-macos-intel-x86_64
+          git merge --no-edit origin/main
+
+      - name: Run unit and integration test suite
+        run: ./gradlew :app:test
+
+      - name: Push only after merge and tests pass
+        run: git push origin HEAD:compat/11.0-macos-intel-x86_64
