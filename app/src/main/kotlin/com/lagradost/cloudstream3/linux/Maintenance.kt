@@ -42,11 +42,11 @@ object SiteOverrides {
  * Updates from the project's GitHub releases (or its "test-build" pre-release, with Test builds on).
  *
  * When only Stream Goat's own code changed, the GitHub builds attach a signed patch for each system
- * (streamgoat-update-<windows|mac|linux>.zip, a few MB): it's downloaded, checked and installed into the data
+ * (roarstream-update-<windows|mac|linux>.zip, a few MB): it's downloaded, checked and installed into the data
  * folder, and used from the next start (see Boot.java). Otherwise the full installer is offered, as before.
  */
 object Updates {
-    const val REPO = "sherazi5110/stream-goat"
+    const val REPO = "IamSingh01/stream-goat"
     const val RELEASES = "https://github.com/$REPO/releases/latest"
     const val TEST_BUILDS = "https://github.com/$REPO/releases/tag/test-build"
 
@@ -57,7 +57,7 @@ object Updates {
     /** This build (the GitHub builds set it; "dev" for local builds). */
     val build: String by lazy {
         runCatching {
-            java.util.Properties().apply { Updates::class.java.getResourceAsStream("/stream-goat-build.properties")!!.use { load(it) } }
+            java.util.Properties().apply { Updates::class.java.getResourceAsStream("/roarstream-build.properties")!!.use { load(it) } }
                 .getProperty("build")
         }.getOrNull()?.takeIf { it.isNotBlank() } ?: "dev"
     }
@@ -174,7 +174,7 @@ object Updates {
     }
 
     /** The patch this run started with, if any (Boot sets it): "<version> <build>". */
-    val runningPatch: String? get() = System.getProperty("streamgoat.patch")
+    val runningPatch: String? get() = System.getProperty("roarstream.patch")
 
     /** Compares dotted versions, ignoring a leading v/V: "V4.0.2" > "4.0.1". */
     fun newer(candidate: String, current: String): Boolean {
