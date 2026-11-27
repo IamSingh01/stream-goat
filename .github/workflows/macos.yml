@@ -4,17 +4,28 @@ name: macOS
 # Built and tested on a real Apple Silicon Mac; on a version tag the .dmg is attached to the release.
 on:
   push:
-    branches: [main, macos, picture-keys]
+    branches: [main, macos, picture-keys, compat/11.0-macos-intel-x86_64]
     tags: ["v*", "V*", "[0-9]*"]
   pull_request:
 
 jobs:
   macos:
-    runs-on: macos-15   # Apple Silicon
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - architecture: arm64
+            runner: macos-15
+            vlc_arch: arm64
+          - architecture: x86_64
+            runner: macos-15-intel
+            vlc_arch: intel64
+    runs-on: ${{ matrix.runner }}
     permissions:
       contents: write
     env:
       VLC_VERSION: "3.0.21"
+      VLC_ARCH: ${{ matrix.vlc_arch }}
     steps:
       - uses: actions/checkout@v4
 
@@ -32,13 +43,13 @@ jobs:
       - name: Fetch pinned upstream sources
         run: ./scripts/fetch-upstream.sh
 
-      - name: VLC for Apple Silicon
-        # VideoLAN's arm64 build; only the engine (lib/ and plugins/ from VLC.app) is kept, not VLC's own interface.
+      - name: VLC for ${{ matrix.architecture }}
+        # Only VLC's engine (lib/ and plugins/ from VLC.app) is bundled, not its own interface.
         run: |
           base="https://download.videolan.org/pub/videolan/vlc/$VLC_VERSION/macosx"
-          curl -fsSL --retry 3 -o vlc.dmg "$base/vlc-$VLC_VERSION-arm64.dmg"
+          curl -fsSL --retry 3 -o vlc.dmg "$base/vlc-$VLC_VERSION-$VLC_ARCH.dmg"
           actual=$(shasum -a 256 vlc.dmg | cut -d' ' -f1)
-          if curl -fsSL --retry 3 -o vlc.dmg.sha256 "$base/vlc-$VLC_VERSION-arm64.dmg.sha256"; then
+          if curl -fsSL --retry 3 -o vlc.dmg.sha256 "$base/vlc-$VLC_VERSION-$VLC_ARCH.dmg.sha256"; then
             expected=$(cut -d' ' -f1 vlc.dmg.sha256)
             [ "$expected" = "$actual" ] || { echo "::error::VLC download checksum mismatch ($actual, expected $expected)"; exit 1; }
             echo "VLC checksum OK: $actual"
@@ -59,7 +70,7 @@ jobs:
           du -sh vlc
           echo "VLC_DIR=$PWD/vlc" >> "$GITHUB_ENV"
 
-      - name: mpv for Apple Silicon
+      - name: mpv for ${{ matrix.architecture }}
         # libmpv (FFmpeg inside), the main player: Homebrew's, with the libraries it needs copied beside it.
         run: |
           brew install mpv dylibbundler > /dev/null
@@ -81,9 +92,15 @@ jobs:
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: ./packaging/update/ci.sh cert
 
+      - name: Verify runner architecture
+        run: |
+          actual="$(uname -m)"
+          expected="${{ matrix.architecture }}"
+          echo "Building for $actual; expected $expected"
+          [ "$actual" = "$expected" ] || { echo "::error::Wrong runner architecture"; exit 1; }
+
       - name: Test
-        # The same tests as on Linux and Windows: extensions (.cs3 and .jar), sources, the header proxy, subtitles,
-        # downloads, backup and libVLC playback with the bundled VLC.
+        # Unit and integration tests run on both native macOS architectures.
         run: |
           if ! ./gradlew :app:test -PvlcDir="$VLC_DIR/lib" -PmpvDir="$MPV_DIR"; then
             python - <<'PY'
@@ -113,7 +130,7 @@ jobs:
           ./gradlew :app:packageMac -PvlcDir="$VLC_DIR" -PmpvDir="$MPV_DIR" -PjpackageType=dmg
           VERSION=$(grep -o 'VERSION = "[^"]*"' app/src/main/kotlin/com/lagradost/cloudstream3/linux/ui/AppWindow.kt | cut -d'"' -f2)
           mkdir -p build/macos
-          cp app/build/jpackage-mac/Stream\ Goat-*.dmg "build/macos/streamgoat-macos-arm64-$VERSION.dmg"
+          cp app/build/jpackage-mac/Stream\ Goat-*.dmg "build/macos/streamgoat-macos-${{ matrix.architecture }}-$VERSION.dmg"
           ls -la build/macos
           du -sh "$app"
 
@@ -177,14 +194,14 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: streamgoat-macos
+          name: streamgoat-macos-${{ matrix.architecture }}
           path: |
             build/macos/*.dmg
             shots/*.png
             shot-*.log
 
       - name: Publish release
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/') && matrix.architecture == 'arm64'
         uses: softprops/action-gh-release@v2
         with:
           files: |
