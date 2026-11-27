@@ -44,7 +44,7 @@ dependencies {
 }
 
 application {
-    applicationName = "cloudstream-linux"
+    applicationName = "RoarStream"
     // Boot starts MainKt, with an installed update patch when there is one (Boot.java).
     mainClass.set("com.lagradost.cloudstream3.linux.Boot")
     applicationDefaultJvmArgs = listOf(
@@ -81,7 +81,7 @@ tasks.test {
 val packageDeb by tasks.registering(Exec::class) {
     group = "distribution"
     dependsOn(tasks.installDist)
-    val lib = layout.buildDirectory.dir("install/cloudstream-linux/lib")
+    val lib = layout.buildDirectory.dir("install/RoarStream/lib")
     val out = layout.buildDirectory.dir("jpackage")
     val resources = layout.buildDirectory.dir("jpackage-resources")
     val packaging = rootProject.file("packaging/linux")
@@ -89,21 +89,21 @@ val packageDeb by tasks.registering(Exec::class) {
         out.get().asFile.deleteRecursively()
         val res = resources.get().asFile.apply { mkdirs() }
         // jpackage picks up <name>.desktop from --resource-dir, so the link handler is registered on install.
-        res.resolve("cloudstream-linux.desktop").writeText(
+        res.resolve("RoarStream.desktop").writeText(
             packaging.resolve("cloudstream-linux.desktop").readText()
-                .replace("@EXEC@", "/opt/cloudstream-linux/bin/cloudstream-linux")
-                .replace("@ICON@", "/opt/cloudstream-linux/lib/cloudstream-linux.png")
+                .replace("@EXEC@", "/opt/roarstream/bin/RoarStream")
+                .replace("@ICON@", "/opt/roarstream/lib/RoarStream.png")
         )
     }
     commandLine(buildList {
         // -PjpackageType=app-image builds the unpacked app without dpkg/fakeroot.
         val type = (findProperty("jpackageType") as String?) ?: "deb"
-        addAll(listOf("jpackage", "--type", type, "--name", "cloudstream-linux", "--app-version", "2.0.0"))
+        addAll(listOf("jpackage", "--type", type, "--name", "RoarStream", "--app-version", "2.0.0"))
         addAll(listOf("--input", lib.get().asFile.path, "--main-jar", "app.jar"))
         addAll(listOf("--main-class", application.mainClass.get(), "--dest", out.get().asFile.path))
         addAll(listOf("--resource-dir", resources.get().asFile.path))
-        addAll(listOf("--icon", packaging.resolve("cloudstream-linux.png").path))
-        addAll(listOf("--description", "Stream Goat: movies, series, anime and Live TV from CloudStream extensions"))
+        addAll(listOf("--icon", packaging.resolve("RoarStream.png").path))
+        addAll(listOf("--description", "RoarStream: movies, series, anime and live TV"))
         addAll(listOf("--jlink-options", "--strip-debug --no-man-pages --no-header-files --strip-native-commands"))
         // Android gives extensions roughly java.base; the rest is for Swing, TLS, Jackson, Rhino and okhttp.
         addAll(listOf("--add-modules", listOf(
@@ -113,7 +113,7 @@ val packageDeb by tasks.registering(Exec::class) {
         ).joinToString(",")))
         if (type == "deb") {
             addAll(listOf("--linux-shortcut", "--linux-menu-group", "AudioVideo;Video", "--linux-app-category", "video"))
-            addAll(listOf("--linux-deb-maintainer", "cloudstream-linux@users.noreply.github.com"))
+            addAll(listOf("--linux-deb-maintainer", "roarstream@users.noreply.github.com"))
             addAll(listOf("--linux-package-deps", "libvlc5, vlc-plugin-base, libmpv2 | libmpv1"))
         }
         application.applicationDefaultJvmArgs.forEach { addAll(listOf("--java-options", it)) }
@@ -123,11 +123,11 @@ val packageDeb by tasks.registering(Exec::class) {
 // Windows: the app image (Stream Goat\Stream Goat.exe with its own Java runtime and VLC) and the .msi installer,
 // built with the JDK's jpackage on Windows (CI: the "windows" job in .github/workflows/build.yml).
 //   ./gradlew :app:packageWindows -PvlcDir=C:\path\to\vlc                 -> build\jpackage-win\Stream Goat\
-//   ./gradlew :app:packageWindows -PvlcDir=... -PjpackageType=msi          -> build\jpackage-win\Stream Goat-<v>.msi
+//   ./gradlew :app:packageWindows -PvlcDir=... -PjpackageType=msi          -> build\jpackage-win\RoarStream-<v>.msi
 val packageWindows by tasks.registering(Exec::class) {
     group = "distribution"
     dependsOn(tasks.installDist)
-    val lib = layout.buildDirectory.dir("install/cloudstream-linux/lib")
+    val lib = layout.buildDirectory.dir("install/RoarStream/lib")
     val input = layout.buildDirectory.dir("jpackage-win-input")
     val out = layout.buildDirectory.dir("jpackage-win")
     val version = file("src/main/kotlin/com/lagradost/cloudstream3/linux/ui/AppWindow.kt").readText()
@@ -143,8 +143,8 @@ val packageWindows by tasks.registering(Exec::class) {
         if (type == "app-image") out.get().asFile.deleteRecursively()
     }
     commandLine(buildList {
-        addAll(listOf("jpackage", "--type", type, "--name", "Stream Goat", "--app-version", version))
-        addAll(listOf("--vendor", "Syed Ali Hamza", "--dest", out.get().asFile.path))
+        addAll(listOf("jpackage", "--type", type, "--name", "RoarStream", "--app-version", version))
+        addAll(listOf("--vendor", "Aman Singh", "--dest", out.get().asFile.path))
         addAll(listOf("--description", "Stream Goat: movies, series, anime and Live TV from CloudStream extensions"))
         if (type == "app-image") {
             addAll(listOf("--input", input.get().asFile.path, "--main-jar", "app.jar", "--main-class", application.mainClass.get()))
@@ -161,22 +161,22 @@ val packageWindows by tasks.registering(Exec::class) {
         } else {
             // The installer wraps the app image built first: per-user (no admin prompt), Start menu and desktop
             // shortcuts, upgrades in place (the upgrade code never changes).
-            addAll(listOf("--app-image", out.get().asFile.resolve("Stream Goat").path))
-            addAll(listOf("--win-per-user-install", "--win-menu", "--win-menu-group", "Stream Goat", "--win-shortcut"))
+            addAll(listOf("--app-image", out.get().asFile.resolve("RoarStream").path))
+            addAll(listOf("--win-per-user-install", "--win-menu", "--win-menu-group", "RoarStream", "--win-shortcut"))
             addAll(listOf("--win-upgrade-uuid", "6f1c2b9e-4d1a-4c2e-9a57-3e5b8d0c7a41"))
             addAll(listOf("--about-url", "https://github.com/sherazi5110/stream-goat"))
         }
     })
 }
 
-// macOS (Apple Silicon): Stream Goat.app with its own Java runtime and VLC, and a .dmg, built with the JDK's
+// macOS (Apple Silicon): RoarStream.app with its own Java runtime and VLC, and a .dmg, built with the JDK's
 // jpackage on a Mac (CI: .github/workflows/macos.yml). The VLC folder is VLC.app's Contents/MacOS (lib/, plugins/).
 //   ./gradlew :app:packageMac -PvlcDir=/path/to/vlc                      -> build/jpackage-mac/Stream Goat.app
-//   ./gradlew :app:packageMac -PvlcDir=... -PjpackageType=dmg             -> build/jpackage-mac/Stream Goat-<v>.dmg
+//   ./gradlew :app:packageMac -PvlcDir=... -PjpackageType=dmg             -> build/jpackage-mac/RoarStream-<v>.dmg
 val packageMac by tasks.registering(Exec::class) {
     group = "distribution"
     dependsOn(tasks.installDist)
-    val lib = layout.buildDirectory.dir("install/cloudstream-linux/lib")
+    val lib = layout.buildDirectory.dir("install/RoarStream/lib")
     val input = layout.buildDirectory.dir("jpackage-mac-input")
     val out = layout.buildDirectory.dir("jpackage-mac")
     val version = file("src/main/kotlin/com/lagradost/cloudstream3/linux/ui/AppWindow.kt").readText()
@@ -197,8 +197,8 @@ val packageMac by tasks.registering(Exec::class) {
         addAll(listOf("--description", "Stream Goat: movies, series, anime and Live TV from CloudStream extensions"))
         if (type == "app-image") {
             addAll(listOf("--input", input.get().asFile.path, "--main-jar", "app.jar", "--main-class", application.mainClass.get()))
-            addAll(listOf("--icon", rootProject.file("packaging/macos/StreamGoat.icns").path))
-            addAll(listOf("--mac-package-identifier", "io.github.sherazi5110.streamgoat", "--mac-package-name", "Stream Goat"))
+            addAll(listOf("--icon", rootProject.file("packaging/macos/RoarStream.icns").path))
+            addAll(listOf("--mac-package-identifier", "com.aman.roarstream", "--mac-package-name", "RoarStream"))
             addAll(listOf("--mac-app-category", "public.app-category.entertainment"))
             addAll(listOf("--jlink-options", "--strip-debug --no-man-pages --no-header-files --strip-native-commands"))
             addAll(listOf("--add-modules", listOf(
