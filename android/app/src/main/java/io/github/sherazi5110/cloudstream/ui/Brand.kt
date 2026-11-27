@@ -44,8 +44,8 @@ import kotlin.math.sin
  * The mark may be tinted with the theme accent or a rainbow, always on black.
  */
 object Brand {
-    val mark: ImageBitmap? by lazy { load("brand/roarstream-mark.png") }
-    val word: ImageBitmap? by lazy { load("brand/roarstream-word.png") }
+    val mark: ImageBitmap? by lazy { load("brand/goat-mark.png") }
+    val word: ImageBitmap? by lazy { load("brand/goat-word.png") }
     private fun load(name: String) = runCatching {
         App.context.assets.open(name).use { BitmapFactory.decodeStream(it) }.asImageBitmap()
     }.getOrNull()
@@ -68,7 +68,7 @@ object Brand {
 fun GoatMark(modifier: Modifier, tint: Color = Palette.accent, rainbow: Boolean = ThemeState.logoRainbow) {
     val mark = Brand.mark ?: return
     if (!rainbow) Image(mark, "RoarStream", modifier, colorFilter = ColorFilter.tint(tint))
-    else Image(mark, "Stream Goat", modifier.graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }.drawWithContent {
+    else Image(mark, "RoarStream", modifier.graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }.drawWithContent {
         drawContent()
         drawRect(Brush.linearGradient(Brand.rainbow, Offset.Zero, Offset(size.width, size.height)), blendMode = BlendMode.SrcIn)
     })
