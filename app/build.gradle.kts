@@ -253,7 +253,7 @@ val cloudConfig = tasks.register("cloudConfig") {
     }
 }
 // Update patches (Boot.java, Updates): which build this is, and the certificate patches must be signed with
-// (the GitHub builds export it from the signing key: STREAMGOAT_UPDATE_CERT; without it patches are off).
+// (the GitHub builds export it from the signing key: ROARSTREAM_UPDATE_CERT; without it patches are off).
 val updateConfig = tasks.register("updateConfig") {
     val out = layout.buildDirectory.dir("generated/update")
     val sha = providers.environmentVariable("GITHUB_SHA").orElse("dev")
