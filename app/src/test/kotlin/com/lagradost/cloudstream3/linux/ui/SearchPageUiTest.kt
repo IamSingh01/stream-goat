@@ -36,7 +36,7 @@ class SearchPageUiTest {
     }
 
     @Test
-    fun `source dropdown is a live ComboBox and selection is reflected by shared model`(robot: FxRobot) {
+    fun `source dropdown is a live ComboBox and accepts selection actions`(robot: FxRobot) {
         val selector = page.automationSourceSelector()
         assertNotNull(selector)
         assertEquals("search-source-selector", selector.id)
