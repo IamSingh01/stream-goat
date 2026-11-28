@@ -77,71 +77,34 @@ class FlipBook(private val frames: List<Image>, size: Double, private val frameM
 }
 
 /**
- * The startup screen: a short intro (about 3 seconds) while extensions load. Syed Ali Hamza's goat chews its grass
- * (the eating animation, in the logo's colours) while an arc of stars sweeps over it, then the name and credit
- * fade in. A click or a key skips it; Settings → Profiles → Startup animation turns it off (then it's a still splash).
+ * Static startup screen. The animated wave intro has been removed completely.
+ * It remains visible while installed extensions are loaded.
  */
-/**
- * The startup screen (about 2.5 seconds): glowing wavy lines in the theme's colours drift across black, the logo
- * rises in on its black tile, then the name. A click or any key skips it; Settings → Appearance turns it off.
- */
-class SplashScreen(animate: Boolean = Settings.startupAnimation) : StackPane() {
+class SplashScreen : StackPane() {
     private val statusLabel = label("Starting…", "splash-status")
-    private var onDone: (() -> Unit)? = null
-    private var animation: javafx.animation.Animation? = null
-    private val waves = Waves()
 
-    /** True once the intro has played (or was skipped / is off). */
-    var finished = !animate
+    // There is no intro animation to wait for; startup continues as soon as extensions load.
+    val finished: Boolean = true
         private set
 
     init {
         styleClass += "splash"
         style = "-fx-background-color: black;"
-        isFocusTraversable = true
-        val logo = Logo(210.0).apply { opacity = 0.0 }
-        // The supplied artwork is the emblem, not a wordmark: show it once.
+        val logo = Logo(210.0)
         val credit = label("Created by ${AppInfo.CREDIT}", "splash-credit")
-        val words = vbox(10.0, credit).apply { alignment = Pos.CENTER; opacity = 0.0 }
-        val centre = vbox(28.0, logo, words).apply { alignment = Pos.CENTER; isMouseTransparent = true }
-        val bottom = vbox(8.0, statusLabel).apply { alignment = Pos.BOTTOM_CENTER; isMouseTransparent = true; padding = javafx.geometry.Insets(0.0, 0.0, 28.0, 0.0) }
-        children.addAll(waves, centre, bottom)
-        if (animate) {
-            waves.start()
-            val anim = object : javafx.animation.Transition() {
-                init { cycleDuration = Duration.millis(2600.0) }
-                override fun interpolate(f: Double) {
-                    val ms = f * 2600
-                    waves.fade = (ms / 900).coerceIn(0.0, 1.0)
-                    val l = ((ms - 250) / 800).coerceIn(0.0, 1.0); val e = 1 - (1 - l) * (1 - l)
-                    logo.opacity = e; logo.scaleX = 0.82 + 0.18 * e; logo.scaleY = logo.scaleX; logo.translateY = 30 * (1 - e)
-                    val wv = ((ms - 900) / 700).coerceIn(0.0, 1.0); words.opacity = wv; words.translateY = 14 * (1 - wv)
-                }
-            }
-            anim.setOnFinished { finish() }
-            animation = anim
-            anim.play()
-            setOnMouseClicked { skip() }
-            setOnKeyPressed { skip() }
-        } else { waves.fade = 1.0; logo.opacity = 1.0; words.opacity = 1.0 }
+        val centre = vbox(28.0, logo, credit).apply {
+            alignment = Pos.CENTER
+            isMouseTransparent = true
+        }
+        val bottom = vbox(8.0, statusLabel).apply {
+            alignment = Pos.BOTTOM_CENTER
+            isMouseTransparent = true
+            padding = javafx.geometry.Insets(0.0, 0.0, 28.0, 0.0)
+        }
+        children.addAll(centre, bottom)
     }
 
-    private fun skip() {
-        animation?.stop()
-        finish()
-    }
-
-    private fun finish() {
-        if (finished) return
-        finished = true
-        waves.stop()
-        onDone?.invoke()
-    }
-
-    /** Runs [block] once the intro has finished (now, if it already has). */
-    fun whenFinished(block: () -> Unit) {
-        if (finished) block() else onDone = block
-    }
+    fun whenFinished(block: () -> Unit) = block()
 
     fun status(text: String) {
         statusLabel.text = text
