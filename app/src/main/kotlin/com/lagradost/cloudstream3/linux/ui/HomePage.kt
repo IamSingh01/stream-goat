@@ -181,11 +181,28 @@ class HomePage : StackPane(), Refreshable, TopBarActions {
         val wanted = current?.key ?: Settings.lastHomeProvider
         val preferred = sources.indexOfFirst { it.key == wanted }
 
-        val fallback = if (preferred >= 0) preferred else if (current == null) 0 else -1
-        sources.getOrNull(fallback)?.let { select(it, force = true) } ?: run {
-            current = null; job?.cancel(); sections.clear(); hero?.stop(); hero = null; loading = false
-            sourceButton.isVisible = false
-            render()
+        when {
+            preferred >= 0 -> select(sources[preferred], force = true)
+            wanted.isNullOrBlank() -> sources.firstOrNull()?.let { select(it, force = true) }
+                ?: run {
+                    current = null; job?.cancel(); sections.clear(); hero?.stop(); hero = null; loading = false
+                    sourceButton.isVisible = false
+                    render()
+                }
+            else -> {
+                // A previously selected provider may be temporarily absent while an add-on
+                // is restoring, or may have been uninstalled. Never replace that preference
+                // with the first alphabetic provider (commonly Cinemeta).
+                current = null
+                job?.cancel()
+                sections.clear()
+                hero?.stop()
+                hero = null
+                loading = false
+                sourceButton.text = "Saved source unavailable"
+                sourceButton.isVisible = sources.isNotEmpty()
+                render()
+            }
         }
     }
 
@@ -209,7 +226,7 @@ class HomePage : StackPane(), Refreshable, TopBarActions {
                 val items = row.list.list
                 if (items.isEmpty()) return@collect
                 // Feature the first items of the first catalog, whichever order catalogs arrive in.
-                if (row.order < heroIndex) {
+                if (row.order <= heroIndex) {
                     hero?.stop()
                     hero = Hero(row.api, items.take(if (Settings.heroSlider) 6 else 1), row.list.name)
                     heroIndex = row.order
@@ -258,6 +275,10 @@ class HomePage : StackPane(), Refreshable, TopBarActions {
         }
         continueShelf?.let { nodes += it }
         nodes += sections.values
+        if (current == null && !Settings.lastHomeProvider.isNullOrBlank() && providers.isNotEmpty()) {
+            nodes += emptyState(Icons.EXTENSION, "Your saved Home source isn't available",
+                "RoarStream kept your previous selection. Install or enable that extension, or choose another source from the Home source menu.")
+        }
         if (loading) {
             if (sections.isEmpty()) repeat(3) { nodes += skeletonShelf() }
             else nodes += hbox(10.0, ProgressIndicator().apply { setPrefSize(18.0, 18.0) }, label("Loading more sections…", "muted"))
