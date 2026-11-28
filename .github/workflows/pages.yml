@@ -3,10 +3,8 @@ name: Web app (GitHub Pages)
 # Publishes the website to https://sherazi5110.github.io/stream-goat/ :
 #   /      the Stream Goat website (site/: about the app, downloads, screenshots)
 #   /app/  the web version (webapp/: the browser version, using Stremio add-ons)
+# This fork is maintained for Intel macOS; publish the web site only on deliberate request.
 on:
-  push:
-    branches: [main]
-    paths: ["site/**", "webapp/**", "docs/screenshots/**", "docs/releases/**", "packaging/linux/cloudstream-linux.svg", ".github/workflows/pages.yml"]
   workflow_dispatch:
 
 permissions:
