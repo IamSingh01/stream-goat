@@ -347,7 +347,10 @@ object PluginManager {
     }
 
     fun uninstall(internalName: String) {
-        val data = installed().find { it.internalName == internalName } ?: return
+        // Never report a successful no-op to the Extensions page. A missing record is
+        // an actionable failure and must be surfaced to the user.
+        val data = installed().find { it.internalName == internalName }
+            ?: error("Extension is not registered as installed: $internalName")
         val file = File(data.filePath)
         unloadPlugin(file.absolutePath)
         if (!file.delete() && file.exists()) {
