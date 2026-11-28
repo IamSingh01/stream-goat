@@ -181,40 +181,47 @@ class ExtensionsPage : StackPane(), Refreshable {
             // Waiting for associateWith { getRepoPlugins() } hid every available (not-installed)
             // extension until the slowest repository finished, leaving only iconless local rows.
             val perRepo = linkedMapOf<RepositoryData, List<PluginWrapper>?>()
-            kotlinx.coroutines.coroutineScope {
-                val completed = kotlinx.coroutines.channels.Channel<Pair<RepositoryData, List<PluginWrapper>?>>(
-                    kotlinx.coroutines.channels.Channel.UNLIMITED
-                )
-                repos.forEach { repo ->
-                    launch(Engine.dispatcher) {
-                        completed.send(repo to RepositoryManager.getRepoPlugins(repo))
+            try {
+                kotlinx.coroutines.coroutineScope {
+                    val completed = kotlinx.coroutines.channels.Channel<Pair<RepositoryData, List<PluginWrapper>?>>(
+                        kotlinx.coroutines.channels.Channel.UNLIMITED
+                    )
+                    repos.forEach { repo ->
+                        launch(Engine.dispatcher) {
+                            // One broken or unreachable repository must not cancel the other
+                            // repository requests or leave the page permanently in loading state.
+                            val result = runCatching { RepositoryManager.getRepoPlugins(repo) }.getOrNull()
+                            completed.send(repo to result)
+                        }
                     }
-                }
-                repeat(repos.size) {
-                    val (repo, plugins) = completed.receive()
-                    perRepo[repo] = plugins
-                    available = perRepo.values.filterNotNull().flatten()
-                    renderRepos(repos, perRepo)
+                    repeat(repos.size) {
+                        val (repo, plugins) = completed.receive()
+                        perRepo[repo] = plugins
+                        available = perRepo.values.filterNotNull().flatten()
+                        renderRepos(repos, perRepo)
 
-                    val langs = available.mapNotNull { it.plugin.language }
-                        .distinct().sortedBy { languageName(it) }
-                    val selectedLanguage = language.value
-                    val languageOptions = listOf("All languages") + langs.map { "${languageName(it)} ($it)" }
-                    language.items.setAll(languageOptions)
-                    val restoredLanguage = selectedLanguage?.takeIf { it in languageOptions } ?: "All languages"
-                    language.selectionModel.clearSelection()
-                    language.selectionModel.select(restoredLanguage)
-                    language.value = restoredLanguage
+                        val langs = available.mapNotNull { it.plugin.language }
+                            .distinct().sortedBy { languageName(it) }
+                        val selectedLanguage = language.value
+                        val languageOptions = listOf("All languages") + langs.map { "${languageName(it)} ($it)" }
+                        language.items.setAll(languageOptions)
+                        val restoredLanguage = selectedLanguage?.takeIf { it in languageOptions } ?: "All languages"
+                        language.selectionModel.clearSelection()
+                        language.selectionModel.select(restoredLanguage)
+                        language.value = restoredLanguage
 
-                    // Invalidate only cards supplied by this repository. Clearing the
-                    // whole cache here would cancel icon downloads for every earlier result.
-                    plugins.orEmpty().forEach { cardCache.remove(it.plugin.internalName) }
-                    applyFilter()
+                        // Invalidate only cards supplied by this repository. Clearing the
+                        // whole cache here would cancel icon downloads for every earlier result.
+                        plugins.orEmpty().forEach { cardCache.remove(it.plugin.internalName) }
+                        stats.text = "Loaded ${perRepo.size} of ${repos.size} repositories · ${available.size} available"
+                        applyFilter()
+                    }
+                    completed.close()
                 }
-                completed.close()
+            } finally {
+                loadingRepos = false
+                applyFilter()
             }
-            loadingRepos = false
-            applyFilter()
         }
     }
 
