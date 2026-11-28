@@ -2,11 +2,9 @@ name: Windows
 
 # The Windows app: Stream Goat.exe with its own Java runtime and VLC, as a portable .zip and an .msi installer.
 # Built and tested on a real Windows machine; on a version tag the files are attached to the release.
+# Windows builds are not part of this Intel-macOS-only fork.
 on:
-  push:
-    branches: [main, windows, stream-goat, picture-keys]
-    tags: ["v*", "V*", "[0-9]*"]
-  pull_request:
+  workflow_dispatch:
 
 # Cancel an older run when a newer commit arrives for the same PR or branch.
 concurrency:
