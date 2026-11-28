@@ -148,9 +148,8 @@ class AppWindow(val stage: Stage) : StackPane() {
         Toasts.host = toastHost
         StackPane.setAlignment(statusPill, Pos.TOP_RIGHT)
         StackPane.setMargin(statusPill, Insets(16.0, 22.0, 0.0, 0.0))
-        // The intro plays unless it's turned off; screenshot tours skip it (except the "intro" tour).
-        splash = SplashScreen(Settings.startupAnimation &&
-            (System.getenv("CS_SCREENSHOT") == null || System.getenv("CS_SCREENSHOT_ONLY") == "intro"))
+        // Static splash only; no animated waves or intro sequence on any launch.
+        splash = SplashScreen()
         children.addAll(wallpaper, layout, statusPill, overlay, toastHost, playerLayer, splash)
 
         applyTheme()
