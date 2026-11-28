@@ -179,11 +179,13 @@ class ExtensionsPage : StackPane(), Refreshable {
             renderRepos(repos, perRepo)
             val selectedRepo = repoFilter.value
             repoFilter.items.setAll(listOf("All repositories") + repos.map { it.name }.distinct())
-            repoFilter.value = selectedRepo?.takeIf { it in repoFilter.items } ?: "All repositories"
+            val restoredRepo = selectedRepo?.takeIf { it in repoFilter.items } ?: "All repositories"
+            repoFilter.selectionModel.select(restoredRepo)
             val langs = available.mapNotNull { it.plugin.language }.distinct().sortedBy { languageName(it) }
             val selected = language.value
             language.items.setAll(listOf("All languages") + langs.map { "${languageName(it)} ($it)" })
-            language.value = selected?.takeIf { it in language.items } ?: "All languages"
+            val restoredLanguage = selected?.takeIf { it in language.items } ?: "All languages"
+            language.selectionModel.select(restoredLanguage)
             applyFilter()
         }
     }
@@ -216,8 +218,15 @@ class ExtensionsPage : StackPane(), Refreshable {
         val rows = available.map { ExtRow(it, byName[it.plugin.internalName]) } +
             installed.filter { local -> available.none { it.plugin.internalName == local.internalName } }.map { ExtRow(null, it) }
         val query = filterField.text.trim().lowercase()
-        val lang = language.value?.substringAfterLast('(')?.removeSuffix(")")?.takeIf { language.selectionModel.selectedIndex > 0 }
-        val repo = repoFilter.value?.takeIf { repoFilter.selectionModel.selectedIndex > 0 }
+        // Treat the visible "All …" entries as explicit sentinels. ComboBox selection
+        // indices can briefly be stale after repository metadata repopulates its items;
+        // relying on selectedIndex here accidentally filters the aggregate view.
+        val selectedLanguage = language.selectionModel.selectedItem ?: language.value
+        val lang = selectedLanguage
+            ?.takeUnless { it == "All languages" }
+            ?.substringAfterLast('(')?.removeSuffix(")")
+        val selectedRepository = repoFilter.selectionModel.selectedItem ?: repoFilter.value
+        val repo = selectedRepository?.takeUnless { it == "All repositories" }
         val typeSet = TYPE_FILTERS.getOrNull(types.selected)?.second
         // Adult (NSFW) extensions stay out of the list unless turned on in Settings → Profiles; installed ones stay manageable.
         val nsfw = com.lagradost.cloudstream3.linux.ContentFilter.nsfwAllowed
