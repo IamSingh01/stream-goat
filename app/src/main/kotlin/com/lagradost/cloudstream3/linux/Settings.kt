@@ -222,11 +222,6 @@ object Settings {
         get() = string("parallel_downloads", "2").toIntOrNull()?.coerceIn(1, 5) ?: 2
         set(v) = put("parallel_downloads", v.coerceIn(1, 5))
 
-    /** The short animated intro at startup (off: a plain splash while extensions load). */
-    var startupAnimation: Boolean
-        get() = string("startup_animation", "true").toBoolean()
-        set(v) = put("startup_animation", v)
-
     /** Sharper lines for animation: OFF, AUTO (animated titles) or ON (everything). */
     var animeEnhance: String
         get() = string("anime_enhance", "AUTO")
