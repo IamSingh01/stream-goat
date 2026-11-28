@@ -85,7 +85,6 @@ class SplashScreen : StackPane() {
 
     // There is no intro animation to wait for; startup continues as soon as extensions load.
     val finished: Boolean = true
-        private set
 
     init {
         styleClass += "splash"
