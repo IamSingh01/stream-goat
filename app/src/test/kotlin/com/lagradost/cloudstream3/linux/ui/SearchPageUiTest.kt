@@ -55,7 +55,7 @@ class SearchPageUiTest {
     }
 
     @Test
-    fun `View All retry button recovers from a failed provider page`() {
+    fun `View All retry button recovers from a failed provider page`(robot: FxRobot) {
         var attempts = 0
         val viewAll = page.automationViewAllForTest(
             firstPage = emptyList(),
