@@ -169,29 +169,50 @@ class ExtensionsPage : StackPane(), Refreshable {
         // the grid showing a stale "No extensions match" message while repo metadata loads.
         applyFilter()
         ui.launch {
-            val perRepo = withContext(Engine.dispatcher) {
-                repos.associateWith { RepositoryManager.getRepoPlugins(it) }
-            }
-            available = perRepo.values.filterNotNull().flatten()
-            loadingRepos = false
-            // Repository metadata (including icon URLs) may have changed; rebuild cards once.
-            cardCache.clear()
-            renderRepos(repos, perRepo)
             val selectedRepo = repoFilter.value
             val repositoryOptions = listOf("All repositories") + repos.map { it.name }.distinct()
             repoFilter.items.setAll(repositoryOptions)
-            // Set both the model selection and displayed value after replacing items.
-            // Explicitly selecting index 0 prevents the previous repository leaking into All.
             val restoredRepo = selectedRepo?.takeIf { it in repositoryOptions } ?: "All repositories"
             repoFilter.selectionModel.clearSelection()
             repoFilter.selectionModel.select(restoredRepo)
             repoFilter.value = restoredRepo
-            applyFilter(resetPage = true)
-            val langs = available.mapNotNull { it.plugin.language }.distinct().sortedBy { languageName(it) }
-            val selected = language.value
-            language.items.setAll(listOf("All languages") + langs.map { "${languageName(it)} ($it)" })
-            val restoredLanguage = selected?.takeIf { it in language.items } ?: "All languages"
-            language.selectionModel.select(restoredLanguage)
+
+            // Fetch repositories concurrently and publish each result as soon as it arrives.
+            // Waiting for associateWith { getRepoPlugins() } hid every available (not-installed)
+            // extension until the slowest repository finished, leaving only iconless local rows.
+            val perRepo = linkedMapOf<RepositoryData, List<PluginWrapper>?>()
+            kotlinx.coroutines.coroutineScope {
+                val completed = kotlinx.coroutines.channels.Channel<Pair<RepositoryData, List<PluginWrapper>?>>(
+                    kotlinx.coroutines.channels.Channel.UNLIMITED
+                )
+                repos.forEach { repo ->
+                    launch(Engine.dispatcher) {
+                        completed.send(repo to RepositoryManager.getRepoPlugins(repo))
+                    }
+                }
+                repeat(repos.size) {
+                    val (repo, plugins) = completed.receive()
+                    perRepo[repo] = plugins
+                    available = perRepo.values.filterNotNull().flatten()
+                    renderRepos(repos, perRepo)
+
+                    val langs = available.mapNotNull { it.plugin.language }
+                        .distinct().sortedBy { languageName(it) }
+                    val selectedLanguage = language.value
+                    val languageOptions = listOf("All languages") + langs.map { "${languageName(it)} ($it)" }
+                    language.items.setAll(languageOptions)
+                    val restoredLanguage = selectedLanguage?.takeIf { it in languageOptions } ?: "All languages"
+                    language.selectionModel.clearSelection()
+                    language.selectionModel.select(restoredLanguage)
+                    language.value = restoredLanguage
+
+                    // Rebuild cards only when a repository result changes the catalogue.
+                    cardCache.clear()
+                    applyFilter()
+                }
+                completed.close()
+            }
+            loadingRepos = false
             applyFilter()
         }
     }
