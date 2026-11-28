@@ -1,10 +1,8 @@
 name: macOS
 
 # Native macOS builds for Apple Silicon (arm64) and Intel (x86_64). Each DMG bundles matching Java, JavaFX, VLC and mpv.
-# Build only when this Intel compatibility branch is updated.
-# No pull-request workflow runs, avoiding PR-run failure notifications.
-# Manual-only while the Intel macOS build is being stabilized.
-# Avoid creating a new failing run for every small fix or commit.
+# Intel macOS only. Manual runs while the bundled media-library architecture issue is being fixed.
+# No push or pull-request runs: do not spam failed build notifications.
 on:
   workflow_dispatch:
 
@@ -109,6 +107,8 @@ jobs:
               found=1
               if ! lipo -verify_arch "$MACOS_ARCH" "$library" >/dev/null 2>&1; then
                 echo "::error file=$library::Expected $MACOS_ARCH native library"
+                echo "Offending library: $library"
+                lipo -info "$library" || file "$library"
                 exit 1
               fi
             done < <(find "$dir" -type f -name '*.dylib' -print0)
