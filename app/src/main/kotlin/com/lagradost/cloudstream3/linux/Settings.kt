@@ -187,10 +187,14 @@ object Settings {
         get() {
             val appValue = prefs.getString("last_home_provider", null).orEmpty()
             val legacyValue = profilePrefs.getString("last_home_provider", null).orEmpty()
-            if (appValue.equals("Cinemeta", ignoreCase = true) &&
-                legacyValue.isNotBlank() && !legacyValue.equals("Cinemeta", ignoreCase = true)) {
-                prefs.edit().putString("last_home_provider", legacyValue).commit()
-                return legacyValue
+            if (!prefs.getBoolean("last_home_provider_migrated", false)) {
+                val recovered = appValue.equals("Cinemeta", ignoreCase = true) &&
+                    legacyValue.isNotBlank() && !legacyValue.equals("Cinemeta", ignoreCase = true)
+                prefs.edit().apply {
+                    if (recovered) putString("last_home_provider", legacyValue)
+                    putBoolean("last_home_provider_migrated", true)
+                }.commit()
+                if (recovered) return legacyValue
             }
             return appValue.ifBlank { legacyValue }.ifBlank { null }
         }
