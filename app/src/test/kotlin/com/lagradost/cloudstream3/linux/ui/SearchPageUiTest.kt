@@ -5,6 +5,7 @@ import javafx.scene.Scene
 import javafx.scene.control.ComboBox
 import javafx.stage.Stage
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.BeforeEach
 import org.testfx.framework.junit5.ApplicationExtension
 import org.junit.jupiter.api.extension.ExtendWith
 import org.testfx.api.FxRobot
@@ -21,7 +22,14 @@ import kotlin.test.assertTrue
  */
 @ExtendWith(ApplicationExtension::class)
 class SearchPageUiTest {
-    private val page = SearchPage()
+    private lateinit var page: SearchPage
+
+    // JUnit constructs the test instance before TestFX starts JavaFX. Constructing
+    // SearchPage as a property initializer therefore touches Controls too early.
+    @BeforeEach
+    fun createPage() {
+        onFx { page = SearchPage() }
+    }
 
     @Test
     fun `source dropdown is a live ComboBox and selection is reflected by shared model`(robot: FxRobot) {
