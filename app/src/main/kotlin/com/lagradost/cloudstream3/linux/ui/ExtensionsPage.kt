@@ -11,6 +11,7 @@ import com.lagradost.cloudstream3.linux.StremioAddons
 import com.lagradost.cloudstream3.linux.StremioApi
 import com.lagradost.cloudstream3.linux.statusName
 import javafx.geometry.Pos
+import javafx.geometry.Insets
 import javafx.scene.Node
 import javafx.scene.control.Alert
 import javafx.scene.control.ButtonType
@@ -96,19 +97,28 @@ class ExtensionsPage : StackPane(), Refreshable {
         repoFilter.setOnAction { applyFilter(resetPage = true) }
         growWide(filterField)
         val clearSearch = button("×", null, "btn-ghost", "btn-small") {
+            // Clear the query only; leave the repository/language/type tabs untouched.
+            // With an empty query the complete list for the selected tabs is restored.
             filterField.clear()
             filterField.requestFocus()
         }.apply {
             tooltip("Clear search")
             isVisible = false
             isManaged = false
+            style = "-fx-background-radius: 18; -fx-min-width: 28; -fx-pref-width: 28; -fx-min-height: 28; -fx-pref-height: 28;"
         }
         filterField.textProperty().addListener { _, _, value ->
             val hasQuery = !value.isNullOrBlank()
             clearSearch.isVisible = hasQuery
             clearSearch.isManaged = hasQuery
         }
-        val filterRow = hbox(10.0, filterField, clearSearch, repoFilter, language, view)
+        val searchBox = StackPane(filterField, clearSearch).apply {
+            alignment = Pos.CENTER_RIGHT
+            StackPane.setMargin(clearSearch, Insets(0.0, 7.0, 0.0, 0.0))
+        }
+        filterField.padding = Insets(0.0, 42.0, 0.0, 12.0)
+        growWide(searchBox)
+        val filterRow = hbox(10.0, searchBox, repoFilter, language, view)
         // Cards share the row evenly: as many ~300px columns as fit.
         grid.widthProperty().addListener { _, _, _ -> sizeCards() }
 
@@ -145,9 +155,16 @@ class ExtensionsPage : StackPane(), Refreshable {
     fun refresh() {
         val repos = RepositoryManager.getRepositories()
         renderRepos(repos, emptyMap())
-        if (loadingRepos) return
+        if (loadingRepos) {
+            // Keep installed extensions visible while a repository refresh is already running.
+            applyFilter()
+            return
+        }
         loadingRepos = true
         stats.text = "Reading ${repos.size} repositories…"
+        // Installed extension records are local and available immediately. Do not leave
+        // the grid showing a stale "No extensions match" message while repo metadata loads.
+        applyFilter()
         ui.launch {
             val perRepo = withContext(Engine.dispatcher) {
                 repos.associateWith { RepositoryManager.getRepoPlugins(it) }
