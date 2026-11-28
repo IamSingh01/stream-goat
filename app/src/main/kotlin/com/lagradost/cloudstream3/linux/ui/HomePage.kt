@@ -23,11 +23,14 @@ import javafx.scene.layout.Region
 import javafx.scene.layout.StackPane
 import javafx.scene.layout.VBox
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
 import java.util.TreeMap
+
+private const val HOME_FIRST_CONTENT_TIMEOUT_MS = 10_000L
 
 /**
  * Blurred, darkened backdrop. The image is decoded tiny and stretched, which looks like
@@ -71,6 +74,7 @@ class HomePage : StackPane(), Refreshable, TopBarActions {
     private var heroIndex = Int.MAX_VALUE
     private var continueShelf: Node? = null
     private var loading = false
+    private var loadingTimedOut = false
     private var offline = false
     private val sourceButton = button("", null, "topbar-source") { showSourceMenu() }.apply {
         contentDisplay = javafx.scene.control.ContentDisplay.RIGHT
@@ -266,17 +270,15 @@ class HomePage : StackPane(), Refreshable, TopBarActions {
         hero = null
         heroIndex = Int.MAX_VALUE
         loading = true
+        loadingTimedOut = false
         offline = false
         render()
         job = ui.launch {
-            // Let JavaFX complete a pulse with the restored snapshot on screen before
-            // starting any provider/network work. Cached content is already in sections.
+            // Let JavaFX paint any restored snapshot before provider/network work starts.
             suspendCancellableCoroutine<Unit> { continuation ->
                 val firstPaint = object : AnimationTimer() {
                     private var pulses = 0
                     override fun handle(now: Long) {
-                        // AnimationTimer runs before rendering within a pulse. Wait for
-                        // the following pulse so the first snapshot frame has actually painted.
                         if (++pulses < 2) return
                         stop()
                         if (continuation.isActive) continuation.resume(Unit)
@@ -285,11 +287,24 @@ class HomePage : StackPane(), Refreshable, TopBarActions {
                 continuation.invokeOnCancellation { firstPaint.stop() }
                 firstPaint.start()
             }
+
+            // Do not leave skeleton cards spinning indefinitely. This timer only changes
+            // the UI; the provider request continues and a late response can still populate Home.
+            val slowLoadTimer = launch {
+                delay(HOME_FIRST_CONTENT_TIMEOUT_MS)
+                if (sections.isEmpty() && loading) {
+                    loading = false
+                    loadingTimedOut = true
+                    render()
+                }
+            }
             val mixed = source.apis.size > 1
             Engine.home(source.apis).collect { row ->
                 val items = row.list.list
                 if (items.isEmpty()) return@collect
-                // Feature the first items of the first catalog, whichever order catalogs arrive in.
+                slowLoadTimer.cancel()
+                loading = false
+                loadingTimedOut = false
                 if (row.order <= heroIndex) {
                     hero?.stop()
                     hero = Hero(row.api, items.take(if (Settings.heroSlider) 6 else 1), row.list.name)
@@ -298,8 +313,9 @@ class HomePage : StackPane(), Refreshable, TopBarActions {
                 sections[row.order] = shelf(row.copy(list = row.list.copy(list = items)), mixed)
                 render()
             }
+            slowLoadTimer.cancel()
             loading = false
-            // Nothing came back: say so plainly when it's because there's no internet.
+            loadingTimedOut = false
             offline = sections.isEmpty() && !com.lagradost.cloudstream3.linux.Network.online()
             render()
         }
@@ -352,6 +368,10 @@ class HomePage : StackPane(), Refreshable, TopBarActions {
         if (loading) {
             if (sections.isEmpty()) repeat(3) { nodes += skeletonShelf() }
             else nodes += hbox(10.0, ProgressIndicator().apply { setPrefSize(18.0, 18.0) }, label("Loading more sections…", "muted"))
+        } else if (loadingTimedOut && current != null && sections.isEmpty()) {
+            nodes += emptyState(Icons.INFO, "This source is taking longer than expected",
+                "The provider hasn't returned its Home catalog yet. You can keep waiting or retry; a late response will still appear.",
+                button("Retry", Icons.REFRESH, "btn-accent") { current?.let { select(it, force = true, preserveSnapshot = true) } })
         } else if (current != null && sections.isEmpty()) {
             val all = current?.apis.orEmpty()
             nodes += if (all.isNotEmpty() && all.all { Catalogs.enabled(it).isEmpty() }) emptyState(Icons.TUNE, "All catalogs are hidden",
