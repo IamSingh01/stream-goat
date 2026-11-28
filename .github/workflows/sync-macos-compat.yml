@@ -1,8 +1,7 @@
 name: Sync macOS compatibility branch
 
+# Upstream synchronization is deliberate; do not push unrelated main changes automatically.
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
