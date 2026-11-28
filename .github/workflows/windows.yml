@@ -2,11 +2,10 @@ name: Windows
 
 # The Windows app: RoarStream.exe with its own Java runtime and VLC, as a portable .zip and an .msi installer.
 # Built and tested on a real Windows machine; on a version tag the files are attached to the release.
+# Windows builds are not maintained on the Intel-macOS compatibility branch.
+# Keep this workflow available only for an intentional manual run.
 on:
-  push:
-    branches: [main, windows, stream-goat, picture-keys]
-    tags: ["v*", "V*", "[0-9]*"]
-  pull_request:
+  workflow_dispatch:
 
 jobs:
   windows:
