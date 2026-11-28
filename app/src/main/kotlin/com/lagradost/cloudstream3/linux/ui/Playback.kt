@@ -47,7 +47,14 @@ object Playback {
         }
         if (Vlc.factory == null) {
             sources.cancel()
-            Toasts.show("Playing needs VLC's libraries: " + com.lagradost.cloudstream3.linux.Os.vlcHint, seconds = 12.0)
+            // macOS builds intentionally support IINA as the native external player.
+            // If a previous preference selected the embedded VLC engine, don't strand
+            // playback on a missing libVLC bundle: fall back to the installed IINA app.
+            if (com.lagradost.cloudstream3.linux.Os.isMac) {
+                openInIina(link)
+            } else {
+                Toasts.show("Playing needs VLC's libraries: " + com.lagradost.cloudstream3.linux.Os.vlcHint, seconds = 12.0)
+            }
             return
         }
         active = BuiltinPlayer(api, response, playable, sources, link).also { it.start() }
