@@ -1,10 +1,10 @@
 name: macOS
 
 # Native macOS builds for Apple Silicon (arm64) and Intel (x86_64). Each DMG bundles matching Java, JavaFX, VLC and mpv.
+# Build only when this Intel compatibility branch is updated.
+# No pull-request workflow runs, avoiding PR-run failure notifications.
 on:
   push:
-    branches: [compat/macos-intel-x86_64-11.0]
-  pull_request:
     branches: [compat/macos-intel-x86_64-11.0]
 
 jobs:
