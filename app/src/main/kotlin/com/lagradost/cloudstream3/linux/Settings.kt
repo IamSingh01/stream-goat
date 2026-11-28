@@ -27,7 +27,7 @@ object Settings {
     private val PROFILE_KEYS = setOf(
         "auto_play_next", "skip_buttons", "auto_skip", "subtitle_language", "preferred_quality", "player_volume", "hero_slider", "anti_spoiler",
         "player_equalizer", "audio_language", "subtitle_size", "subtitle_color", "subtitle_outline", "subtitle_background",
-        "player_zoom", "last_home_provider", "show_nsfw",
+        "player_zoom", "show_nsfw",
         "theme_mode", "theme_accent", "theme_wallpaper", "theme_wallpaper_dim", "theme_wallpaper_blur",
     )
 
@@ -180,9 +180,12 @@ object Settings {
         set(v) = put("download_folder", v)
 
     var lastHomeProvider: String?
-        get() = string("last_home_provider", "").ifBlank { null }
-        // This selection is made immediately before an app may be closed; persist it before returning.
-        set(v) { store("last_home_provider").edit().putString("last_home_provider", v ?: "").commit() }
+        // Keep the Home source app-wide. Older builds stored it in profile_settings, so
+        // retain that value as a fallback when migrating existing installations.
+        get() = (prefs.getString("last_home_provider", null)
+            ?: profilePrefs.getString("last_home_provider", null)).orEmpty().ifBlank { null }
+        // This selection is made immediately before an app may be closed; commit synchronously.
+        set(v) { prefs.edit().putString("last_home_provider", v ?: "").commit() }
 
     /** Extension languages to show (lowercase codes such as "en", "hi"); empty = all, like the official app. */
     var extensionLanguages: Set<String>
