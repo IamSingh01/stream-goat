@@ -5,8 +5,8 @@ import javafx.scene.Scene
 import javafx.scene.control.ComboBox
 import javafx.stage.Stage
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.BeforeEach
 import org.testfx.framework.junit5.ApplicationExtension
+import org.testfx.framework.junit5.Start
 import org.junit.jupiter.api.extension.ExtendWith
 import org.testfx.api.FxRobot
 import java.util.concurrent.CountDownLatch
@@ -23,12 +23,16 @@ import kotlin.test.assertTrue
 @ExtendWith(ApplicationExtension::class)
 class SearchPageUiTest {
     private lateinit var page: SearchPage
+    private lateinit var stage: Stage
 
-    // JUnit constructs the test instance before TestFX starts JavaFX. Constructing
-    // SearchPage as a property initializer therefore touches Controls too early.
-    @BeforeEach
-    fun createPage() {
-        onFx { page = SearchPage() }
+    // TestFX creates and owns the JavaFX stage. Attach the page before using FxRobot,
+    // otherwise robot clicks have no scene/window to target.
+    @Start
+    fun start(stage: Stage) {
+        this.stage = stage
+        page = SearchPage()
+        stage.scene = Scene(page, 1000.0, 700.0)
+        stage.show()
     }
 
     @Test
@@ -75,10 +79,9 @@ class SearchPageUiTest {
                 com.lagradost.cloudstream3.linux.SearchPageResult(emptyList(), hasNext = false)
             },
         )
-        val viewAllStage = Stage()
         onFx {
-            viewAllStage.scene = Scene(viewAll, 1000.0, 700.0)
-            viewAllStage.show()
+            stage.scene.root = viewAll
+            stage.show()
         }
         val failureDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
         while (System.nanoTime() < failureDeadline && !onFx { viewAll.automationRetryButton().isVisible }) {
@@ -98,7 +101,6 @@ class SearchPageUiTest {
         assertTrue(!onFx { viewAll.automationHasNext() })
         assertEquals("That's everything · 0 titles", onFx { viewAll.automationStatusLabel().text })
         assertEquals(2, attempts)
-        onFx { viewAllStage.close() }
     }
 
     private fun <T> onFx(block: () -> T): T {
