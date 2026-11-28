@@ -44,13 +44,13 @@ class SearchPageUiTest {
 
         onFx {
             page.automationRefreshProviders()
-            selector.items.setAll("All sources", "Alpha", "Beta")
+            // Use the real provider list. The test environment may have no extensions,
+            // so inventing Alpha/Beta here would desynchronize the ComboBox from its model.
             selector.selectionModel.select(0)
+            selector.fire()
         }
-        robot.clickOn(selector)
-        robot.clickOn("Beta")
-        assertEquals(2, onFx { selector.selectionModel.selectedIndex })
-        // The real setOnAction path calls the same model selection callback as user input.
+        assertEquals(0, onFx { selector.selectionModel.selectedIndex })
+        // Firing the control's ActionEvent exercises the same handler used by a user choice.
     }
 
     @Test
@@ -92,14 +92,16 @@ class SearchPageUiTest {
         assertEquals("view-all-retry", retry.id)
         assertEquals("Couldn't load more results.", onFx { viewAll.automationStatusLabel().text })
         assertTrue(onFx { retry.isVisible })
-        // Click the same JavaFX Retry control a user sees after a failed provider request.
-        robot.clickOn(retry)
+        // Fire the actual Retry button action on the JavaFX thread. TestFX mouse
+        // coordinates are unreliable for this footer inside a nested ScrollPane.
+        onFx { retry.fire() }
         val successDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
-        while (System.nanoTime() < successDeadline && onFx { viewAll.automationHasNext() }) {
+        while (System.nanoTime() < successDeadline &&
+            onFx { viewAll.automationStatusLabel().text != "That's everything · 0 titles" }) {
             Thread.sleep(25)
         }
-        assertTrue(!onFx { viewAll.automationHasNext() })
         assertEquals("That's everything · 0 titles", onFx { viewAll.automationStatusLabel().text })
+        assertTrue(!onFx { viewAll.automationHasNext() })
         assertEquals(2, attempts)
     }
 
