@@ -2,11 +2,10 @@ name: macOS
 
 # The Mac app (Apple Silicon): Stream Goat.app with its own Java runtime and VLC, in a .dmg.
 # Built and tested on a real Apple Silicon Mac; on a version tag the .dmg is attached to the release.
+# This fork is maintained as an Intel-macOS-only compatibility build.
+# Keep the upstream Apple Silicon workflow available only for deliberate manual runs.
 on:
-  push:
-    branches: [main, macos, picture-keys]
-    tags: ["v*", "V*", "[0-9]*"]
-  pull_request:
+  workflow_dispatch:
 
 # Cancel an older run when a newer commit arrives for the same PR or branch.
 concurrency:
