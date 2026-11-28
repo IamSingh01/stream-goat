@@ -206,9 +206,10 @@ class ExtensionsPage : StackPane(), Refreshable {
         }
         val generation = ++refreshGeneration
         val repos = RepositoryManager.getRepositories()
-        val validUrls = repos.mapTo(mutableSetOf()) { it.url }
-        // Drop catalogue entries from repositories that no longer exist before rendering.
-        available = available.filter { it.repositoryData.url in validUrls }
+        // A forced refresh starts a new catalogue generation. Never let cards from the
+        // previously selected repository bleed into the new "All repositories" view.
+        available = emptyList()
+        cardCache.clear()
         repoFilterUrls = emptyMap()
         renderRepos(repos, emptyMap())
         loadingRepos = true
