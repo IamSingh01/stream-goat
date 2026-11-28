@@ -362,16 +362,25 @@ class ExtensionsPage : StackPane(), Refreshable {
         val name = wrapper.plugin.internalName
         if (!busy.add(name)) return
         cardCache.remove(name)
-        renderGrid()
+        applyFilter()
         ui.launch {
-            val result = withContext(Engine.dispatcher) { PluginManager.install(wrapper) }
-            busy.remove(name)
-            cardCache.remove(name)
-            result.fold(
-                { Toasts.show("Installed ${wrapper.plugin.name}" + it.providers.takeIf { p -> p.isNotEmpty() }?.let { p -> " · ${p.joinToString { a -> a.name }}" }.orEmpty()) },
-                { Toasts.show("${wrapper.plugin.name} failed: ${it.message ?: it}", seconds = 8.0) },
-            )
-            applyFilter()
+            try {
+                val result = withContext(Engine.dispatcher) { PluginManager.install(wrapper) }
+                result.fold(
+                    { loaded ->
+                        Toasts.show("Installed ${wrapper.plugin.name}" + loaded.providers.takeIf { it.isNotEmpty() }?.let { p -> " · ${p.joinToString { a -> a.name }}" }.orEmpty())
+                    },
+                    { error -> Toasts.show("${wrapper.plugin.name} failed: ${error.message ?: error}", seconds = 8.0) },
+                )
+            } catch (t: Throwable) {
+                Toasts.show("${wrapper.plugin.name} failed: ${t.message ?: t}", seconds = 8.0)
+            } finally {
+                busy.remove(name)
+                cardCache.remove(name)
+                // Rebuild the row from the persisted installed records and current repository
+                // metadata; don't leave an old Install/Uninstall control on the card.
+                applyFilter()
+            }
         }
     }
 
@@ -381,10 +390,28 @@ class ExtensionsPage : StackPane(), Refreshable {
     }
 
     private fun uninstall(row: ExtRow) {
-        PluginManager.uninstall(row.internalName)
-        cardCache.remove(row.internalName)
-        Toasts.show("Uninstalled ${row.name}")
+        val name = row.internalName
+        if (!busy.add(name)) return
+        cardCache.remove(name)
         applyFilter()
+        ui.launch {
+            try {
+                withContext(Engine.dispatcher) { PluginManager.uninstall(name) }
+                val stillInstalled = PluginManager.installed().any { it.internalName == name }
+                cardCache.remove(name)
+                if (stillInstalled) {
+                    Toasts.show("Couldn't uninstall ${row.name}: it is still registered as installed", seconds = 8.0)
+                } else {
+                    Toasts.show("Uninstalled ${row.name}")
+                }
+            } catch (t: Throwable) {
+                Toasts.show("Couldn't uninstall ${row.name}: ${t.message ?: t}", seconds = 8.0)
+            } finally {
+                busy.remove(name)
+                cardCache.remove(name)
+                applyFilter()
+            }
+        }
     }
 
     private fun updateAll() {
