@@ -1,10 +1,8 @@
 name: Build
 
+# Linux and Android builds are not part of this Intel-macOS-only fork.
 on:
-  push:
-    branches: [main, picture-keys]
-    tags: ["v*", "V*", "[0-9]*"]
-  pull_request:
+  workflow_dispatch:
 
 # Cancel an older run when a newer commit arrives for the same PR or branch.
 concurrency:
