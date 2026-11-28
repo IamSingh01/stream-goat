@@ -133,9 +133,10 @@ enum class Zoom(val label: String, val aspect: Double?) {
  * Shows libVLC's video inside the JavaFX scene.
  *
  * VLC's "vmem" output (modules/video_output/vmem.c) calls back for each frame instead of
- * opening a window. Frames are BGRA, written straight into a buffer that a JavaFX
- * PixelBuffer wraps, so a new frame costs one texture upload and no copy in Java.
- * VLC blends subtitles into the frame itself (src/video_output/video_output.c).
+ * opening a window. Frames are BGRA. Each callback snapshots the decoder-owned buffer
+ * into reusable memory; only the JavaFX thread copies that snapshot into its PixelBuffer.
+ * This prevents VLC/mpv from overwriting pixels while the GPU is uploading the previous
+ * frame. VLC blends subtitles into the frame itself (src/video_output/video_output.c).
  * Frames larger than the screen are scaled down by VLC first: a 4K stream on a 1080p
  * screen moves a quarter of the pixels through the CPU and GPU.
  */
