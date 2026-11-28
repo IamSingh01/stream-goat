@@ -206,8 +206,7 @@ class SettingsPage : StackPane(), Refreshable {
             section("Startup",
                 row("Ask who's watching", "With more than one profile, show the profile picker when the app starts. It always shows when the last profile has a PIN.",
                     Switch(Profiles.askOnStart) { Profiles.askOnStart = it }),
-                row("Startup animation", "The short RoarStream intro when the app opens (a click or key skips it).",
-                    Switch(Settings.startupAnimation) { Settings.startupAnimation = it })),
+                ),
             section("What belongs to a profile", label(
                 "Each profile has its own history, continue watching, list, home layout, theme and player preferences (subtitles, audio, volume). " +
                     "Extensions, Stremio add-ons, network and storage settings are shared by everyone.", "muted").apply { isWrapText = true; pad(10.0, 0.0) }),
