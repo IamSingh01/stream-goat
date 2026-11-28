@@ -146,6 +146,23 @@ object Os {
         return dirs.firstOrNull { File(it, if (isWindows) "libvlc.dll" else "libvlc.so.5").isFile }
     }
 
+    /** Resolve native macOS libraries using Spotlight metadata rather than package-manager prefixes. */
+    fun discoverMacNativeLibraries(fileNames: Set<String>, bundleId: String? = null): List<File> {
+        if (!isMac) return emptyList()
+        val results = linkedSetOf<File>()
+        val predicate = fileNames.joinToString(" || ") { "kMDItemFSName == '$it'" }
+        fun query(expression: String): List<File> = runCatching {
+            val process = ProcessBuilder("/usr/bin/mdfind", expression).redirectErrorStream(true).start()
+            val output = process.inputStream.bufferedReader().readLines()
+            process.waitFor()
+            output.map { File(it.trim()) }.filter { it.exists() }
+        }.getOrDefault(emptyList())
+        results += query(predicate).filter { it.isFile }
+        if (bundleId != null) query("kMDItemCFBundleIdentifier == '$bundleId'").filter { it.isDirectory }.forEach { bundle ->
+            runCatching { bundle.walkTopDown().maxDepth(8).filter { it.isFile && it.name in fileNames }.forEach { results += it } }
+        }
+        return results.toList()
+    }
     /** The modifier key shown in shortcut texts: ⌘ on a Mac, Ctrl elsewhere. */
     val shortcutKey: String get() = if (isMac) "⌘" else "Ctrl+"
 
