@@ -130,7 +130,7 @@ object PluginManager {
             loadOne(it).await()
             restoredBeforeParallel += it.internalName
         }
-        if (savedProvider.isNotBlank() && savedProvider != "My feed" &&
+        if (savedProvider.isNotBlank() && savedProvider != "__feed__" &&
             Engine.providers().none { it.name.equals(savedProvider, true) }) {
             for (data in all) {
                 if (data.internalName in restoredBeforeParallel) continue
