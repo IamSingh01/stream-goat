@@ -106,11 +106,16 @@ object PluginManager {
             }
         }.awaitAll()
         System.err.println("I/plugins: loaded ${loaded.size}/${all.size} extensions")
-        // Set readiness only after all plugin registrations have completed. The initial
-        // progress value is 0/0 before loadAll starts and must not be mistaken for "done".
-        _initialLoadComplete.value = true
+        // The desktop marks initial loading complete only after built-in Stremio add-ons
+        // have also been restored. A 0/0 progress value is never treated as readiness.
         changed()
         failures
+    }
+
+    /** Called by desktop startup after extension registration and Stremio add-on restore. */
+    fun completeInitialLoad() {
+        _initialLoadComplete.value = true
+        changed()
     }
 
     /** Port of upstream PluginManager.loadPlugin (app/.../plugins/PluginManager.kt). */
