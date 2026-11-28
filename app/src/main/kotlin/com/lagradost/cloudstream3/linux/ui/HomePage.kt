@@ -298,8 +298,8 @@ class HomePage : StackPane(), Refreshable, TopBarActions {
         val ready = PluginManager.initialLoadComplete.value
         val noProviders = providers.isEmpty() && ready && !PluginManager.progress.value.running
         when {
-            !ready && providers.isEmpty() && sections.isEmpty() -> nodes += emptyState(Icons.EXTENSION, "Restoring your extensions",
-                "Your previous Home cards will appear immediately when available. Extensions are loading in the background.")
+            !ready && current == null && sections.isEmpty() -> nodes += emptyState(Icons.EXTENSION, "Restoring your Home source",
+                "RoarStream is still loading your installed extensions. Your saved source may appear as soon as its extension is ready.")
             noProviders && Profiles.isKids -> nodes += emptyState(Icons.FACE, "Nothing here yet",
                 "Ask a grown-up to allow some extensions for this profile (Manage profiles → edit → Allowed extensions).")
             noProviders -> nodes += emptyState(
