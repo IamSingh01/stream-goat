@@ -78,6 +78,36 @@ class ExtensionsPage : StackPane(), Refreshable {
     private var loadingRepos = false
     private var repositoriesLoaded = false
     private var repoFilterUrls: Map<String, String> = emptyMap()
+    private var changingRepoFilter = false
+    private var resettingFilters = false
+
+    private fun resetFiltersForRepositoryChange() {
+        if (resettingFilters) return
+        resettingFilters = true
+        try {
+            filterField.clear()
+            language.value = "All languages"
+            language.selectionModel.select("All languages")
+            view.select(0, notify = false)
+            types.select(0, notify = false)
+            cardCache.clear()
+        } finally {
+            resettingFilters = false
+        }
+        applyFilter(resetPage = false)
+    }
+
+    private fun cardKey(row: ExtRow): String = listOf(
+        row.internalName, row.wrapper?.repositoryData?.url.orEmpty(),
+        row.wrapper?.plugin?.version?.toString().orEmpty(),
+        row.installed?.version?.toString().orEmpty(),
+        if (row.installed == null) "available" else "installed",
+        busyAction[row.internalName].orEmpty(),
+    ).joinToString("\u0000")
+
+    private fun invalidateCards(internalName: String) {
+        cardCache.keys.removeIf { it.startsWith(internalName + "\u0000") }
+    }
 
     init {
         val header = hbox(12.0,
@@ -96,7 +126,9 @@ class ExtensionsPage : StackPane(), Refreshable {
         // Keep the current scroll position while filtering as the user types.
         filterField.textProperty().addListener { _, _, _ -> applyFilter(resetPage = false) }
         language.valueProperty().addListener { _, _, _ -> applyFilter(resetPage = false) }
-        repoFilter.valueProperty().addListener { _, _, _ -> applyFilter(resetPage = false) }
+        repoFilter.valueProperty().addListener { _, old, selected ->
+            if (!changingRepoFilter && old != selected) resetFiltersForRepositoryChange()
+        }
         growWide(filterField)
         val clearSearch = button("×", null, "btn-ghost", "btn-small") {
             // Clear the query only; leave the repository/language/type tabs untouched.
@@ -184,11 +216,16 @@ class ExtensionsPage : StackPane(), Refreshable {
             }
             repoFilterUrls = labelsByUrl.entries.associate { it.value to it.key }
             val repositoryOptions = listOf("All repositories") + repos.map { labelsByUrl[it.url] ?: it.name }
-            repoFilter.items.setAll(repositoryOptions)
-            val restoredRepo = selectedRepo?.takeIf { it in repositoryOptions } ?: "All repositories"
-            repoFilter.selectionModel.clearSelection()
-            repoFilter.value = restoredRepo
-            repoFilter.selectionModel.select(restoredRepo)
+            changingRepoFilter = true
+            try {
+                repoFilter.items.setAll(repositoryOptions)
+                val restoredRepo = selectedRepo?.takeIf { it in repositoryOptions } ?: "All repositories"
+                repoFilter.selectionModel.clearSelection()
+                repoFilter.value = restoredRepo
+                repoFilter.selectionModel.select(restoredRepo)
+            } finally {
+                changingRepoFilter = false
+            }
 
             // Fetch repositories concurrently and publish each result as soon as it arrives.
             // Waiting for associateWith { getRepoPlugins() } hid every available (not-installed)
@@ -264,14 +301,17 @@ class ExtensionsPage : StackPane(), Refreshable {
     private fun applyFilter(resetPage: Boolean = false) {
         val installed = PluginManager.installed()
         val byName = installed.associateBy { it.internalName }
-        // A plugin can be mirrored by several repositories. Show one card, preferring
-        // the repository it was actually installed from so source and update actions agree.
+        val selectedRepoUrl = repoFilter.value?.let { repoFilterUrls[it] }
+        // In a specific repository view, use that repository's copy. In All repositories,
+        // prefer the installed origin so Update does not silently switch sources.
         val rows = available
             .groupBy { it.plugin.internalName }
             .values
             .map { mirrors ->
                 val local = byName[mirrors.first().plugin.internalName]
-                val selected = mirrors.firstOrNull { it.repositoryData.url == local?.repositoryUrl } ?: mirrors.first()
+                val selected = mirrors.firstOrNull { it.repositoryData.url == selectedRepoUrl }
+                    ?: mirrors.firstOrNull { it.repositoryData.url == local?.repositoryUrl }
+                    ?: mirrors.first()
                 ExtRow(selected, local)
             } +
             installed.filter { local -> available.none { it.plugin.internalName == local.internalName } }.map { ExtRow(null, it) }
@@ -286,8 +326,7 @@ class ExtensionsPage : StackPane(), Refreshable {
         // ComboBox.selectionModel.selectedItem can retain the previous repository while
         // its items are being replaced. The value property is the displayed selection;
         // using selectedItem here made "All repositories" keep filtering by the last repo.
-        val selectedRepository = repoFilter.value
-        val repoUrl = selectedRepository?.let { repoFilterUrls[it] }
+        val repoUrl = selectedRepoUrl
         val typeSet = TYPE_FILTERS.getOrNull(types.selected)?.second
         // Adult (NSFW) extensions stay out of the list unless turned on in Settings → Profiles; installed ones stay manageable.
         val nsfw = com.lagradost.cloudstream3.linux.ContentFilter.nsfwAllowed
@@ -320,7 +359,7 @@ class ExtensionsPage : StackPane(), Refreshable {
     private fun renderGrid() {
         val w = cardWidth()
         val nodes = rows.map { row ->
-            cardCache.getOrPut(row.internalName) { card(row) }.apply { prefWidth = w }
+            cardCache.getOrPut(cardKey(row)) { card(row) }.apply { prefWidth = w }
         }.toMutableList<Node>()
         if (rows.isEmpty()) nodes += label(
             when {
@@ -403,7 +442,7 @@ class ExtensionsPage : StackPane(), Refreshable {
         val name = wrapper.plugin.internalName
         if (!busy.add(name)) return
         busyAction[name] = "Installing"
-        cardCache.remove(name)
+        invalidateCards(name)
         applyFilter(resetPage = false)
         ui.launch {
             try {
@@ -419,7 +458,7 @@ class ExtensionsPage : StackPane(), Refreshable {
             } finally {
                 busy.remove(name)
                 busyAction.remove(name)
-                cardCache.remove(name)
+                invalidateCards(name)
                 // Rebuild the row from the persisted installed records and current repository
                 // metadata; don't leave an old Install/Uninstall control on the card.
                 applyFilter()
@@ -428,21 +467,46 @@ class ExtensionsPage : StackPane(), Refreshable {
     }
 
     private fun installAll(list: List<PluginWrapper>) {
-        val installed = PluginManager.installed().map { it.internalName }.toSet()
-        list.filter { it.plugin.status != 0 && it.plugin.internalName !in installed }.forEach { install(it) }
+        val candidates = list.distinctBy { it.plugin.internalName }.filter { wrapper ->
+            wrapper.plugin.status != 0 && PluginManager.installed().none { it.internalName == wrapper.plugin.internalName }
+        }
+        if (candidates.isEmpty()) { Toasts.show("No installable extensions in this repository"); return }
+        ui.launch {
+            var installedCount = 0
+            for (wrapper in candidates) {
+                val name = wrapper.plugin.internalName
+                if (!busy.add(name)) continue
+                busyAction[name] = "Installing"
+                invalidateCards(name)
+                applyFilter(resetPage = false)
+                try {
+                    val result = withContext(Engine.dispatcher) { PluginManager.install(wrapper) }
+                    if (result.isSuccess) installedCount++
+                    else Toasts.show("${wrapper.plugin.name} failed: ${result.exceptionOrNull()?.message ?: "unknown error"}", seconds = 8.0)
+                } catch (t: Throwable) {
+                    Toasts.show("${wrapper.plugin.name} failed: ${t.message ?: t}", seconds = 8.0)
+                } finally {
+                    busy.remove(name)
+                    busyAction.remove(name)
+                    invalidateCards(name)
+                    applyFilter(resetPage = false)
+                }
+            }
+            Toasts.show("Installed $installedCount of ${candidates.size} extensions")
+        }
     }
 
     private fun uninstall(row: ExtRow) {
         val name = row.internalName
         if (!busy.add(name)) return
         busyAction[name] = "Uninstalling"
-        cardCache.remove(name)
+        invalidateCards(name)
         applyFilter(resetPage = false)
         ui.launch {
             try {
                 withContext(Engine.dispatcher) { PluginManager.uninstall(name) }
                 val stillInstalled = PluginManager.installed().any { it.internalName == name }
-                cardCache.remove(name)
+                invalidateCards(name)
                 if (stillInstalled) {
                     Toasts.show("Couldn't uninstall ${row.name}: it is still registered as installed", seconds = 8.0)
                 } else {
@@ -453,7 +517,7 @@ class ExtensionsPage : StackPane(), Refreshable {
             } finally {
                 busy.remove(name)
                 busyAction.remove(name)
-                cardCache.remove(name)
+                invalidateCards(name)
                 applyFilter(resetPage = false)
             }
         }
@@ -501,14 +565,20 @@ class ExtensionsPage : StackPane(), Refreshable {
         val version = (p?.version ?: row.installed?.version)?.let { "v$it" }
         // Keep the originating repository visible even when an installed extension is
         // no longer present in the current repository catalogue.
-        val source = row.wrapper?.repositoryData?.name
-            ?: row.installed?.repositoryUrl?.let { url ->
-                RepositoryManager.getRepositories().firstOrNull { it.url == url }?.name
-                    ?: url.substringAfter("://").substringBefore("/").takeIf { it.isNotBlank() }
-            }
-            ?: row.installed?.takeIf { !it.isOnline }?.let { "Local install" }
-            ?: row.installed?.let { "Source unknown" }
-        val meta = listOfNotNull(p?.language?.let { languageName(it) }, version, source?.let { "Source: $it" })
+        fun repositoryLabel(url: String?): String? = url?.let { value ->
+            RepositoryManager.getRepositories().firstOrNull { it.url == value }?.name
+                ?: value.substringAfter("://").substringBefore("/").takeIf { it.isNotBlank() }
+        }
+        val source = when {
+            row.installed != null && !row.installed.isOnline -> "Local install"
+            row.installed != null -> repositoryLabel(row.installed.repositoryUrl)?.let { "Installed from: $it" }
+                ?: "Installed · source unknown"
+            else -> repositoryLabel(row.wrapper?.repositoryData?.url)?.let { "Source: $it" }
+        }
+        val availableFrom = row.wrapper?.repositoryData?.name
+            ?.takeIf { row.installed?.repositoryUrl != null && row.installed.repositoryUrl != row.wrapper.repositoryData.url }
+            ?.let { "Available in: $it" }
+        val meta = listOfNotNull(p?.language?.let { languageName(it) }, version, source, availableFrom)
         val title = vbox(2.0,
             label(row.name, "bold").apply { isWrapText = false },
             label(meta.joinToString(" · "), "faint", "small"),

@@ -116,13 +116,15 @@ object RepositoryManager {
         mapper.readValue<Repository>(app.get(convertRawGitUrl(url), cacheTime = 15, cacheUnit = TimeUnit.MINUTES).text)
     }.onFailure { System.err.println("Failed to read repository $url: $it") }.getOrNull()
 
-    private suspend fun parsePlugins(pluginsUrl: String): List<SitePlugin> = runCatching {
-        mapper.readValue<List<SitePlugin>>(app.get(convertRawGitUrl(pluginsUrl), cacheTime = 15, cacheUnit = TimeUnit.MINUTES).text)
-    }.onFailure { System.err.println("Failed to read plugin list $pluginsUrl: $it") }.getOrDefault(emptyList())
+    private suspend fun parsePlugins(pluginsUrl: String): List<SitePlugin> =
+        mapper.readValue(app.get(convertRawGitUrl(pluginsUrl), cacheTime = 15, cacheUnit = TimeUnit.MINUTES).text)
 
-    suspend fun getRepoPlugins(repositoryData: RepositoryData): List<PluginWrapper>? {
+    suspend fun getRepoPlugins(repositoryData: RepositoryData): List<PluginWrapper>? = try {
         val repo = parseRepository(repositoryData.url) ?: return null
-        return repo.pluginLists.flatMap { url -> parsePlugins(url).map { PluginWrapper(repo, repositoryData, it) } }
+        repo.pluginLists.flatMap { url -> parsePlugins(url).map { PluginWrapper(repo, repositoryData, it) } }
+    } catch (t: Throwable) {
+        System.err.println("Failed to load extensions from ${repositoryData.name} (${repositoryData.url}): $t")
+        null
     }
 
     fun getRepositories(): List<RepositoryData> =
