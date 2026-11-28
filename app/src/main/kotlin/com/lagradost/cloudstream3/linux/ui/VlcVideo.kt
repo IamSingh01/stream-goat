@@ -19,7 +19,6 @@ import uk.co.caprica.vlcj.player.embedded.videosurface.callback.BufferFormatCall
 import uk.co.caprica.vlcj.player.embedded.videosurface.callback.RenderCallback
 import java.nio.ByteBuffer
 import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -144,7 +143,9 @@ class VideoView : Region() {
     private val image = ImageView().apply { isSmooth = true; isPreserveRatio = false; isCache = false }
     @Volatile private var pixelBuffer: PixelBuffer<ByteBuffer>? = null
     @Volatile private var displayPixels: ByteBuffer? = null
-    private val latestFrame = AtomicReference<ByteArray?>(null)
+    private val frameLock = Any()
+    @Volatile private var latestFrame: ByteArray? = null
+    @Volatile private var frameReady = false
     private val pending = AtomicBoolean(false)
     @Volatile private var closed = false
     private var bufferW = 0
@@ -216,7 +217,7 @@ class VideoView : Region() {
                 val pb = PixelBuffer(bufferW, bufferH, pixels, PixelFormat.getByteBgraPreInstance())
                 displayPixels = pixels
                 pixelBuffer = pb
-                latestFrame.set(null)
+                synchronized(frameLock) { latestFrame = ByteArray(bufferW * bufferH * 4); frameReady = false }
                 Platform.runLater {
                     if (displayW == 0.0) { displayW = bufferW.toDouble(); displayH = bufferH.toDouble() }
                     image.image = WritableImage(pb)
@@ -239,6 +240,8 @@ class VideoView : Region() {
     fun close() {
         closed = true
         pixelBuffer = null
+        displayPixels = null
+        synchronized(frameLock) { latestFrame = null; frameReady = false }
         image.image = null
     }
 
@@ -282,7 +285,7 @@ class VideoView : Region() {
         val pb = PixelBuffer(w, h, pixels, PixelFormat.getByteBgraPreInstance())
         closed = false
         displayPixels = pixels
-        latestFrame.set(null)
+        synchronized(frameLock) { latestFrame = ByteArray(w * h * 4); frameReady = false }
         pixelBuffer = pb
         mpvTarget = target
         bufferW = w; bufferH = h
@@ -309,13 +312,15 @@ class VideoView : Region() {
         if (closed) return
         val size = bufferW * bufferH * 4
         if (size <= 0 || source.capacity() < size) return
-        val snapshot = ByteArray(size)
         try {
-            source.duplicate().apply { clear(); limit(size) }.get(snapshot)
+            synchronized(frameLock) {
+                val snapshot = latestFrame ?: return
+                source.duplicate().apply { clear(); limit(size) }.get(snapshot)
+                frameReady = true
+            }
         } catch (_: Throwable) {
             return
         }
-        latestFrame.set(snapshot)
         scheduleFrameUpload()
     }
 
@@ -324,14 +329,21 @@ class VideoView : Region() {
         Platform.runLater {
             val pb = pixelBuffer
             val pixels = displayPixels
-            val frame = latestFrame.getAndSet(null)
-            if (!closed && pb != null && pb === pixelBuffer && pixels != null && frame != null && frame.size == pixels.capacity()) {
-                pixels.duplicate().apply { clear() }.put(frame)
-                pb.updateBuffer { null }
+            var copied = false
+            if (!closed && pb != null && pb === pixelBuffer && pixels != null) {
+                synchronized(frameLock) {
+                    val frame = latestFrame
+                    if (frameReady && frame != null && frame.size == pixels.capacity()) {
+                        pixels.duplicate().apply { clear() }.put(frame)
+                        frameReady = false
+                        copied = true
+                    }
+                }
+                if (copied) pb.updateBuffer { null }
             }
             pending.set(false)
             // If a newer frame arrived during the upload, schedule exactly one more pulse.
-            if (latestFrame.get() != null) scheduleFrameUpload()
+            if (synchronized(frameLock) { frameReady }) scheduleFrameUpload()
         }
     }
 
@@ -340,7 +352,7 @@ class VideoView : Region() {
         mpvTarget = null
         pixelBuffer = null
         displayPixels = null
-        latestFrame.set(null)
+        synchronized(frameLock) { latestFrame = null; frameReady = false }
         pending.set(false)
         closed = false
     }
