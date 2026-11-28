@@ -80,6 +80,7 @@ class ExtensionsPage : StackPane(), Refreshable {
     private var repoFilterUrls: Map<String, String> = emptyMap()
     private var changingRepoFilter = false
     private var resettingFilters = false
+    private var refreshGeneration = 0L
 
     private fun resetFiltersForRepositoryChange() {
         if (resettingFilters) return
@@ -106,7 +107,9 @@ class ExtensionsPage : StackPane(), Refreshable {
     ).joinToString("\u0000")
 
     private fun invalidateCards(internalName: String) {
-        cardCache.keys.removeIf { it.startsWith(internalName + "\u0000") }
+        // Cache keys are composite (internal name + repository + version + state).
+        // Match the first key segment rather than trying to remove a card by its bare name.
+        cardCache.keys.removeIf { it.substringBefore('\u0000') == internalName }
     }
 
     init {
@@ -188,10 +191,12 @@ class ExtensionsPage : StackPane(), Refreshable {
 
     private fun growWide(node: Node) = javafx.scene.layout.HBox.setHgrow(node, Priority.ALWAYS)
 
-    override fun onShow() = refresh()
+    // Re-read repositories whenever the Extensions page is opened. A cached catalogue can
+    // otherwise keep showing a repository that was removed or a previous "All repositories" view.
+    override fun onShow() = refresh(force = true)
 
     fun refresh(force: Boolean = false) {
-        if (loadingRepos) {
+        if (loadingRepos && !force) {
             applyFilter(resetPage = false)
             return
         }
@@ -199,7 +204,12 @@ class ExtensionsPage : StackPane(), Refreshable {
             applyFilter(resetPage = false)
             return
         }
+        val generation = ++refreshGeneration
         val repos = RepositoryManager.getRepositories()
+        val validUrls = repos.mapTo(mutableSetOf()) { it.url }
+        // Drop catalogue entries from repositories that no longer exist before rendering.
+        available = available.filter { it.repositoryData.url in validUrls }
+        repoFilterUrls = emptyMap()
         renderRepos(repos, emptyMap())
         loadingRepos = true
         stats.text = "Reading ${repos.size} repositories…"
@@ -213,6 +223,7 @@ class ExtensionsPage : StackPane(), Refreshable {
                     "${repo.name} — ${repo.url.substringAfter("://").substringBefore("/")}"
                 } else repo.name
             }
+            if (generation != refreshGeneration) return@launch
             repoFilterUrls = labelsByUrl.entries.associate { it.value to it.key }
             val repositoryOptions = listOf("All repositories") + repos.map { labelsByUrl[it.url] ?: it.name }
             // Read the selection after the network requests finish; users may choose All repositories while loading.
@@ -247,6 +258,10 @@ class ExtensionsPage : StackPane(), Refreshable {
                     }
                     repeat(repos.size) {
                         val (repo, plugins) = completed.receive()
+                        if (generation != refreshGeneration) {
+                            completed.close()
+                            return@coroutineScope
+                        }
                         perRepo[repo] = plugins
                         available = perRepo.values.filterNotNull().flatten()
                         renderRepos(repos, perRepo)
@@ -263,16 +278,18 @@ class ExtensionsPage : StackPane(), Refreshable {
 
                         // Invalidate only cards supplied by this repository. Clearing the
                         // whole cache here would cancel icon downloads for every earlier result.
-                        plugins.orEmpty().forEach { cardCache.remove(it.plugin.internalName) }
+                        plugins.orEmpty().forEach { invalidateCards(it.plugin.internalName) }
                         stats.text = "Loaded ${perRepo.size} of ${repos.size} repositories · ${available.size} available"
                         applyFilter()
                     }
                     completed.close()
                 }
             } finally {
-                loadingRepos = false
-                repositoriesLoaded = true
-                applyFilter(resetPage = false)
+                if (generation == refreshGeneration) {
+                    loadingRepos = false
+                    repositoriesLoaded = true
+                    applyFilter(resetPage = false)
+                }
             }
         }
     }
@@ -302,7 +319,10 @@ class ExtensionsPage : StackPane(), Refreshable {
     private fun applyFilter(resetPage: Boolean = false) {
         val installed = PluginManager.installed()
         val byName = installed.associateBy { it.internalName }
-        val selectedRepoUrl = repoFilter.value?.let { repoFilterUrls[it] }
+        val selectedRepoLabel = repoFilter.value
+        val selectedRepoUrl = selectedRepoLabel
+            ?.takeUnless { it == "All repositories" }
+            ?.let { repoFilterUrls[it] }
         // In a specific repository view, use that repository's copy. In All repositories,
         // prefer the installed origin so Update does not silently switch sources.
         val rows = available
@@ -327,6 +347,7 @@ class ExtensionsPage : StackPane(), Refreshable {
         // ComboBox.selectionModel.selectedItem can retain the previous repository while
         // its items are being replaced. The value property is the displayed selection;
         // using selectedItem here made "All repositories" keep filtering by the last repo.
+        // "All repositories" is a deliberate aggregate view, never the previously selected URL.
         val repoUrl = selectedRepoUrl
         val typeSet = TYPE_FILTERS.getOrNull(types.selected)?.second
         // Adult (NSFW) extensions stay out of the list unless turned on in Settings → Profiles; installed ones stay manageable.
@@ -619,13 +640,24 @@ class ExtensionsPage : StackPane(), Refreshable {
                 if (row.hasUpdate) actions.children += button("Update", Icons.REFRESH, "btn-accent", "btn-small") { install(row.wrapper!!) }
                 // A failed one (e.g. its file is missing after restoring a backup): download it again in one click.
                 if (failure != null && !row.hasUpdate) actions.children += button("Reinstall", Icons.REFRESH, "btn-accent", "btn-small") {
-                    if (busy.add(row.internalName)) renderGrid()
+                    val name = row.internalName
+                    if (!busy.add(name)) return@button
+                    busyAction[name] = "Reinstalling"
+                    invalidateCards(name)
+                    applyFilter(resetPage = false)
                     ui.launch {
-                        val r = withContext(Engine.dispatcher) { PluginManager.reinstall(row.internalName) }
-                        busy -= row.internalName
-                        r.onSuccess { Toasts.show("${row.wrapper?.plugin?.name ?: row.internalName} works again") }
-                            .onFailure { Toasts.show("Couldn't reinstall: ${it.message ?: it}", seconds = 8.0) }
-                        applyFilter()
+                        try {
+                            val r = withContext(Engine.dispatcher) { PluginManager.reinstall(name) }
+                            r.onSuccess { Toasts.show("${row.wrapper?.plugin?.name ?: name} works again") }
+                                .onFailure { Toasts.show("Couldn't reinstall: ${it.message ?: it}", seconds = 8.0) }
+                        } catch (t: Throwable) {
+                            Toasts.show("Couldn't reinstall: ${t.message ?: t}", seconds = 8.0)
+                        } finally {
+                            busy.remove(name)
+                            busyAction.remove(name)
+                            invalidateCards(name)
+                            applyFilter(resetPage = false)
+                        }
                     }
                 }
                 actions.children += button("Uninstall", Icons.DELETE, "btn-danger", "btn-small") { uninstall(row) }
