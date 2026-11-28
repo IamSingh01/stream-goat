@@ -115,13 +115,34 @@ object PluginManager {
 
         // Do not even schedule the other extensions until the saved Home extension has
         // registered its providers. This makes the selected source usable as early as possible.
+        val restoredBeforeParallel = mutableSetOf<String>()
         val saved = all.firstOrNull { data ->
-            (savedPlugin.isNotBlank() && data.internalName.equals(savedPlugin, true)) ||
-                (savedPlugin.isBlank() && savedProvider.isNotBlank() &&
-                    (data.name.equals(savedProvider, true) || data.internalName.equals(savedProvider, true)))
+            savedPlugin.isNotBlank() && data.internalName.equals(savedPlugin, true)
+        } ?: all.firstOrNull { data ->
+            savedProvider.isNotBlank() &&
+                (data.name.equals(savedProvider, true) || data.internalName.equals(savedProvider, true))
         }
-        saved?.let { loadOne(it).await() }
-        all.filterNot { it === saved }.map { loadOne(it) }.awaitAll()
+
+        // Newer installs have an exact plugin ID. For older installs, that ID did not
+        // exist yet, so load extensions one at a time until the saved provider registers;
+        // remember the owning extension so every later startup can restore it directly.
+        saved?.let {
+            loadOne(it).await()
+            restoredBeforeParallel += it.internalName
+        }
+        if (savedProvider.isNotBlank() && savedProvider != "My feed" &&
+            Engine.providers().none { it.name.equals(savedProvider, true) }) {
+            for (data in all) {
+                if (data.internalName in restoredBeforeParallel) continue
+                loadOne(data).await()
+                restoredBeforeParallel += data.internalName
+                if (Engine.providers().any { it.name.equals(savedProvider, true) }) {
+                    Settings.lastHomePlugin = data.internalName
+                    break
+                }
+            }
+        }
+        all.filterNot { it.internalName in restoredBeforeParallel }.map { loadOne(it) }.awaitAll()
         System.err.println("I/plugins: loaded ${loaded.size}/${all.size} extensions")
         // The desktop marks initial loading complete only after built-in Stremio add-ons
         // have also been restored. A 0/0 progress value is never treated as readiness.
