@@ -524,26 +524,36 @@ class ExtensionsPage : StackPane(), Refreshable {
     private fun uninstall(row: ExtRow) {
         val name = row.internalName
         if (!busy.add(name)) return
+
+        // Give immediate, visible feedback before the file operation starts.
         busyAction[name] = "Uninstalling"
         invalidateCards(name)
+        stats.text = "Uninstalling ${row.name}…"
+        Toasts.show("Uninstalling ${row.name}…")
         applyFilter(resetPage = false)
+
         ui.launch {
-            try {
-                withContext(Engine.dispatcher) { PluginManager.uninstall(name) }
-                val stillInstalled = PluginManager.installed().any { it.internalName == name }
-                invalidateCards(name)
-                if (stillInstalled) {
-                    Toasts.show("Couldn't uninstall ${row.name}: it is still registered as installed", seconds = 8.0)
-                } else {
-                    Toasts.show("Uninstalled ${row.name}")
+            val result = runCatching {
+                withContext(Engine.dispatcher) {
+                    PluginManager.uninstall(name)
                 }
-            } catch (t: Throwable) {
-                Toasts.show("Couldn't uninstall ${row.name}: ${t.message ?: t}", seconds = 8.0)
-            } finally {
+                check(PluginManager.installed().none { it.internalName == name }) {
+                    "${row.name} is still registered as installed"
+                }
+            }
+
+            // All visible state changes are committed on the JavaFX thread. Do not leave
+            // a cached Installed card behind after the persisted plugin record is removed.
+            javafx.application.Platform.runLater {
                 busy.remove(name)
                 busyAction.remove(name)
                 invalidateCards(name)
                 applyFilter(resetPage = false)
+                result.onSuccess {
+                    Toasts.show("Uninstalled ${row.name}")
+                }.onFailure { error ->
+                    Toasts.show("Couldn't uninstall ${row.name}: ${error.message ?: error}", seconds = 8.0)
+                }
             }
         }
     }
