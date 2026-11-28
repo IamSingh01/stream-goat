@@ -97,10 +97,25 @@ object Engine {
         apis.forEachIndexed { p, api ->
             Catalogs.enabled(api).forEachIndexed { position, entry ->
                 launch(dispatcher) {
+                    val baseOrder = p * 1_000_000 + position * 100
+
+                    // Paint the last successful response first so the Home page has cards
+                    // before any provider network request completes.
+                    HomeCache.get(api.name, entry.section.name)?.items
+                        ?.map { it.copy(list = ContentFilter.filter(it.list)) }
+                        ?.filter { it.list.isNotEmpty() }
+                        ?.forEachIndexed { i, list ->
+                            send(HomeSection(baseOrder + i, api, entry.section, list))
+                        }
+
+                    // Then refresh in the background. Fresh rows replace cached rows in-place.
                     val response = homePage(api, entry.section, 1)
-                    response?.items?.map { it.copy(list = ContentFilter.filter(it.list)) }
-                        ?.filter { it.list.isNotEmpty() }?.forEachIndexed { i, list ->
-                        send(HomeSection(p * 1_000_000 + position * 100 + i, api, entry.section, list))
+                    if (response != null) {
+                        HomeCache.put(api.name, entry.section.name, response)
+                        response.items.map { it.copy(list = ContentFilter.filter(it.list)) }
+                            .filter { it.list.isNotEmpty() }.forEachIndexed { i, list ->
+                                send(HomeSection(baseOrder + i, api, entry.section, list))
+                            }
                     }
                 }
             }
