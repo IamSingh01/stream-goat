@@ -319,7 +319,10 @@ class HomePage : StackPane(), Refreshable, TopBarActions {
         }
         continueShelf?.let { nodes += it }
         nodes += sections.values
-        if (current == null && !Settings.lastHomeProvider.isNullOrBlank() && providers.isNotEmpty()) {
+        // A provider missing during incremental startup is not necessarily unavailable:
+        // its extension may simply be later in the restore queue. Only report it missing
+        // after PluginManager has finished the complete initial load.
+        if (ready && current == null && !Settings.lastHomeProvider.isNullOrBlank() && providers.isNotEmpty()) {
             nodes += emptyState(Icons.EXTENSION, "Your saved Home source isn't available",
                 "RoarStream kept your previous selection. Install or enable that extension, or choose another source from the Home source menu.")
         }
