@@ -79,14 +79,14 @@ class HomePage : StackPane(), Refreshable, TopBarActions {
         children += scroll
         // The top bar turns solid once the banner has scrolled away beneath it.
         scroll.vvalueProperty().addListener { _, _, _ -> updateTopBar() }
+        // Refresh as each extension registers. Waiting for initialLoadComplete made
+        // the entire Home screen blank until every installed extension had finished.
+        ui.launch {
+            PluginManager.version.collect { refreshProviders() }
+        }
         ui.launch {
             PluginManager.initialLoadComplete.collect { ready ->
                 if (ready) refreshProviders(force = true)
-            }
-        }
-        ui.launch {
-            PluginManager.version.collect {
-                if (PluginManager.initialLoadComplete.value) refreshProviders()
             }
         }
         Library.onChange { ui.launch { if (scene != null) renderContinue() } }
@@ -176,9 +176,24 @@ class HomePage : StackPane(), Refreshable, TopBarActions {
         val feed = Catalogs.feedProviders(fresh).takeIf { Catalogs.multiFeed && it.isNotEmpty() }
         val fresher = listOfNotNull(feed?.let { Source(FEED, "My feed", it) }) + fresh.map { Source(it.name, it.name, listOf(it)) }
         if (!force && fresher == sources && current != null) return
+        val activeKey = current?.key
         providers = fresh
         sources = fresher
-        val wanted = current?.key ?: Settings.lastHomeProvider
+
+        // A newly registered extension changes the source menu, not the user's active
+        // source. Keep already-rendered cards visible instead of restarting its request.
+        if (activeKey != null) {
+            val active = sources.firstOrNull { it.key == activeKey }
+            if (active != null) {
+                current = active
+                sourceButton.text = active.label
+                sourceButton.isVisible = sources.size > 1 || active.key == FEED
+                render()
+                return
+            }
+        }
+
+        val wanted = Settings.lastHomeProvider
         val preferred = sources.indexOfFirst { it.key == wanted }
 
         when {
