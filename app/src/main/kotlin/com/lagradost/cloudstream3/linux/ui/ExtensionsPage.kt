@@ -67,7 +67,6 @@ class ExtensionsPage : StackPane(), Refreshable {
     private val view = ChipGroup { applyFilter(resetPage = true) }
     private val types = ChipGroup { applyFilter(resetPage = true) }
     private var rows: List<ExtRow> = emptyList()
-    private var shown = PAGE
     private val grid = FlowPane(14.0, 14.0)
     private lateinit var scroll: ScrollPane
     // Reuse card nodes across provider-state updates instead of rebuilding dozens of controls.
@@ -229,12 +228,7 @@ class ExtensionsPage : StackPane(), Refreshable {
                     else -> true
                 }
         }.sortedWith(compareBy({ it.installed == null }, { it.name.lowercase() }))
-        if (resetPage) {
-            shown = PAGE
-            if (::scroll.isInitialized) scroll.vvalue = 0.0
-        } else {
-            shown = shown.coerceIn(PAGE, rows.size.coerceAtLeast(PAGE))
-        }
+        if (resetPage && ::scroll.isInitialized) scroll.vvalue = 0.0
         // Cards contain actions/status from a particular installed-version snapshot.
         // Rebuild them whenever filtering or plugin state changes.
         cardCache.clear()
@@ -245,17 +239,19 @@ class ExtensionsPage : StackPane(), Refreshable {
             (if (hiddenAdult > 0) " · $hiddenAdult adult (NSFW) hidden, see Settings → Profiles" else "")
     }
 
-    /** Renders cards a page at a time: big repositories list hundreds of extensions. */
+    /** Render the complete filtered extension catalogue; no hidden pages or Show more button. */
     private fun renderGrid() {
         val w = cardWidth()
-        val nodes = rows.take(shown).map { row ->
+        val nodes = rows.map { row ->
             cardCache.getOrPut(row.internalName) { card(row) }.apply { prefWidth = w }
         }.toMutableList<Node>()
-        if (rows.isEmpty()) nodes += label(if (available.isEmpty() && loadingRepos) "Loading extensions…" else "No extensions match these filters", "muted")
-        if (rows.size > shown) nodes += button("Show ${minOf(PAGE, rows.size - shown)} more (${rows.size - shown} left)", null, "btn-ghost") {
-            shown += PAGE
-            renderGrid()
-        }
+        if (rows.isEmpty()) nodes += label(
+            when {
+                available.isEmpty() && loadingRepos -> "Loading extensions from repositories…"
+                available.isEmpty() -> "No repository extensions are available. Check repository status above."
+                else -> "No extensions match these filters"
+            }, "muted"
+        )
         // Provider progress can emit repeatedly while a user is scrolling. If the visible
         // nodes have not changed, don't detach/re-add them: that causes layout jitter.
         if (grid.children.size == nodes.size && grid.children.indices.all { grid.children[it] === nodes[it] }) return
@@ -423,9 +419,7 @@ class ExtensionsPage : StackPane(), Refreshable {
         return card
     }
 
-    private companion object {
-        const val PAGE = 60
-    }
+    private companion object {}
 }
 
 /** Installed Stremio add-ons: add by manifest URL, turn on/off, remove. */
