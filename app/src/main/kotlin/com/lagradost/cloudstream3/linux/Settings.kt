@@ -201,6 +201,11 @@ object Settings {
         // This selection is made immediately before an app may be closed; commit synchronously.
         set(v) { prefs.edit().putString("last_home_provider", v ?: "").commit() }
 
+    /** Installed extension ID backing the saved Home provider, used to restore it first at startup. */
+    var lastHomePlugin: String
+        get() = prefs.getString("last_home_plugin", "") ?: ""
+        set(v) { prefs.edit().putString("last_home_plugin", v).commit() }
+
     /** Extension languages to show (lowercase codes such as "en", "hi"); empty = all, like the official app. */
     var extensionLanguages: Set<String>
         get() = string("extension_languages", "").split(',').map { it.trim().lowercase() }.filter { it.isNotEmpty() }.toSet()
