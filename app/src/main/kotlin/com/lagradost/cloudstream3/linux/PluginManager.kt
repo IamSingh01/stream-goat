@@ -90,7 +90,16 @@ object PluginManager {
     suspend fun loadAll(): Map<String, Throwable> = coroutineScope {
         Platform.init()
         _initialLoadComplete.value = false
-        val all = installed()
+        val savedProvider = Settings.lastHomeProvider.orEmpty()
+        val savedPlugin = Settings.lastHomePlugin
+        // Restore the extension backing the saved Home source first; remaining extensions follow.
+        val all = installed().sortedBy { data ->
+            when {
+                savedPlugin.isNotBlank() && data.internalName.equals(savedPlugin, true) -> 0
+                savedProvider.isNotBlank() && (data.name.equals(savedProvider, true) || data.internalName.equals(savedProvider, true)) -> 1
+                else -> 2
+            }
+        }
         _progress.value = LoadProgress(0, all.size)
         all.map { data ->
             async(Engine.dispatcher) {
