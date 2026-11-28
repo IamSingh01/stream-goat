@@ -101,19 +101,27 @@ object PluginManager {
             }
         }
         _progress.value = LoadProgress(0, all.size)
-        all.map { data ->
-            async(Engine.dispatcher) {
-                val file = File(data.filePath)
-                if (file.exists()) loadPlugin(file, data)
-                else {
-                    // A restored backup (maybe from another device) lists extensions without their files: download them.
-                    runCatching { redownload(data) }
-                        .onSuccess { (f, d) -> failures.remove(data.internalName); loadPlugin(f, d) }
-                        .onFailure { failures[data.internalName] = IllegalStateException("Its file is missing and couldn't be downloaded again (${it.message ?: it}). Use Reinstall.") }
-                }
-                _progress.value = _progress.value.let { it.copy(done = it.done + 1) }
+        suspend fun loadOne(data: PluginData) = async(Engine.dispatcher) {
+            val file = File(data.filePath)
+            if (file.exists()) loadPlugin(file, data)
+            else {
+                // A restored backup (maybe from another device) lists extensions without their files: download them.
+                runCatching { redownload(data) }
+                    .onSuccess { (downloaded, fresh) -> failures.remove(data.internalName); loadPlugin(downloaded, fresh) }
+                    .onFailure { failures[data.internalName] = IllegalStateException("Its file is missing and couldn't be downloaded again (${it.message ?: it}). Use Reinstall.") }
             }
-        }.awaitAll()
+            _progress.value = _progress.value.let { it.copy(done = it.done + 1) }
+        }
+
+        // Do not even schedule the other extensions until the saved Home extension has
+        // registered its providers. This makes the selected source usable as early as possible.
+        val saved = all.firstOrNull { data ->
+            (savedPlugin.isNotBlank() && data.internalName.equals(savedPlugin, true)) ||
+                (savedPlugin.isBlank() && savedProvider.isNotBlank() &&
+                    (data.name.equals(savedProvider, true) || data.internalName.equals(savedProvider, true)))
+        }
+        saved?.let { loadOne(it).await() }
+        all.filterNot { it === saved }.map { loadOne(it) }.awaitAll()
         System.err.println("I/plugins: loaded ${loaded.size}/${all.size} extensions")
         // The desktop marks initial loading complete only after built-in Stremio add-ons
         // have also been restored. A 0/0 progress value is never treated as readiness.
