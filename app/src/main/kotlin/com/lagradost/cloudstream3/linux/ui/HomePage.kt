@@ -254,8 +254,11 @@ class HomePage : StackPane(), Refreshable, TopBarActions {
 
     private fun render() {
         val nodes = mutableListOf<Node>()
-        val noProviders = providers.isEmpty() && !PluginManager.progress.value.running
+        val ready = PluginManager.initialLoadComplete.value
+        val noProviders = providers.isEmpty() && ready && !PluginManager.progress.value.running
         when {
+            !ready && providers.isEmpty() -> nodes += emptyState(Icons.EXTENSION, "Restoring your extensions",
+                "Your Home screen is opening first. Saved catalog cards will appear from cache as soon as their extensions are ready.")
             noProviders && Profiles.isKids -> nodes += emptyState(Icons.FACE, "Nothing here yet",
                 "Ask a grown-up to allow some extensions for this profile (Manage profiles → edit → Allowed extensions).")
             noProviders -> nodes += emptyState(
