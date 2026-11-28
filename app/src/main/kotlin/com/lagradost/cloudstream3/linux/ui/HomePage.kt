@@ -143,7 +143,12 @@ class HomePage : StackPane(), Refreshable, TopBarActions {
             prefWidth = 300.0
             isFocusTraversable = true
         }
-        val list = VBox(2.0, *sourceRows.toTypedArray())
+        val list = VBox(2.0).apply {
+            if (sourceRows.isEmpty()) {
+                children += label("No Home sources are available yet. Install an extension with Home catalogs, then it will appear here.", "muted")
+                    .apply { isWrapText = true; maxWidth = 280.0 }
+            } else children.addAll(sourceRows)
+        }
         filter.textProperty().addListener { _, _, value ->
             val query = value.trim()
             sourceRows.forEachIndexed { index, row ->

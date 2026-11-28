@@ -264,19 +264,59 @@ object PluginManager {
         changed()
     }
 
-    /** Downloads (preferring the native .jar when the repo publishes one) and loads a plugin. */
-    suspend fun install(wrapper: PluginWrapper): Result<LoadedPlugin> {
+    /** Downloads, validates and loads an extension before publishing it as installed.
+     * If an update fails, restore the previous file and installed record instead of leaving
+     * a broken "Installed" entry that blocks the Install button.
+     */
+    suspend fun install(wrapper: PluginWrapper): Result<LoadedPlugin> = runCatching {
         val p = wrapper.plugin
+        require(p.status != 0) { "This repository marks the extension as unavailable" }
         val useJar = p.jarUrl != null
         val target = RepositoryManager.pluginPath(p.internalName, wrapper.repositoryData.url, if (useJar) "jar" else "cs3")
-        installed().find { it.internalName == p.internalName }?.let { uninstall(it.internalName) }
-        return runCatching {
-            if (useJar) RepositoryManager.download(p.jarUrl!!, target, p.jarHash)
-            else RepositoryManager.download(p.url, target, p.fileHash)
-        }.mapCatching { file ->
+        val previous = installed().firstOrNull { it.internalName == p.internalName }
+        val previousFile = previous?.let { File(it.filePath) }
+        val filesToBackup = listOfNotNull(previousFile, target).distinctBy { it.absolutePath }.filter { it.exists() }
+        val backups = linkedMapOf<File, File>()
+        try {
+            filesToBackup.forEach { original ->
+                val backup = File.createTempFile("plugin-backup-", ".${original.extension}", Platform.context.getCacheDir())
+                original.copyTo(backup, overwrite = true)
+                backups[original] = backup
+            }
+
+            previous?.let {
+                unloadPlugin(File(it.filePath).absolutePath)
+                saveInstalled(installed().filterNot { saved -> saved.internalName == p.internalName })
+            }
+
+            val file = if (useJar) RepositoryManager.download(p.jarUrl!!, target, p.jarHash)
+                else RepositoryManager.download(p.url, target, p.fileHash)
             val data = PluginData(p.internalName, p.url, true, file.absolutePath, p.version, wrapper.repositoryData.url, p.name)
+            val loadedPlugin = loadPlugin(file, data).getOrThrow()
             record(data)
-            loadPlugin(file, data).getOrThrow()
+            if (previousFile != null && previousFile.absolutePath != target.absolutePath) {
+                check(previousFile.delete() || !previousFile.exists()) { "The previous extension file could not be removed" }
+            }
+            loadedPlugin
+        } catch (failure: Throwable) {
+            unloadPlugin(target.absolutePath)
+            target.delete()
+            backups.forEach { (original, backup) ->
+                original.parentFile?.mkdirs()
+                backup.copyTo(original, overwrite = true)
+            }
+            if (previous != null) {
+                record(previous)
+                previousFile?.takeIf { it.exists() }?.let { oldFile ->
+                    runCatching { loadPlugin(oldFile, previous).getOrThrow() }
+                        .exceptionOrNull()?.let(failure::addSuppressed)
+                }
+            } else {
+                saveInstalled(installed().filterNot { it.internalName == p.internalName })
+            }
+            throw failure
+        } finally {
+            backups.values.forEach { it.delete() }
         }
     }
 
@@ -295,8 +335,9 @@ object PluginManager {
 
     fun uninstall(internalName: String) {
         val data = installed().find { it.internalName == internalName } ?: return
-        unloadPlugin(File(data.filePath).absolutePath)
-        File(data.filePath).delete()
+        val file = File(data.filePath)
+        unloadPlugin(file.absolutePath)
+        check(file.delete() || !file.exists()) { "Could not remove extension file: ${file.absolutePath}" }
         saveInstalled(installed().filter { it.internalName != internalName })
         failures.remove(internalName)
         // Notify every screen after the persisted installed list has changed.

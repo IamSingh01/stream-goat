@@ -64,8 +64,8 @@ class ExtensionsPage : StackPane(), Refreshable {
     private val filterField = TextField().apply { promptText = "Filter extensions" }
     private val language = ComboBox<String>().apply { items.setAll("All languages"); selectionModel.select(0) }
     private val repoFilter = ComboBox<String>().apply { items.setAll("All repositories"); selectionModel.select(0) }
-    private val view = ChipGroup { applyFilter(resetPage = true) }
-    private val types = ChipGroup { applyFilter(resetPage = true) }
+    private val view = ChipGroup { applyFilter(resetPage = false) }
+    private val types = ChipGroup { applyFilter(resetPage = false) }
     private var rows: List<ExtRow> = emptyList()
     private val grid = FlowPane(14.0, 14.0)
     private lateinit var scroll: ScrollPane
@@ -75,6 +75,8 @@ class ExtensionsPage : StackPane(), Refreshable {
     private val busy = mutableSetOf<String>()
     private var available: List<PluginWrapper> = emptyList()
     private var loadingRepos = false
+    private var repositoriesLoaded = false
+    private var repoFilterUrls: Map<String, String> = emptyMap()
 
     init {
         val header = hbox(12.0,
@@ -92,8 +94,8 @@ class ExtensionsPage : StackPane(), Refreshable {
         types.setItems(TYPE_FILTERS.map { it.first })
         // Keep the current scroll position while filtering as the user types.
         filterField.textProperty().addListener { _, _, _ -> applyFilter(resetPage = false) }
-        language.setOnAction { applyFilter(resetPage = true) }
-        repoFilter.setOnAction { applyFilter(resetPage = true) }
+        language.valueProperty().addListener { _, _, _ -> applyFilter(resetPage = false) }
+        repoFilter.valueProperty().addListener { _, _, _ -> applyFilter(resetPage = false) }
         growWide(filterField)
         val clearSearch = button("×", null, "btn-ghost", "btn-small") {
             // Clear the query only; leave the repository/language/type tabs untouched.
@@ -155,14 +157,17 @@ class ExtensionsPage : StackPane(), Refreshable {
 
     override fun onShow() = refresh()
 
-    fun refresh() {
-        val repos = RepositoryManager.getRepositories()
-        renderRepos(repos, emptyMap())
+    fun refresh(force: Boolean = false) {
         if (loadingRepos) {
-            // Keep installed extensions visible while a repository refresh is already running.
-            applyFilter()
+            applyFilter(resetPage = false)
             return
         }
+        if (repositoriesLoaded && !force) {
+            applyFilter(resetPage = false)
+            return
+        }
+        val repos = RepositoryManager.getRepositories()
+        renderRepos(repos, emptyMap())
         loadingRepos = true
         stats.text = "Reading ${repos.size} repositories…"
         // Installed extension records are local and available immediately. Do not leave
@@ -170,12 +175,19 @@ class ExtensionsPage : StackPane(), Refreshable {
         applyFilter()
         ui.launch {
             val selectedRepo = repoFilter.value
-            val repositoryOptions = listOf("All repositories") + repos.map { it.name }.distinct()
+            val duplicateNames = repos.groupBy { it.name }.filterValues { it.size > 1 }.keys
+            val labelsByUrl = repos.associate { repo ->
+                repo.url to if (repo.name in duplicateNames) {
+                    "${repo.name} — ${repo.url.substringAfter("://").substringBefore("/")}"
+                } else repo.name
+            }
+            repoFilterUrls = labelsByUrl.entries.associate { it.value to it.key }
+            val repositoryOptions = listOf("All repositories") + repos.map { labelsByUrl[it.url] ?: it.name }
             repoFilter.items.setAll(repositoryOptions)
             val restoredRepo = selectedRepo?.takeIf { it in repositoryOptions } ?: "All repositories"
             repoFilter.selectionModel.clearSelection()
-            repoFilter.selectionModel.select(restoredRepo)
             repoFilter.value = restoredRepo
+            repoFilter.selectionModel.select(restoredRepo)
 
             // Fetch repositories concurrently and publish each result as soon as it arrives.
             // Waiting for associateWith { getRepoPlugins() } hid every available (not-installed)
@@ -220,7 +232,8 @@ class ExtensionsPage : StackPane(), Refreshable {
                 }
             } finally {
                 loadingRepos = false
-                applyFilter()
+                repositoriesLoaded = true
+                applyFilter(resetPage = false)
             }
         }
     }
@@ -250,7 +263,16 @@ class ExtensionsPage : StackPane(), Refreshable {
     private fun applyFilter(resetPage: Boolean = false) {
         val installed = PluginManager.installed()
         val byName = installed.associateBy { it.internalName }
-        val rows = available.map { ExtRow(it, byName[it.plugin.internalName]) } +
+        // A plugin can be mirrored by several repositories. Show one card, preferring
+        // the repository it was actually installed from so source and update actions agree.
+        val rows = available
+            .groupBy { it.plugin.internalName }
+            .values
+            .map { mirrors ->
+                val local = byName[mirrors.first().plugin.internalName]
+                val selected = mirrors.firstOrNull { it.repositoryData.url == local?.repositoryUrl } ?: mirrors.first()
+                ExtRow(selected, local)
+            } +
             installed.filter { local -> available.none { it.plugin.internalName == local.internalName } }.map { ExtRow(null, it) }
         val query = filterField.text.trim().lowercase()
         // Treat the visible "All …" entries as explicit sentinels. ComboBox selection
@@ -264,7 +286,7 @@ class ExtensionsPage : StackPane(), Refreshable {
         // its items are being replaced. The value property is the displayed selection;
         // using selectedItem here made "All repositories" keep filtering by the last repo.
         val selectedRepository = repoFilter.value
-        val repo = selectedRepository?.takeUnless { it == "All repositories" }
+        val repoUrl = selectedRepository?.let { repoFilterUrls[it] }
         val typeSet = TYPE_FILTERS.getOrNull(types.selected)?.second
         // Adult (NSFW) extensions stay out of the list unless turned on in Settings → Profiles; installed ones stay manageable.
         val nsfw = com.lagradost.cloudstream3.linux.ContentFilter.nsfwAllowed
@@ -273,7 +295,7 @@ class ExtensionsPage : StackPane(), Refreshable {
             (nsfw || row.installed != null || "NSFW" !in row.wrapper?.plugin?.tvTypes.orEmpty()) &&
             (query.isEmpty() || row.name.lowercase().contains(query) || row.wrapper?.plugin?.description.orEmpty().lowercase().contains(query)) &&
                 (lang == null || row.wrapper?.plugin?.language == lang) &&
-                (repo == null || row.wrapper?.repository?.name == repo) &&
+                (repoUrl == null || (row.wrapper?.repositoryData?.url ?: row.installed?.repositoryUrl) == repoUrl) &&
                 (typeSet == null || row.wrapper?.plugin?.tvTypes.orEmpty().any { it in typeSet }) &&
                 when (view.selected) {
                     1 -> row.installed != null
@@ -281,7 +303,8 @@ class ExtensionsPage : StackPane(), Refreshable {
                     else -> true
                 }
         }.sortedWith(compareBy({ it.installed == null }, { it.name.lowercase() }))
-        if (resetPage && ::scroll.isInitialized) scroll.vvalue = 0.0
+        // Filter and state changes preserve the current viewport; only explicit navigation
+        // should ever move the user to the top.
         // Keep existing card nodes while providers register. Recreating ImageViews on every
         // PluginManager.version event cancels their in-flight icon downloads, so icons never
         // finish loading during startup. Install/uninstall/update paths invalidate affected cards.
@@ -319,11 +342,7 @@ class ExtensionsPage : StackPane(), Refreshable {
             scroll.layout()
             val range = (nextContent.height - scroll.viewportBounds.height).coerceAtLeast(0.0)
             if (range > 0.0) scroll.vvalue = (oldOffset / range).coerceIn(0.0, 1.0)
-            // Card actions replace their own node; keep keyboard focus on the scroll
-            // surface rather than allowing JavaFX to reset the viewport to the top.
-            if (scroll.scene?.focusOwner == null || scroll.scene?.focusOwner?.scene == null) {
-                scroll.requestFocus()
-            }
+            // Do not steal focus from the search field or the action the user just used.
         }
     }
 
@@ -346,7 +365,7 @@ class ExtensionsPage : StackPane(), Refreshable {
                 val repo = withContext(Engine.dispatcher) { RepositoryManager.addRepository(input.trim()) }
                 repoField.clear()
                 Toasts.show("Added ${repo.name}")
-                refresh()
+                refresh(force = true)
             } catch (t: Throwable) {
                 Toasts.show("Couldn't add repository: ${t.message ?: t}", seconds = 7.0)
             }
@@ -360,7 +379,9 @@ class ExtensionsPage : StackPane(), Refreshable {
         }
         if (alert.showAndWait().orElse(ButtonType.CANCEL) != ButtonType.OK) return
         RepositoryManager.removeRepository(repo.url)
-        refresh()
+        available = available.filterNot { it.repositoryData.url == repo.url }
+        repoFilter.value = "All repositories"
+        refresh(force = true)
     }
 
     private fun install(wrapper: PluginWrapper) {
@@ -422,12 +443,14 @@ class ExtensionsPage : StackPane(), Refreshable {
     private fun updateAll() {
         ui.launch {
             Toasts.show("Checking for updates…")
-            val updated = withContext(Engine.dispatcher) { PluginManager.updateAll() }
-            cardCache.clear()
-            applyFilter()
-            Toasts.show(if (updated.isEmpty()) "No extensions needed an update" else "Updated ${updated.joinToString()}")
-            // Refresh repository metadata after the installed versions have changed.
-            refresh()
+            try {
+                val updated = withContext(Engine.dispatcher) { PluginManager.updateAll() }
+                cardCache.clear()
+                applyFilter(resetPage = false)
+                Toasts.show(if (updated.isEmpty()) "No extensions needed an update" else "Updated ${updated.joinToString()}")
+            } catch (t: Throwable) {
+                Toasts.show("Update failed: ${t.message ?: t}", seconds = 8.0)
+            }
         }
     }
 
@@ -459,7 +482,7 @@ class ExtensionsPage : StackPane(), Refreshable {
         val version = (p?.version ?: row.installed?.version)?.let { "v$it" }
         // Keep the originating repository visible even when an installed extension is
         // no longer present in the current repository catalogue.
-        val source = row.wrapper?.repository?.name
+        val source = row.wrapper?.repositoryData?.name
             ?: row.installed?.repositoryUrl?.let { url ->
                 RepositoryManager.getRepositories().firstOrNull { it.url == url }?.name
                     ?: url.substringAfter("://").substringBefore("/").takeIf { it.isNotBlank() }
@@ -487,9 +510,12 @@ class ExtensionsPage : StackPane(), Refreshable {
 
         val actions = hbox(8.0).apply { alignment = Pos.CENTER_RIGHT }
         when {
-            row.internalName in busy -> actions.children += hbox(8.0, ProgressIndicator().apply { setPrefSize(18.0, 18.0) }, label("Working…", "muted"))
-            row.installed == null -> actions.children += button("Install", Icons.DOWNLOAD, "btn-accent", "btn-small") { install(row.wrapper!!) }
-                .apply { isDisable = p?.status == 0 }
+            row.internalName in busy -> actions.children += hbox(8.0, ProgressIndicator().apply { setPrefSize(18.0, 18.0) }, label("Installing / updating…", "muted"))
+            row.installed == null -> actions.children += button("Install", Icons.DOWNLOAD, "btn-accent", "btn-small") { row.wrapper?.let(::install) }
+                .apply {
+                    isDisable = p?.status == 0 || row.wrapper == null
+                    if (p?.status == 0) tooltip("This repository marks the extension as unavailable")
+                }
             else -> {
                 actions.children += label(if (failure == null) "Installed" else "Error", if (failure == null) "good-text" else "error-text", "small")
                 actions.children += spacer()
