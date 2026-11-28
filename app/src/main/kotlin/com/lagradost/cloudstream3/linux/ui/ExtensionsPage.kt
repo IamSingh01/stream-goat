@@ -73,6 +73,7 @@ class ExtensionsPage : StackPane(), Refreshable {
     private val cardCache = mutableMapOf<String, VBox>()
     private val stats = label("", "muted")
     private val busy = mutableSetOf<String>()
+    private val busyAction = mutableMapOf<String, String>()
     private var available: List<PluginWrapper> = emptyList()
     private var loadingRepos = false
     private var repositoriesLoaded = false
@@ -334,7 +335,21 @@ class ExtensionsPage : StackPane(), Refreshable {
         val content = scroll.content as? Region
         val viewport = scroll.viewportBounds.height
         val oldOffset = if (content != null) scroll.vvalue * (content.height - viewport).coerceAtLeast(0.0) else 0.0
-        grid.children.setAll(nodes)
+        // Reconcile by node identity instead of setAll(): unchanged cards stay attached,
+        // preserving image loads, focus and the user's current scroll interaction.
+        nodes.forEachIndexed { index, node ->
+            val currentIndex = grid.children.indexOf(node)
+            when {
+                currentIndex == index -> Unit
+                currentIndex >= 0 -> {
+                    grid.children.removeAt(currentIndex)
+                    grid.children.add(index, node)
+                }
+                index >= grid.children.size -> grid.children.add(node)
+                else -> grid.children.add(index, node)
+            }
+        }
+        while (grid.children.size > nodes.size) grid.children.removeAt(grid.children.lastIndex)
         javafx.application.Platform.runLater {
             val nextContent = scroll.content as? Region ?: return@runLater
             nextContent.applyCss()
@@ -387,8 +402,9 @@ class ExtensionsPage : StackPane(), Refreshable {
     private fun install(wrapper: PluginWrapper) {
         val name = wrapper.plugin.internalName
         if (!busy.add(name)) return
+        busyAction[name] = "Installing"
         cardCache.remove(name)
-        applyFilter()
+        applyFilter(resetPage = false)
         ui.launch {
             try {
                 val result = withContext(Engine.dispatcher) { PluginManager.install(wrapper) }
@@ -402,6 +418,7 @@ class ExtensionsPage : StackPane(), Refreshable {
                 Toasts.show("${wrapper.plugin.name} failed: ${t.message ?: t}", seconds = 8.0)
             } finally {
                 busy.remove(name)
+                busyAction.remove(name)
                 cardCache.remove(name)
                 // Rebuild the row from the persisted installed records and current repository
                 // metadata; don't leave an old Install/Uninstall control on the card.
@@ -418,8 +435,9 @@ class ExtensionsPage : StackPane(), Refreshable {
     private fun uninstall(row: ExtRow) {
         val name = row.internalName
         if (!busy.add(name)) return
+        busyAction[name] = "Uninstalling"
         cardCache.remove(name)
-        applyFilter()
+        applyFilter(resetPage = false)
         ui.launch {
             try {
                 withContext(Engine.dispatcher) { PluginManager.uninstall(name) }
@@ -434,8 +452,9 @@ class ExtensionsPage : StackPane(), Refreshable {
                 Toasts.show("Couldn't uninstall ${row.name}: ${t.message ?: t}", seconds = 8.0)
             } finally {
                 busy.remove(name)
+                busyAction.remove(name)
                 cardCache.remove(name)
-                applyFilter()
+                applyFilter(resetPage = false)
             }
         }
     }
@@ -510,12 +529,18 @@ class ExtensionsPage : StackPane(), Refreshable {
 
         val actions = hbox(8.0).apply { alignment = Pos.CENTER_RIGHT }
         when {
-            row.internalName in busy -> actions.children += hbox(8.0, ProgressIndicator().apply { setPrefSize(18.0, 18.0) }, label("Installing / updating…", "muted"))
-            row.installed == null -> actions.children += button("Install", Icons.DOWNLOAD, "btn-accent", "btn-small") { row.wrapper?.let(::install) }
-                .apply {
-                    isDisable = p?.status == 0 || row.wrapper == null
-                    if (p?.status == 0) tooltip("This repository marks the extension as unavailable")
-                }
+            row.internalName in busy -> actions.children += hbox(8.0,
+                ProgressIndicator().apply { setPrefSize(18.0, 18.0) },
+                label("${busyAction[row.internalName] ?: "Working"}…", "muted"))
+            row.installed == null -> {
+                actions.children += label("Available", "muted", "small")
+                actions.children += spacer()
+                actions.children += button("Install", Icons.DOWNLOAD, "btn-accent", "btn-small") { row.wrapper?.let(::install) }
+                    .apply {
+                        isDisable = p?.status == 0 || row.wrapper == null
+                        if (p?.status == 0) tooltip("This repository marks the extension as unavailable")
+                    }
+            }
             else -> {
                 actions.children += label(if (failure == null) "Installed" else "Error", if (failure == null) "good-text" else "error-text", "small")
                 actions.children += spacer()

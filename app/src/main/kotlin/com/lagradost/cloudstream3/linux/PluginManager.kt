@@ -294,6 +294,7 @@ object PluginManager {
             val data = PluginData(p.internalName, p.url, true, file.absolutePath, p.version, wrapper.repositoryData.url, p.name)
             val loadedPlugin = loadPlugin(file, data).getOrThrow()
             record(data)
+            changed() // The installed record is committed after load; notify screens now.
             if (previousFile != null && previousFile.absolutePath != target.absolutePath) {
                 check(previousFile.delete() || !previousFile.exists()) { "The previous extension file could not be removed" }
             }
