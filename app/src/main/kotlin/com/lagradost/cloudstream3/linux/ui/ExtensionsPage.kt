@@ -341,7 +341,9 @@ class ExtensionsPage : StackPane(), Refreshable {
         // Treat the visible "All …" entries as explicit sentinels. ComboBox selection
         // indices can briefly be stale after repository metadata repopulates its items;
         // relying on selectedIndex here accidentally filters the aggregate view.
-        val selectedLanguage = language.selectionModel.selectedItem ?: language.value
+        // The displayed ComboBox value is authoritative after items are replaced;
+        // selectedItem can briefly retain a value from the previous repository.
+        val selectedLanguage = language.value ?: language.selectionModel.selectedItem
         val lang = selectedLanguage
             ?.takeUnless { it == "All languages" }
             ?.substringAfterLast('(')?.removeSuffix(")")
