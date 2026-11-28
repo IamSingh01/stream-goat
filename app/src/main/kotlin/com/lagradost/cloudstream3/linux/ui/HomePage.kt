@@ -223,7 +223,7 @@ class HomePage : StackPane(), Refreshable, TopBarActions {
         val preferred = sources.indexOfFirst { it.key == wanted }
 
         when {
-            preferred >= 0 -> select(sources[preferred], force = true)
+            preferred >= 0 -> select(sources[preferred], force = true, preserveSnapshot = true)
             wanted.isNullOrBlank() -> sources.firstOrNull()?.let { select(it, force = true) }
                 ?: run {
                     current = null; job?.cancel(); sections.clear(); hero?.stop(); hero = null; loading = false
@@ -247,14 +247,18 @@ class HomePage : StackPane(), Refreshable, TopBarActions {
         }
     }
 
-    private fun select(source: Source, force: Boolean = false) {
+    private fun select(source: Source, force: Boolean = false, preserveSnapshot: Boolean = false) {
         if (source == current && !force) return
         current = source
         sourceButton.text = source.label
         sourceButton.isVisible = sources.size > 1 || source.key == FEED
         Settings.lastHomeProvider = source.key
+        source.apis.singleOrNull()?.let { api ->
+            PluginManager.loaded.values.firstOrNull { plugin -> plugin.providers.any { it === api } }
+                ?.data?.internalName?.let { Settings.lastHomePlugin = it }
+        }
         job?.cancel()
-        sections.clear()
+        if (!preserveSnapshot) sections.clear()
         hero?.stop()
         hero = null
         heroIndex = Int.MAX_VALUE
