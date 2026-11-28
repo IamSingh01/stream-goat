@@ -164,6 +164,15 @@ class HomePage : StackPane(), Refreshable, TopBarActions {
         sources = fresher
         val wanted = current?.key ?: Settings.lastHomeProvider
         val preferred = sources.indexOfFirst { it.key == wanted }
+
+        // During startup extensions register their providers in parallel. Do not select the
+        // first provider (often Cinemeta) while the saved provider is still loading: doing so
+        // would overwrite the saved choice before its extension appears.
+        if (current == null && !wanted.isNullOrBlank() && preferred < 0 && PluginManager.progress.value.running) {
+            sourceButton.isVisible = false
+            return
+        }
+
         val fallback = if (preferred >= 0) preferred else if (current == null) 0 else -1
         sources.getOrNull(fallback)?.let { select(it, force = true) } ?: run {
             current = null; job?.cancel(); sections.clear(); hero?.stop(); hero = null; loading = false
