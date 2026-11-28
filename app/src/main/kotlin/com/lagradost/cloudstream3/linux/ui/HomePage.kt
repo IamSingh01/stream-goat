@@ -77,6 +77,8 @@ class HomePage : StackPane(), Refreshable, TopBarActions {
 
     init {
         children += scroll
+        // Restore the previous session's cards from profile storage before extensions register.
+        restoreSnapshot()
         // The top bar turns solid once the banner has scrolled away beneath it.
         scroll.vvalueProperty().addListener { _, _, _ -> updateTopBar() }
         // Refresh as each extension registers. Waiting for initialLoadComplete made
@@ -163,6 +165,35 @@ class HomePage : StackPane(), Refreshable, TopBarActions {
         })
         filter.requestFocus()
     }
+
+    private fun restoreSnapshot() {
+        val wanted = Settings.lastHomeProvider
+        val entries = com.lagradost.cloudstream3.linux.HomeCache.snapshot()
+            .filter { wanted.isNullOrBlank() || wanted == FEED || it.provider == wanted }
+        entries.forEach { entry ->
+            entry.response.items.forEachIndexed { index, row ->
+                val filtered = row.copy(list = ContentFilter.filter(row.list))
+                if (filtered.list.isNotEmpty()) sections[entry.order + index] = cachedShelf(entry.provider, filtered)
+            }
+        }
+        if (sections.isNotEmpty()) {
+            sourceButton.text = wanted?.takeIf { it != FEED } ?: "My feed"
+            sourceButton.isVisible = true
+            render()
+        }
+    }
+
+    /** Cached cards can render before their extension is registered; resolve clicks lazily. */
+    private fun cachedShelf(provider: String, list: com.lagradost.cloudstream3.HomePageList): Node =
+        Shelf(list.name, trailing = label(provider, "tag")).apply {
+            list.list.forEach { item ->
+                add(PosterCard.of(item) {
+                    val api = Engine.provider(provider)
+                    if (api != null) Nav.open(api, item)
+                    else Toasts.show("$provider is still starting. Try again in a moment.")
+                })
+            }
+        }
 
     private fun refreshProviders(force: Boolean = false) {
         // Provider registration is incremental: resolve the saved source as soon as it
