@@ -170,6 +170,8 @@ class ExtensionsPage : StackPane(), Refreshable {
             }
             available = perRepo.values.filterNotNull().flatten()
             loadingRepos = false
+            // Repository metadata (including icon URLs) may have changed; rebuild cards once.
+            cardCache.clear()
             renderRepos(repos, perRepo)
             val selectedRepo = repoFilter.value
             repoFilter.items.setAll(listOf("All repositories") + repos.map { it.name }.distinct())
@@ -229,9 +231,9 @@ class ExtensionsPage : StackPane(), Refreshable {
                 }
         }.sortedWith(compareBy({ it.installed == null }, { it.name.lowercase() }))
         if (resetPage && ::scroll.isInitialized) scroll.vvalue = 0.0
-        // Cards contain actions/status from a particular installed-version snapshot.
-        // Rebuild them whenever filtering or plugin state changes.
-        cardCache.clear()
+        // Keep existing card nodes while providers register. Recreating ImageViews on every
+        // PluginManager.version event cancels their in-flight icon downloads, so icons never
+        // finish loading during startup. Install/uninstall/update paths invalidate affected cards.
         renderGrid()
         val loaded = Engine.allProviders().size
         if (!loadingRepos) stats.text = "${available.size} available · ${installed.size} installed · $loaded providers loaded" +
