@@ -383,31 +383,26 @@ class AppWindow(val stage: Stage) : StackPane() {
             val shownAt = System.currentTimeMillis()
             if (System.getenv("CS_SCREENSHOT_ONLY") == "intro") Screenshots.captureIntro(this@AppWindow)
 
-            // The desktop shell is usable before extension work starts. Don't keep the
-            // splash open while translating/loading every installed extension.
-            delay((1100 - (System.currentTimeMillis() - shownAt)).coerceAtLeast(0))
-
-            // With a PIN on the last-used profile the picker always comes up, so a restart can't skip the PIN.
-            if (Profiles.all().size > 1 && (Profiles.askOnStart || Profiles.current.pin != null) && System.getenv("CS_SCREENSHOT") == null) {
-                showOverlay(ProfilePicker(startup = true))
-            }
-            hideSplash()
-
-            // Restore extensions only after the app shell is visible. Home uses its local
-            // response cache as soon as each provider registers, then refreshes online.
+            // Start extension restoration immediately. The Home page listens for each
+            // provider registration and can paint that provider's persisted catalog cache
+            // without waiting for the slowest extension in the installation.
             val loading = launch {
                 val failures = withContext(Engine.dispatcher) { PluginManager.loadAll() }
-                // Installed extension providers are ready. Let Home restore its saved source
-                // and paint cached cards before doing the optional Stremio add-on refresh.
                 PluginManager.completeInitialLoad()
                 runCatching { com.lagradost.cloudstream3.linux.StremioAddons.preinstall() }
                 PluginManager.bumpVersion()
-                // Google Drive backup: when something changed, every 5 minutes.
                 com.lagradost.cloudstream3.linux.CloudBackup.startAuto()
                 if (failures.isNotEmpty()) {
                     Toasts.show("${failures.size} extension(s) failed to load", "Details" to { show(Tab.EXTENSIONS) }, 6.0)
                 }
             }
+
+            // Keep the splash only briefly; extension loading is already underway.
+            delay((1100 - (System.currentTimeMillis() - shownAt)).coerceAtLeast(0))
+            if (Profiles.all().size > 1 && (Profiles.askOnStart || Profiles.current.pin != null) && System.getenv("CS_SCREENSHOT") == null) {
+                showOverlay(ProfilePicker(startup = true))
+            }
+            hideSplash()
 
             // Carry on with local downloads and account sync without waiting for extensions.
             runCatching { com.lagradost.cloudstream3.linux.Downloads.init() }
