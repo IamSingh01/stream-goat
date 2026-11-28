@@ -79,7 +79,16 @@ class HomePage : StackPane(), Refreshable, TopBarActions {
         children += scroll
         // The top bar turns solid once the banner has scrolled away beneath it.
         scroll.vvalueProperty().addListener { _, _, _ -> updateTopBar() }
-        ui.launch { PluginManager.version.collect { refreshProviders() } }
+        ui.launch {
+            PluginManager.initialLoadComplete.collect { ready ->
+                if (ready) refreshProviders(force = true)
+            }
+        }
+        ui.launch {
+            PluginManager.version.collect {
+                if (PluginManager.initialLoadComplete.value) refreshProviders()
+            }
+        }
         Library.onChange { ui.launch { if (scene != null) renderContinue() } }
         // Catalog edits rebuild the available sources, but must not discard the user's selection.
         Catalogs.onChange { ui.launch { refreshProviders(force = true) } }
@@ -156,6 +165,13 @@ class HomePage : StackPane(), Refreshable, TopBarActions {
     }
 
     private fun refreshProviders(force: Boolean = false) {
+        // Do not select Cinemeta (or any first-provider fallback) during the initial
+        // 0/0 progress window. Wait for PluginManager.loadAll() to finish registering
+        // every installed extension, then resolve the persisted source exactly once.
+        if (!PluginManager.initialLoadComplete.value) {
+            sourceButton.isVisible = false
+            return
+        }
         val fresh = Engine.providers().filter { it.hasMainPage }
         val feed = Catalogs.feedProviders(fresh).takeIf { Catalogs.multiFeed && it.isNotEmpty() }
         val fresher = listOfNotNull(feed?.let { Source(FEED, "My feed", it) }) + fresh.map { Source(it.name, it.name, listOf(it)) }
@@ -164,14 +180,6 @@ class HomePage : StackPane(), Refreshable, TopBarActions {
         sources = fresher
         val wanted = current?.key ?: Settings.lastHomeProvider
         val preferred = sources.indexOfFirst { it.key == wanted }
-
-        // During startup extensions register their providers in parallel. Do not select the
-        // first provider (often Cinemeta) while the saved provider is still loading: doing so
-        // would overwrite the saved choice before its extension appears.
-        if (current == null && !wanted.isNullOrBlank() && preferred < 0 && PluginManager.progress.value.running) {
-            sourceButton.isVisible = false
-            return
-        }
 
         val fallback = if (preferred >= 0) preferred else if (current == null) 0 else -1
         sources.getOrNull(fallback)?.let { select(it, force = true) } ?: run {
