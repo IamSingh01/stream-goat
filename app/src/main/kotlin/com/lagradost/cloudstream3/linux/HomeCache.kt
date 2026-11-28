@@ -71,9 +71,4 @@ object HomeCache {
         }
     }
 
-    /** Clears one provider's cached catalogs after uninstall or an explicit reset. */
-    fun clearProvider(provider: String) {
-        // Cache keys are intentionally opaque; stale entries expire naturally. This method
-        // is retained for call sites that want to invalidate all caches in a future schema.
-    }
 }
