@@ -343,7 +343,7 @@ class ExtensionsPage : StackPane(), Refreshable {
                 currentIndex == index -> Unit
                 currentIndex >= 0 -> {
                     grid.children.removeAt(currentIndex)
-                    grid.children.add(index, node)
+                    grid.children.add(index.coerceAtMost(grid.children.size), node)
                 }
                 index >= grid.children.size -> grid.children.add(node)
                 else -> grid.children.add(index, node)
