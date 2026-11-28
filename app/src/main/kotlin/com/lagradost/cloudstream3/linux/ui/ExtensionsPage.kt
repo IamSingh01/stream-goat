@@ -319,6 +319,11 @@ class ExtensionsPage : StackPane(), Refreshable {
             scroll.layout()
             val range = (nextContent.height - scroll.viewportBounds.height).coerceAtLeast(0.0)
             if (range > 0.0) scroll.vvalue = (oldOffset / range).coerceIn(0.0, 1.0)
+            // Card actions replace their own node; keep keyboard focus on the scroll
+            // surface rather than allowing JavaFX to reset the viewport to the top.
+            if (scroll.scene?.focusOwner == null || scroll.scene?.focusOwner?.scene == null) {
+                scroll.requestFocus()
+            }
         }
     }
 
@@ -452,7 +457,16 @@ class ExtensionsPage : StackPane(), Refreshable {
             roundedClip(this, 12.0)
         }
         val version = (p?.version ?: row.installed?.version)?.let { "v$it" }
-        val meta = listOfNotNull(p?.language?.let { languageName(it) }, version, row.wrapper?.repository?.name)
+        // Keep the originating repository visible even when an installed extension is
+        // no longer present in the current repository catalogue.
+        val source = row.wrapper?.repository?.name
+            ?: row.installed?.repositoryUrl?.let { url ->
+                RepositoryManager.getRepositories().firstOrNull { it.url == url }?.name
+                    ?: url.substringAfter("://").substringBefore("/").takeIf { it.isNotBlank() }
+            }
+            ?: row.installed?.takeIf { !it.isOnline }?.let { "Local install" }
+            ?: row.installed?.let { "Source unknown" }
+        val meta = listOfNotNull(p?.language?.let { languageName(it) }, version, source?.let { "Source: $it" })
         val title = vbox(2.0,
             label(row.name, "bold").apply { isWrapText = false },
             label(meta.joinToString(" · "), "faint", "small"),
@@ -473,7 +487,7 @@ class ExtensionsPage : StackPane(), Refreshable {
 
         val actions = hbox(8.0).apply { alignment = Pos.CENTER_RIGHT }
         when {
-            row.internalName in busy -> actions.children += hbox(8.0, ProgressIndicator().apply { setPrefSize(18.0, 18.0) }, label("Installing…", "muted"))
+            row.internalName in busy -> actions.children += hbox(8.0, ProgressIndicator().apply { setPrefSize(18.0, 18.0) }, label("Working…", "muted"))
             row.installed == null -> actions.children += button("Install", Icons.DOWNLOAD, "btn-accent", "btn-small") { install(row.wrapper!!) }
                 .apply { isDisable = p?.status == 0 }
             else -> {
@@ -491,7 +505,7 @@ class ExtensionsPage : StackPane(), Refreshable {
                         applyFilter()
                     }
                 }
-                actions.children += button(null, Icons.DELETE, "btn-danger", "btn-small") { uninstall(row) }.tooltip("Uninstall")
+                actions.children += button("Uninstall", Icons.DELETE, "btn-danger", "btn-small") { uninstall(row) }
             }
         }
         card.children += spacer()
