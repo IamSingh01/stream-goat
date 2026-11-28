@@ -191,9 +191,9 @@ class ExtensionsPage : StackPane(), Refreshable {
 
     private fun growWide(node: Node) = javafx.scene.layout.HBox.setHgrow(node, Priority.ALWAYS)
 
-    // Re-read repositories whenever the Extensions page is opened. A cached catalogue can
-    // otherwise keep showing a repository that was removed or a previous "All repositories" view.
-    override fun onShow() = refresh(force = true)
+    // Reuse the loaded catalogue when returning to Extensions; repository mutations explicitly
+    // trigger a refresh, so opening the page never causes a needless reload.
+    override fun onShow() = refresh()
 
     fun refresh(force: Boolean = false) {
         if (loadingRepos && !force) {
