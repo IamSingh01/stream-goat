@@ -178,9 +178,15 @@ class ExtensionsPage : StackPane(), Refreshable {
             cardCache.clear()
             renderRepos(repos, perRepo)
             val selectedRepo = repoFilter.value
-            repoFilter.items.setAll(listOf("All repositories") + repos.map { it.name }.distinct())
-            val restoredRepo = selectedRepo?.takeIf { it in repoFilter.items } ?: "All repositories"
+            val repositoryOptions = listOf("All repositories") + repos.map { it.name }.distinct()
+            repoFilter.items.setAll(repositoryOptions)
+            // Set both the model selection and displayed value after replacing items.
+            // Explicitly selecting index 0 prevents the previous repository leaking into All.
+            val restoredRepo = selectedRepo?.takeIf { it in repositoryOptions } ?: "All repositories"
+            repoFilter.selectionModel.clearSelection()
             repoFilter.selectionModel.select(restoredRepo)
+            repoFilter.value = restoredRepo
+            applyFilter(resetPage = true)
             val langs = available.mapNotNull { it.plugin.language }.distinct().sortedBy { languageName(it) }
             val selected = language.value
             language.items.setAll(listOf("All languages") + langs.map { "${languageName(it)} ($it)" })
@@ -225,7 +231,10 @@ class ExtensionsPage : StackPane(), Refreshable {
         val lang = selectedLanguage
             ?.takeUnless { it == "All languages" }
             ?.substringAfterLast('(')?.removeSuffix(")")
-        val selectedRepository = repoFilter.selectionModel.selectedItem ?: repoFilter.value
+        // ComboBox.selectionModel.selectedItem can retain the previous repository while
+        // its items are being replaced. The value property is the displayed selection;
+        // using selectedItem here made "All repositories" keep filtering by the last repo.
+        val selectedRepository = repoFilter.value
         val repo = selectedRepository?.takeUnless { it == "All repositories" }
         val typeSet = TYPE_FILTERS.getOrNull(types.selected)?.second
         // Adult (NSFW) extensions stay out of the list unless turned on in Settings → Profiles; installed ones stay manageable.
