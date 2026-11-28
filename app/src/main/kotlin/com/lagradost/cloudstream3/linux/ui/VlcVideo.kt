@@ -81,16 +81,30 @@ object Vlc {
                 val current = System.getProperty("jna.library.path")
                 System.setProperty("jna.library.path", (listOfNotNull(current) + dirs).joinToString(java.io.File.pathSeparator))
             }
-            // VLC shipped inside the app (the Windows version): load libvlccore by its full path first, so
-            // libvlc.dll finds it; libvlc then finds its plugins\ folder next to itself.
-            com.lagradost.cloudstream3.linux.Os.bundledVlcDir()?.let { dir ->
+            // Discover VLC from installed macOS application/library metadata, not assumed install prefixes.
+            val discoveredVlc = if (com.lagradost.cloudstream3.linux.Os.isMac)
+                com.lagradost.cloudstream3.linux.Os.discoverMacNativeLibraries(setOf("libvlc.dylib"), "org.videolan.vlc").firstOrNull() else null
+            val discoveredCore = if (com.lagradost.cloudstream3.linux.Os.isMac)
+                com.lagradost.cloudstream3.linux.Os.discoverMacNativeLibraries(setOf("libvlccore.dylib"), "org.videolan.vlc").firstOrNull() else null
+            val bundled = com.lagradost.cloudstream3.linux.Os.bundledVlcDir()
+            val nativeDirs = listOfNotNull(discoveredVlc?.parentFile, discoveredCore?.parentFile, bundled)
+            if (nativeDirs.isNotEmpty()) {
+                val current = System.getProperty("jna.library.path")
+                System.setProperty("jna.library.path", (nativeDirs.map { it.absolutePath } + listOfNotNull(current)).joinToString(java.io.File.pathSeparator))
+            }
+            discoveredCore?.let { runCatching { com.sun.jna.NativeLibrary.getInstance(it.absolutePath) } }
+            discoveredVlc?.let { runCatching { com.sun.jna.NativeLibrary.getInstance(it.absolutePath) } }
+            bundled?.let { dir ->
                 val core = java.io.File(dir, when { com.lagradost.cloudstream3.linux.Os.isWindows -> "libvlccore.dll"; com.lagradost.cloudstream3.linux.Os.isMac -> "libvlccore.dylib"; else -> "libvlccore.so.9" })
                 if (core.isFile) runCatching { com.sun.jna.NativeLibrary.getInstance(core.absolutePath) }
-                val current = System.getProperty("jna.library.path")
-                System.setProperty("jna.library.path", (listOf(dir.absolutePath) + listOfNotNull(current)).joinToString(java.io.File.pathSeparator))
             }
             if (!NativeDiscovery().discover()) return@runCatching null
             val args = buildList {
+                if (discoveredVlc != null) {
+                    val pluginDir = discoveredVlc.parentFile?.parentFile?.walkTopDown()?.maxDepth(6)
+                        ?.firstOrNull { it.isDirectory && it.name == "plugins" }
+                    if (pluginDir != null) add("--plugin-path=${pluginDir.absolutePath}")
+                }
                 add("--quiet")
                 add("--no-video-title-show")       // no file name flashed over the video
                 add("--no-snapshot-preview")
