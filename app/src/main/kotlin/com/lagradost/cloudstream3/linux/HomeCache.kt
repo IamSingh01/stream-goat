@@ -80,7 +80,13 @@ object HomeCache {
                 val expired = keys.removeAt(0)
                 editor.remove(expired).remove("$expired:at").remove("$expired:meta")
             }
-            editor.putString(ORDER_KEY, JSONArray(keys).toString()).apply()
+            // Persist the response and its index together before the provider task exits.
+            // apply() is asynchronous and can lose the first successful Home response if
+            // the app is closed or crashes immediately after the request completes.
+            editor.putString(ORDER_KEY, JSONArray(keys).toString())
+            if (!editor.commit()) {
+                System.err.println("W/home-cache: SharedPreferences commit failed for $provider / $section")
+            }
         }.onFailure {
             System.err.println("W/home-cache: couldn't save $provider / $section: $it")
         }
