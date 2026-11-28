@@ -350,7 +350,11 @@ object PluginManager {
         val data = installed().find { it.internalName == internalName } ?: return
         val file = File(data.filePath)
         unloadPlugin(file.absolutePath)
-        check(file.delete() || !file.exists()) { "Could not remove extension file: ${file.absolutePath}" }
+        if (!file.delete() && file.exists()) {
+            // Keep the installed record truthful if the OS refuses to remove the file.
+            runCatching { loadPlugin(file, data).getOrThrow() }
+            error("Could not remove extension file: ${file.absolutePath}")
+        }
         saveInstalled(installed().filter { it.internalName != internalName })
         failures.remove(internalName)
         // Notify every screen after the persisted installed list has changed.
