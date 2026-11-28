@@ -117,11 +117,15 @@ class ExtensionsPage : StackPane(), Refreshable {
         }
         filterField.padding = Insets(0.0, 42.0, 0.0, 12.0)
         growWide(searchBox)
-        val filterRow = hbox(10.0, searchBox, repoFilter, language, view)
+        val filterRow = hbox(10.0, searchBox, repoFilter, language)
+        // Keep the All / Installed / Updates tabs on their own full-width row.
+        // Putting them at the end of the search row squeezed the search field and
+        // made the controls appear displaced on narrower desktop windows.
+        val statusRow = hbox(8.0, view).apply { alignment = Pos.CENTER_LEFT }
         // Cards share the row evenly: as many ~300px columns as fit.
         grid.widthProperty().addListener { _, _, _ -> sizeCards() }
 
-        val extensions = VBox(18.0, header, repoCard, filterRow, types, grid)
+        val extensions = VBox(18.0, header, repoCard, filterRow, statusRow, types, grid)
         val addons = StremioPane()
         val body = StackPane(extensions)
         // Two kinds of sources: CloudStream extensions (repositories) and Stremio add-ons (manifest URLs).
