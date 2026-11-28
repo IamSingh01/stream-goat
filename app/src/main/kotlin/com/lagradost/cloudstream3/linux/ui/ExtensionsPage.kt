@@ -90,11 +90,25 @@ class ExtensionsPage : StackPane(), Refreshable {
 
         view.setItems(listOf("All", "Installed", "Updates"))
         types.setItems(TYPE_FILTERS.map { it.first })
-        filterField.textProperty().addListener { _, _, _ -> applyFilter(resetPage = true) }
+        // Keep the current scroll position while filtering as the user types.
+        filterField.textProperty().addListener { _, _, _ -> applyFilter(resetPage = false) }
         language.setOnAction { applyFilter(resetPage = true) }
         repoFilter.setOnAction { applyFilter(resetPage = true) }
         growWide(filterField)
-        val filterRow = hbox(10.0, filterField, repoFilter, language, view)
+        val clearSearch = button("×", null, "btn-ghost", "btn-small") {
+            filterField.clear()
+            filterField.requestFocus()
+        }.apply {
+            tooltip("Clear search")
+            isVisible = false
+            isManaged = false
+        }
+        filterField.textProperty().addListener { _, _, value ->
+            val hasQuery = !value.isNullOrBlank()
+            clearSearch.isVisible = hasQuery
+            clearSearch.isManaged = hasQuery
+        }
+        val filterRow = hbox(10.0, filterField, clearSearch, repoFilter, language, view)
         // Cards share the row evenly: as many ~300px columns as fit.
         grid.widthProperty().addListener { _, _, _ -> sizeCards() }
 
@@ -204,6 +218,9 @@ class ExtensionsPage : StackPane(), Refreshable {
         } else {
             shown = shown.coerceIn(PAGE, rows.size.coerceAtLeast(PAGE))
         }
+        // Cards contain actions/status from a particular installed-version snapshot.
+        // Rebuild them whenever filtering or plugin state changes.
+        cardCache.clear()
         renderGrid()
         val loaded = Engine.allProviders().size
         if (!loadingRepos) stats.text = "${available.size} available · ${installed.size} installed · $loaded providers loaded" +
@@ -308,7 +325,10 @@ class ExtensionsPage : StackPane(), Refreshable {
         ui.launch {
             Toasts.show("Checking for updates…")
             val updated = withContext(Engine.dispatcher) { PluginManager.updateAll() }
-            Toasts.show(if (updated.isEmpty()) "All extensions are up to date" else "Updated ${updated.joinToString()}")
+            cardCache.clear()
+            applyFilter()
+            Toasts.show(if (updated.isEmpty()) "No extensions needed an update" else "Updated ${updated.joinToString()}")
+            // Refresh repository metadata after the installed versions have changed.
             refresh()
         }
     }
