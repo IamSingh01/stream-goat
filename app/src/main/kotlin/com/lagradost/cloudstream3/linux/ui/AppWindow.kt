@@ -381,62 +381,62 @@ class AppWindow(val stage: Stage) : StackPane() {
         }
         ui.launch {
             val shownAt = System.currentTimeMillis()
-            // The splash stays up while extensions load: at least briefly, at most a few seconds.
+            if (System.getenv("CS_SCREENSHOT_ONLY") == "intro") Screenshots.captureIntro(this@AppWindow)
+
+            // The desktop shell is usable before extension work starts. Don't keep the
+            // splash open while translating/loading every installed extension.
+            delay((1100 - (System.currentTimeMillis() - shownAt)).coerceAtLeast(0))
+
+            // With a PIN on the last-used profile the picker always comes up, so a restart can't skip the PIN.
+            if (Profiles.all().size > 1 && (Profiles.askOnStart || Profiles.current.pin != null) && System.getenv("CS_SCREENSHOT") == null) {
+                showOverlay(ProfilePicker(startup = true))
+            }
+            hideSplash()
+
+            // Restore extensions only after the app shell is visible. Home uses its local
+            // response cache as soon as each provider registers, then refreshes online.
             val loading = launch {
                 val failures = withContext(Engine.dispatcher) { PluginManager.loadAll() }
-                // Stremio add-ons everyone starts with (Streaming Catalogs, Cinemeta), once each.
+                // Restore built-in Stremio add-ons before allowing Home to resolve its saved source.
                 runCatching { com.lagradost.cloudstream3.linux.StremioAddons.preinstall() }
+                PluginManager.completeInitialLoad()
                 // Google Drive backup: when something changed, every 5 minutes.
                 com.lagradost.cloudstream3.linux.CloudBackup.startAuto()
                 if (failures.isNotEmpty()) {
                     Toasts.show("${failures.size} extension(s) failed to load", "Details" to { show(Tab.EXTENSIONS) }, 6.0)
                 }
             }
-            if (System.getenv("CS_SCREENSHOT_ONLY") == "intro") Screenshots.captureIntro(this@AppWindow)
-            // The app opens when the intro has played (or was skipped) and extensions have loaded (at most ~6 s).
-            val intro = splash as? SplashScreen
-            if (intro != null && !intro.finished) {
-                val done = kotlinx.coroutines.CompletableDeferred<Unit>()
-                intro.whenFinished { done.complete(Unit) }
-                done.await()
-            }
-            while (loading.isActive && System.currentTimeMillis() - shownAt < 6000) delay(50)
-            delay((1100 - (System.currentTimeMillis() - shownAt)).coerceAtLeast(0))
-            // With a PIN on the last-used profile the picker always comes up, so a restart can't skip the PIN.
-            if (Profiles.all().size > 1 && (Profiles.askOnStart || Profiles.current.pin != null) && System.getenv("CS_SCREENSHOT") == null) {
-                showOverlay(ProfilePicker(startup = true))
-            }
-            hideSplash()
-            loading.join()
-            // Carry on with downloads that were running when the app closed.
+
+            // Carry on with local downloads and account sync without waiting for extensions.
             runCatching { com.lagradost.cloudstream3.linux.Downloads.init() }
-            // WeTrakr: watched history in, every 30 minutes (posters and titles show what was watched elsewhere).
             runCatching { com.lagradost.cloudstream3.linux.WeTrakrSync.start() }
-            // Back in the window: what was finished meanwhile in another WeTrakr app shows here (at most every 2 minutes).
             stage.focusedProperty().addListener { _, _, focused ->
                 if (focused) ui.launch(kotlinx.coroutines.Dispatchers.IO) { runCatching { com.lagradost.cloudstream3.linux.WeTrakrSync.pull() } }
-                // And what changed on the other devices (the shared Google Drive backup; at most once a minute).
-                // Leaving the window: what changed here goes up now (like a phone app going to the background).
                 com.lagradost.cloudstream3.linux.CloudBackup.soon(always = !focused)
             }
-            if (Settings.autoUpdateExtensions) {
-                val updated = withContext(Engine.dispatcher) { runCatching { PluginManager.updateAll() }.getOrDefault(emptyList()) }
-                if (updated.isNotEmpty()) Toasts.show("Updated ${updated.joinToString()}")
-            }
-            if (Settings.autoInstallExtensions) {
-                val added = withContext(Engine.dispatcher) { runCatching { PluginManager.installMissing(includeNew = true) }.getOrDefault(emptyList()) }
-                if (added.isNotEmpty()) Toasts.show("Installed ${added.size} new extension(s)")
-            }
-            if (Settings.checkUpdates && System.currentTimeMillis() - Updates.lastCheck > 20 * 3600_000L &&
-                System.getenv("CS_SCREENSHOT") == null) {
-                Updates.lastCheck = System.currentTimeMillis()
-                runCatching { Updates.check(AppInfo.VERSION) }.getOrNull()?.let { r ->
-                    if (r.patch != null) Toasts.show("${AppInfo.NAME} ${r.version} is available (${"%.1f".format(r.patch.size / 1048576.0)} MB)",
-                        "Settings" to { show(Tab.SETTINGS) }, 15.0)
-                    else Toasts.show("Stream Goat ${r.version} is available", "Download" to { openUrl(r.url) }, 15.0)
+
+            // Network/update work is deliberately downstream of the first usable Home screen.
+            launch {
+                loading.join()
+                if (Settings.autoUpdateExtensions) {
+                    val updated = withContext(Engine.dispatcher) { runCatching { PluginManager.updateAll() }.getOrDefault(emptyList()) }
+                    if (updated.isNotEmpty()) Toasts.show("Updated ${updated.joinToString()}")
                 }
+                if (Settings.autoInstallExtensions) {
+                    val added = withContext(Engine.dispatcher) { runCatching { PluginManager.installMissing(includeNew = true) }.getOrDefault(emptyList()) }
+                    if (added.isNotEmpty()) Toasts.show("Installed ${added.size} new extension(s)")
+                }
+                if (Settings.checkUpdates && System.currentTimeMillis() - Updates.lastCheck > 20 * 3600_000L &&
+                    System.getenv("CS_SCREENSHOT") == null) {
+                    Updates.lastCheck = System.currentTimeMillis()
+                    runCatching { Updates.check(AppInfo.VERSION) }.getOrNull()?.let { r ->
+                        if (r.patch != null) Toasts.show("${AppInfo.NAME} ${r.version} is available (${"%.1f".format(r.patch.size / 1048576.0)} MB)",
+                            "Settings" to { show(Tab.SETTINGS) }, 15.0)
+                        else Toasts.show("Stream Goat ${r.version} is available", "Download" to { openUrl(r.url) }, 15.0)
+                    }
+                }
+                Screenshots.runIfRequested(this@AppWindow)
             }
-            Screenshots.runIfRequested(this@AppWindow)
         }
         repoLink?.let {
             show(Tab.EXTENSIONS)
