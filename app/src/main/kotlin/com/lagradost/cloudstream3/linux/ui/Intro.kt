@@ -89,7 +89,7 @@ class SplashScreen : StackPane() {
     init {
         styleClass += "splash"
         style = "-fx-background-color: black;"
-        val logo = Logo(210.0)
+        val logo = Logo(280.0)
         val credit = label("Created by ${AppInfo.CREDIT}", "splash-credit")
         val centre = vbox(28.0, logo, credit).apply {
             alignment = Pos.CENTER
