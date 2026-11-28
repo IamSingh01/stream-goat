@@ -41,7 +41,7 @@ object HomeCache {
         val cacheKey = key(provider, section)
         val savedAt = prefs.getLong("$cacheKey:at", 0L)
         if (savedAt <= 0L || System.currentTimeMillis() - savedAt > MAX_AGE_MS) {
-            prefs.edit().remove(cacheKey).remove("$cacheKey:at").apply()
+            prefs.edit().remove(cacheKey).remove("$cacheKey:at").remove("$cacheKey:meta").apply()
             return null
         }
         val raw = prefs.getString(cacheKey, null) ?: return null
