@@ -180,10 +180,20 @@ object Settings {
         set(v) = put("download_folder", v)
 
     var lastHomeProvider: String?
-        // Keep the Home source app-wide. Older builds stored it in profile_settings, so
-        // retain that value as a fallback when migrating existing installations.
-        get() = (prefs.getString("last_home_provider", null)
-            ?: profilePrefs.getString("last_home_provider", null)).orEmpty().ifBlank { null }
+        // Keep the Home source app-wide. Older builds stored it in profile_settings.
+        // The previous startup race could overwrite the new app-wide key with Cinemeta
+        // while leaving the older profile value intact; recover that older non-Cinemeta
+        // choice once instead of treating the accidental fallback as the user's preference.
+        get() {
+            val appValue = prefs.getString("last_home_provider", null).orEmpty()
+            val legacyValue = profilePrefs.getString("last_home_provider", null).orEmpty()
+            if (appValue.equals("Cinemeta", ignoreCase = true) &&
+                legacyValue.isNotBlank() && !legacyValue.equals("Cinemeta", ignoreCase = true)) {
+                prefs.edit().putString("last_home_provider", legacyValue).commit()
+                return legacyValue
+            }
+            return appValue.ifBlank { legacyValue }.ifBlank { null }
+        }
         // This selection is made immediately before an app may be closed; commit synchronously.
         set(v) { prefs.edit().putString("last_home_provider", v ?: "").commit() }
 
