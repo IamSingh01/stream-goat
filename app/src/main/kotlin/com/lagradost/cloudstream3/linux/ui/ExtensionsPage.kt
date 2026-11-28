@@ -206,8 +206,9 @@ class ExtensionsPage : StackPane(), Refreshable {
                     language.selectionModel.select(restoredLanguage)
                     language.value = restoredLanguage
 
-                    // Rebuild cards only when a repository result changes the catalogue.
-                    cardCache.clear()
+                    // Invalidate only cards supplied by this repository. Clearing the
+                    // whole cache here would cancel icon downloads for every earlier result.
+                    plugins.orEmpty().forEach { cardCache.remove(it.plugin.internalName) }
                     applyFilter()
                 }
                 completed.close()
