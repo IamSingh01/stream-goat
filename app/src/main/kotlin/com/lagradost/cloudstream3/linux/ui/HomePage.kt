@@ -10,6 +10,7 @@ import com.lagradost.cloudstream3.linux.Engine
 import com.lagradost.cloudstream3.linux.Library
 import com.lagradost.cloudstream3.linux.PluginManager
 import com.lagradost.cloudstream3.linux.Settings
+import javafx.animation.AnimationTimer
 import javafx.geometry.Pos
 import javafx.scene.Node
 import javafx.scene.control.ProgressIndicator
@@ -24,6 +25,8 @@ import javafx.scene.layout.VBox
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
 import java.util.TreeMap
 
 /**
@@ -266,6 +269,18 @@ class HomePage : StackPane(), Refreshable, TopBarActions {
         offline = false
         render()
         job = ui.launch {
+            // Let JavaFX complete a pulse with the restored snapshot on screen before
+            // starting any provider/network work. Cached content is already in sections.
+            suspendCancellableCoroutine<Unit> { continuation ->
+                val firstPaint = object : AnimationTimer() {
+                    override fun handle(now: Long) {
+                        stop()
+                        if (continuation.isActive) continuation.resume(Unit)
+                    }
+                }
+                continuation.invokeOnCancellation { firstPaint.stop() }
+                firstPaint.start()
+            }
             val mixed = source.apis.size > 1
             Engine.home(source.apis).collect { row ->
                 val items = row.list.list
