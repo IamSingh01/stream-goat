@@ -13,12 +13,9 @@ jobs:
       fail-fast: false
       max-parallel: 1
       matrix:
+        # This compatibility branch targets Intel Macs only. Avoid running the unrelated
+        # Apple Silicon job, whose Homebrew media dependencies are not part of this build.
         include:
-          - arch: arm64
-            runner: macos-15
-            vlc_arch: arm64
-            fx_classifier: mac-aarch64
-            update_key: mac
           - arch: x86_64
             runner: macos-15-intel
             vlc_arch: intel64
