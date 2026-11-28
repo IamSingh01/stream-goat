@@ -397,9 +397,11 @@ class AppWindow(val stage: Stage) : StackPane() {
             // response cache as soon as each provider registers, then refreshes online.
             val loading = launch {
                 val failures = withContext(Engine.dispatcher) { PluginManager.loadAll() }
-                // Restore built-in Stremio add-ons before allowing Home to resolve its saved source.
-                runCatching { com.lagradost.cloudstream3.linux.StremioAddons.preinstall() }
+                // Installed extension providers are ready. Let Home restore its saved source
+                // and paint cached cards before doing the optional Stremio add-on refresh.
                 PluginManager.completeInitialLoad()
+                runCatching { com.lagradost.cloudstream3.linux.StremioAddons.preinstall() }
+                PluginManager.bumpVersion()
                 // Google Drive backup: when something changed, every 5 minutes.
                 com.lagradost.cloudstream3.linux.CloudBackup.startAuto()
                 if (failures.isNotEmpty()) {
