@@ -4,6 +4,7 @@ import com.fasterxml.jackson.module.kotlin.readValue
 import com.lagradost.cloudstream3.HomePageResponse
 import com.lagradost.cloudstream3.mapper
 import org.json.JSONArray
+import org.json.JSONObject
 import java.security.MessageDigest
 
 /**
@@ -14,6 +15,8 @@ import java.security.MessageDigest
  * A stale entry is never treated as authoritative.
  */
 object HomeCache {
+    data class SnapshotEntry(val provider: String, val section: String, val order: Int, val response: HomePageResponse)
+
     private const val PREFIX = "home_cache:"
     private const val ORDER_KEY = "home_cache_order"
     private const val MAX_ENTRIES = 80
@@ -47,8 +50,19 @@ object HomeCache {
             .getOrNull()
     }
 
+    /** Read the previous Home snapshot before extensions have registered. */
+    fun snapshot(): List<SnapshotEntry> = order().mapNotNull { cacheKey ->
+        runCatching {
+            val meta = prefs.getString("$cacheKey:meta", null)?.let(::JSONObject) ?: return@runCatching null
+            val provider = meta.getString("provider")
+            val section = meta.getString("section")
+            val response = get(provider, section) ?: return@runCatching null
+            SnapshotEntry(provider, section, meta.optInt("order"), response)
+        }.getOrNull()
+    }.sortedBy { it.order }
+
     /** Store a successful provider response; never replace a good cache with an empty result. */
-    fun put(provider: String, section: String, response: HomePageResponse) {
+    fun put(provider: String, section: String, order: Int, response: HomePageResponse) {
         runCatching {
             val raw = mapper.writeValueAsString(response)
             if (raw.toByteArray(Charsets.UTF_8).size > MAX_RESPONSE_BYTES) return
@@ -61,9 +75,10 @@ object HomeCache {
             val editor = prefs.edit()
                 .putString(cacheKey, raw)
                 .putLong("$cacheKey:at", System.currentTimeMillis())
+                .putString("$cacheKey:meta", JSONObject().put("provider", provider).put("section", section).put("order", order).toString())
             while (keys.size > MAX_ENTRIES) {
                 val expired = keys.removeAt(0)
-                editor.remove(expired).remove("$expired:at")
+                editor.remove(expired).remove("$expired:at").remove("$expired:meta")
             }
             editor.putString(ORDER_KEY, JSONArray(keys).toString()).apply()
         }.onFailure {
