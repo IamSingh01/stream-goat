@@ -19,6 +19,7 @@ import uk.co.caprica.vlcj.player.embedded.videosurface.callback.BufferFormatCall
 import uk.co.caprica.vlcj.player.embedded.videosurface.callback.RenderCallback
 import java.nio.ByteBuffer
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -142,6 +143,8 @@ enum class Zoom(val label: String, val aspect: Double?) {
 class VideoView : Region() {
     private val image = ImageView().apply { isSmooth = true; isPreserveRatio = false; isCache = false }
     @Volatile private var pixelBuffer: PixelBuffer<ByteBuffer>? = null
+    @Volatile private var displayPixels: ByteBuffer? = null
+    private val latestFrame = AtomicReference<ByteArray?>(null)
     private val pending = AtomicBoolean(false)
     @Volatile private var closed = false
     private var bufferW = 0
@@ -207,8 +210,13 @@ class VideoView : Region() {
             }
 
             override fun allocatedBuffers(buffers: Array<ByteBuffer>) {
-                val pb = PixelBuffer(bufferW, bufferH, buffers[0], PixelFormat.getByteBgraPreInstance())
+                // Never expose VLC's reusable callback buffer directly to JavaFX. VLC can
+                // overwrite it for the next frame while the GPU is still uploading the last one.
+                val pixels = ByteBuffer.allocateDirect(bufferW * bufferH * 4)
+                val pb = PixelBuffer(bufferW, bufferH, pixels, PixelFormat.getByteBgraPreInstance())
+                displayPixels = pixels
                 pixelBuffer = pb
+                latestFrame.set(null)
                 Platform.runLater {
                     if (displayW == 0.0) { displayW = bufferW.toDouble(); displayH = bufferH.toDouble() }
                     image.image = WritableImage(pb)
@@ -220,13 +228,7 @@ class VideoView : Region() {
             override fun lock(mediaPlayer: MediaPlayer) = Unit
             override fun unlock(mediaPlayer: MediaPlayer) = Unit
             override fun display(mediaPlayer: MediaPlayer, nativeBuffers: Array<ByteBuffer>, bufferFormat: BufferFormat, displayWidth: Int, displayHeight: Int) {
-                // At most one repaint queued: if JavaFX falls behind, frames are dropped, not queued.
-                if (closed || !pending.compareAndSet(false, true)) return
-                val pb = pixelBuffer ?: return pending.set(false)
-                Platform.runLater {
-                    pending.set(false)
-                    if (!closed && pb === pixelBuffer) pb.updateBuffer { null }
-                }
+                if (!closed) nativeBuffers.firstOrNull()?.let(::publishFrame)
             }
         },
         true,
@@ -274,8 +276,13 @@ class VideoView : Region() {
         mpvTarget?.takeIf { it.width == w && it.height == h && pixelBuffer != null }?.let { return it }
         val buffer = ByteBuffer.allocateDirect(w * h * 4 + 64).alignedSlice(64).limit(w * h * 4) as ByteBuffer
         val target = Target(buffer.slice(), w, h)
-        val pb = PixelBuffer(w, h, target.buffer, PixelFormat.getByteBgraPreInstance())
+        // mpv renders into target.buffer; JavaFX displays a separate buffer populated
+        // from a frame snapshot on the FX thread.
+        val pixels = ByteBuffer.allocateDirect(w * h * 4)
+        val pb = PixelBuffer(w, h, pixels, PixelFormat.getByteBgraPreInstance())
         closed = false
+        displayPixels = pixels
+        latestFrame.set(null)
         pixelBuffer = pb
         mpvTarget = target
         bufferW = w; bufferH = h
@@ -289,11 +296,42 @@ class VideoView : Region() {
 
     /** mpv finished a frame in the buffer: show it (at most one repaint queued, as for VLC). */
     fun mpvFrame() {
-        if (closed || !pending.compareAndSet(false, true)) return
-        val pb = pixelBuffer ?: return pending.set(false)
+        if (closed) return
+        mpvTarget?.buffer?.let(::publishFrame)
+    }
+
+    /**
+     * Snapshot the decoder-owned frame before it can be reused. Only the JavaFX thread
+     * writes the PixelBuffer backing memory, preventing horizontal tearing/corruption
+     * when the decoder produces another frame during a GPU upload.
+     */
+    private fun publishFrame(source: ByteBuffer) {
+        if (closed) return
+        val size = bufferW * bufferH * 4
+        if (size <= 0 || source.capacity() < size) return
+        val snapshot = ByteArray(size)
+        try {
+            source.duplicate().apply { clear(); limit(size) }.get(snapshot)
+        } catch (_: Throwable) {
+            return
+        }
+        latestFrame.set(snapshot)
+        scheduleFrameUpload()
+    }
+
+    private fun scheduleFrameUpload() {
+        if (!pending.compareAndSet(false, true)) return
         Platform.runLater {
+            val pb = pixelBuffer
+            val pixels = displayPixels
+            val frame = latestFrame.getAndSet(null)
+            if (!closed && pb != null && pb === pixelBuffer && pixels != null && frame != null && frame.size == pixels.capacity()) {
+                pixels.duplicate().apply { clear() }.put(frame)
+                pb.updateBuffer { null }
+            }
             pending.set(false)
-            if (!closed && pb === pixelBuffer) pb.updateBuffer { null }
+            // If a newer frame arrived during the upload, schedule exactly one more pulse.
+            if (latestFrame.get() != null) scheduleFrameUpload()
         }
     }
 
@@ -301,6 +339,9 @@ class VideoView : Region() {
     fun reset() {
         mpvTarget = null
         pixelBuffer = null
+        displayPixels = null
+        latestFrame.set(null)
+        pending.set(false)
         closed = false
     }
 
