@@ -45,16 +45,12 @@ object Playback {
             openInIina(link)
             return
         }
-        if (Vlc.factory == null) {
+        // MPV is a supported built-in engine and does not depend on libVLC.
+        // Only stop playback when neither MPV nor VLC is available; BuiltinPlayer
+        // chooses MPV automatically when VLC is missing, including stale "VLC" prefs.
+        if (Vlc.factory == null && !Mpv.available) {
             sources.cancel()
-            // macOS builds intentionally support IINA as the native external player.
-            // If a previous preference selected the embedded VLC engine, don't strand
-            // playback on a missing libVLC bundle: fall back to the installed IINA app.
-            if (com.lagradost.cloudstream3.linux.Os.isMac) {
-                openInIina(link)
-            } else {
-                Toasts.show("Playing needs VLC's libraries: " + com.lagradost.cloudstream3.linux.Os.vlcHint, seconds = 12.0)
-            }
+            Toasts.show("No supported playback engine found. Install MPV or VLC and restart RoarStream.", seconds = 12.0)
             return
         }
         active = BuiltinPlayer(api, response, playable, sources, link).also { it.start() }
