@@ -207,7 +207,6 @@ class ExtensionsPage : StackPane(), Refreshable {
         // the grid showing a stale "No extensions match" message while repo metadata loads.
         applyFilter()
         ui.launch {
-            val selectedRepo = repoFilter.value
             val duplicateNames = repos.groupBy { it.name }.filterValues { it.size > 1 }.keys
             val labelsByUrl = repos.associate { repo ->
                 repo.url to if (repo.name in duplicateNames) {
@@ -216,6 +215,8 @@ class ExtensionsPage : StackPane(), Refreshable {
             }
             repoFilterUrls = labelsByUrl.entries.associate { it.value to it.key }
             val repositoryOptions = listOf("All repositories") + repos.map { labelsByUrl[it.url] ?: it.name }
+            // Read the selection after the network requests finish; users may choose All repositories while loading.
+            val selectedRepo = repoFilter.value
             changingRepoFilter = true
             try {
                 repoFilter.items.setAll(repositoryOptions)
@@ -575,8 +576,9 @@ class ExtensionsPage : StackPane(), Refreshable {
                 ?: "Installed · source unknown"
             else -> repositoryLabel(row.wrapper?.repositoryData?.url)?.let { "Source: $it" }
         }
+        val wrapperRepoUrl = row.wrapper?.repositoryData?.url
         val availableFrom = row.wrapper?.repositoryData?.name
-            ?.takeIf { row.installed?.repositoryUrl != null && row.installed.repositoryUrl != row.wrapper.repositoryData.url }
+            ?.takeIf { row.installed?.repositoryUrl != null && row.installed.repositoryUrl != wrapperRepoUrl }
             ?.let { "Available in: $it" }
         val meta = listOfNotNull(p?.language?.let { languageName(it) }, version, source, availableFrom)
         val title = vbox(2.0,
