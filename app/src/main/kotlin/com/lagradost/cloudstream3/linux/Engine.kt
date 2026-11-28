@@ -111,7 +111,7 @@ object Engine {
                     // Then refresh in the background. Fresh rows replace cached rows in-place.
                     val response = homePage(api, entry.section, 1)
                     if (response != null) {
-                        HomeCache.put(api.name, entry.section.name, response)
+                        HomeCache.put(api.name, entry.section.name, baseOrder, response)
                         response.items.map { it.copy(list = ContentFilter.filter(it.list)) }
                             .filter { it.list.isNotEmpty() }.forEachIndexed { i, list ->
                                 send(HomeSection(baseOrder + i, api, entry.section, list))
