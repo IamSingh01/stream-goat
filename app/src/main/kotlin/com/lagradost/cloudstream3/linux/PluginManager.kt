@@ -298,6 +298,9 @@ object PluginManager {
         unloadPlugin(File(data.filePath).absolutePath)
         File(data.filePath).delete()
         saveInstalled(installed().filter { it.internalName != internalName })
+        failures.remove(internalName)
+        // Notify every screen after the persisted installed list has changed.
+        changed()
     }
 
     /**
