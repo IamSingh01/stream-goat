@@ -57,6 +57,11 @@ object PluginManager {
     /** Bumped whenever the set of providers changes, so screens can refresh. */
     private val _version = MutableStateFlow(0)
     val version: StateFlow<Int> = _version
+
+    // Home must not choose a fallback provider until the first installed-extension scan has finished.
+    private val _initialLoadComplete = MutableStateFlow(false)
+    val initialLoadComplete: StateFlow<Boolean> = _initialLoadComplete
+
     private fun changed() {
         _version.value++
     }
@@ -84,6 +89,7 @@ object PluginManager {
      */
     suspend fun loadAll(): Map<String, Throwable> = coroutineScope {
         Platform.init()
+        _initialLoadComplete.value = false
         val all = installed()
         _progress.value = LoadProgress(0, all.size)
         all.map { data ->
@@ -100,6 +106,9 @@ object PluginManager {
             }
         }.awaitAll()
         System.err.println("I/plugins: loaded ${loaded.size}/${all.size} extensions")
+        // Set readiness only after all plugin registrations have completed. The initial
+        // progress value is 0/0 before loadAll starts and must not be mistaken for "done".
+        _initialLoadComplete.value = true
         changed()
         failures
     }

@@ -1,10 +1,9 @@
 name: Build
 
+# Linux/Android build intentionally manual on the Intel-macOS compatibility branch.
+# Prevent unrelated build failures and notification emails for this branch.
 on:
-  push:
-    branches: [main, picture-keys]
-    tags: ["v*", "V*", "[0-9]*"]
-  pull_request:
+  workflow_dispatch:
 
 # Cancel an older run when a newer commit arrives for the same PR or branch.
 concurrency:
@@ -45,7 +44,16 @@ jobs:
       - name: Test
         # Loads real .cs3/.jar extensions, checks the Android shims, streaming sources
         # against a mock site with a dead host, the header proxy, online subtitles,
-        # catalogs, and libVLC playback of a protected HLS stream.
+        # catalogs, provider pagination, the JavaFX dropdown/View All interactions,
+        # and libVLC playback of a protected HLS stream.
+        env:
+          # TestFX + Monocle runs actual JavaFX controls without a physical display.
+          JAVA_TOOL_OPTIONS: >-
+            -Dglass.platform=Monocle
+            -Dmonocle.platform=Headless
+            -Dprism.order=sw
+            -Dtestfx.robot=glass
+            -Dtestfx.headless=true
         run: ./gradlew :app:test
 
       - name: Build .deb and tarball
@@ -57,12 +65,12 @@ jobs:
         run: |
           ./scripts/build-deb.sh
           ./gradlew :app:distTar
-          mv app/build/distributions/cloudstream-linux.tar "app/build/distributions/streamgoat-linux-${GITHUB_REF_NAME//\//-}.tar"
+          mv app/build/distributions/RoarStream.tar "app/build/distributions/roarstream-linux-${GITHUB_REF_NAME//\//-}.tar"
           # The self-contained app image, for the Flatpak job (a tar keeps file permissions).
-          tar -C app/build/jpackage -cf build/cloudstream-linux-app.tar cloudstream-linux
+          tar -C app/build/jpackage -cf build/roarstream-linux-app.tar RoarStream
 
       - name: Update patch
-        # Stream Goat's own jars, signed: what the app downloads for a small update (Settings → Updates).
+        # RoarStream's own jars, signed: what the app downloads for a small update (Settings → Updates).
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -73,12 +81,12 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: app-image
-          path: build/cloudstream-linux-app.tar
+          path: build/roarstream-linux-app.tar
           retention-days: 3
 
       - uses: actions/upload-artifact@v4
         with:
-          name: streamgoat-linux
+          name: roarstream-linux
           path: |
             build/*.deb
             app/build/distributions/*.tar
@@ -87,7 +95,7 @@ jobs:
         # Install instructions for every file (.github/release-install.md) above GitHub's generated changes.
         if: startsWith(github.ref, 'refs/tags/')
         run: |
-          VERSION=$(ls build/*.deb | sed -E 's/.*streamgoat-linux_(.+)_amd64\.deb/\1/')
+          VERSION=$(ls build/*.deb | sed -E 's/.*roarstream-linux_(.+)_amd64\.deb/\1/')
           # What's new (docs/releases/<version>.md, when there is one) goes first.
           : > build/release-notes.md
           if [ -f "docs/releases/${VERSION}.md" ]; then cat "docs/releases/${VERSION}.md" >> build/release-notes.md; echo >> build/release-notes.md; fi
@@ -166,20 +174,20 @@ jobs:
           mkdir -p ../build/apk
           for f in app/build/outputs/apk/release/app-*-release.apk; do
             abi=$(basename "$f" | sed -E 's/app-(.+)-release\.apk/\1/')
-            cp "$f" "../build/apk/streamgoat-android-$abi.apk"
+            cp "$f" "../build/apk/roarstream-android-$abi.apk"
           done
           # The version of these APKs, for the apps' update check (a higher version is a newer test build).
           aapt2=$(ls "$ANDROID_HOME"/build-tools/*/aapt2 | sort -V | tail -1)
-          badging=$("$aapt2" dump badging ../build/apk/streamgoat-android-universal.apk | head -1)
+          badging=$("$aapt2" dump badging ../build/apk/roarstream-android-universal.apk | head -1)
           printf 'versionCode=%s\nversionName=%s\nbuild=%s\n' \
             "$(echo "$badging" | sed -E "s/.*versionCode='([0-9]+)'.*/\1/")" \
-            "$(echo "$badging" | sed -E "s/.*versionName='([^']+)'.*/\1/")" "${GITHUB_SHA:0:12}" > ../build/apk/streamgoat-android.properties
-          cat ../build/apk/streamgoat-android.properties
+            "$(echo "$badging" | sed -E "s/.*versionName='([^']+)'.*/\1/")" "${GITHUB_SHA:0:12}" > ../build/apk/roarstream-android.properties
+          cat ../build/apk/roarstream-android.properties
           ls -la ../build/apk
 
       - uses: actions/upload-artifact@v4
         with:
-          name: streamgoat-android
+          name: roarstream-android
           path: build/apk/*.apk
 
       - name: Update patches
@@ -197,12 +205,12 @@ jobs:
             FROM=test-build
           fi
           mkdir -p build/old build/old-release build/patches
-          [ -n "$FROM" ] && gh release download "$FROM" -R "$GITHUB_REPOSITORY" -p 'streamgoat-android-*.apk' -D build/old || true
+          [ -n "$FROM" ] && gh release download "$FROM" -R "$GITHUB_REPOSITORY" -p 'roarstream-android-*.apk' -D build/old || true
           # A test build also patches from the latest release, so a phone on the release updates in a few MB too.
           if [[ "$FROM" == test-build ]]; then
-            gh release download -R "$GITHUB_REPOSITORY" -p 'streamgoat-android-*.apk' -D build/old-release || true
+            gh release download -R "$GITHUB_REPOSITORY" -p 'roarstream-android-*.apk' -D build/old-release || true
           fi
-          for new in build/apk/streamgoat-android-*.apk; do
+          for new in build/apk/roarstream-android-*.apk; do
             name=$(basename "$new")
             [[ "$name" == *universal* ]] && continue
             for old in "build/old/$name" "build/old-release/$name"; do
@@ -226,7 +234,7 @@ jobs:
         with:
           files: |
             build/apk/*.apk
-            build/apk/streamgoat-android.properties
+            build/apk/roarstream-android.properties
             build/patches/*.patch
 
       - name: Test build (pull requests)
@@ -243,10 +251,10 @@ jobs:
           make_latest: false
           body: |
             For testing only: commit ${{ github.event.pull_request.head.sha || github.sha }} of the picture-keys branch.
-            Android TV / Fire TV with Downloader: `https://github.com/${{ github.repository }}/releases/download/test-build/streamgoat-android-armeabi-v7a.apk` (or `...-arm64-v8a.apk`, or `...-universal.apk` if unsure).
+            Android TV / Fire TV with Downloader: `https://github.com/${{ github.repository }}/releases/download/test-build/roarstream-android-armeabi-v7a.apk` (or `...-arm64-v8a.apk`, or `...-universal.apk` if unsure).
           files: |
             build/apk/*.apk
-            build/apk/streamgoat-android.properties
+            build/apk/roarstream-android.properties
             build/patches/*.patch
 
   flatpak:
@@ -278,11 +286,11 @@ jobs:
       - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
         with:
           manifest-path: packaging/flatpak/io.github.sherazi5110.CloudStreamLinux.yml
-          bundle: streamgoat-linux.flatpak
+          bundle: roarstream-linux.flatpak
           cache-key: flatpak-builder-${{ hashFiles('packaging/flatpak/*.yml') }}
 
       - name: Publish release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: streamgoat-linux.flatpak
+          files: roarstream-linux.flatpak

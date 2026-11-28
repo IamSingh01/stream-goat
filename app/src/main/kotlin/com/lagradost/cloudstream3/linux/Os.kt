@@ -16,20 +16,47 @@ object Os {
     private val home: String get() = System.getProperty("user.home")
 
     /**
-     * Linux: ~/.local/share/cloudstream-linux (XDG; the original name, kept so updates keep everyone's data).
-     * Windows: %APPDATA%\Stream Goat; data from 7.1.0 (%APPDATA%\CloudStream) is moved there once.
-     * macOS: ~/Library/Application Support/Stream Goat.
+     * Linux: ~/.local/share/RoarStream; migrates cloudstream-linux data on first launch.
+     * Windows: %APPDATA%\RoarStream; migrates Stream Goat or CloudStream data on first launch.
+     * macOS: ~/Library/Application Support/RoarStream; migrates Stream Goat data on first launch.
      */
     fun defaultDataDir(): File = when {
-        isMac -> File(home, "Library/Application Support/Stream Goat")
+        isMac -> migrate(File(home, "Library/Application Support/RoarStream"),
+            File(home, "Library/Application Support/Stream Goat"))
         isWindows -> {
             val appData = System.getenv("APPDATA") ?: "$home\\AppData\\Roaming"
-            val dir = File(appData, "Stream Goat")
-            val old = File(appData, "CloudStream")
-            if (!dir.exists() && old.isDirectory) runCatching { old.renameTo(dir) }
-            dir
+            val dir = File(appData, "RoarStream")
+            val previous = File(appData, "Stream Goat")
+            val older = File(appData, "CloudStream")
+            migrate(dir, if (previous.isDirectory) previous else older)
         }
-        else -> File((System.getenv("XDG_DATA_HOME") ?: "$home/.local/share"), "cloudstream-linux")
+        else -> {
+            val dataHome = System.getenv("XDG_DATA_HOME") ?: "$home/.local/share"
+            migrate(File(dataHome, "RoarStream"), File(dataHome, "cloudstream-linux"))
+        }
+    }
+
+    /**
+     * Select the current data directory without ever deleting legacy data.
+     *
+     * When the new directory already exists, keep it as the active directory and
+     * preserve the legacy directory beside it rather than silently overwriting either.
+     * A later explicit merge can reconcile the two sets of user data safely.
+     */
+    internal fun migrate(current: File, legacy: File): File {
+        if (current.exists()) return current
+        if (!legacy.isDirectory) return current
+        if (legacy.renameTo(current)) return current
+
+        // A cross-volume move or an OS lock can make renameTo fail. Fall back to a
+        // complete copy, then leave the original legacy directory untouched.
+        return try {
+            current.parentFile?.mkdirs()
+            legacy.copyRecursively(current, overwrite = false)
+            if (current.isDirectory) current else legacy
+        } catch (_: Exception) {
+            legacy
+        }
     }
 
     /**
@@ -101,14 +128,14 @@ object Os {
 
     /** What to do when VLC's libraries are missing. */
     val vlcHint: String get() = when {
-        isWindows -> "VLC is included with Stream Goat; reinstall Stream Goat, or install VLC (64-bit) from videolan.org"
-        isMac -> "VLC is included with Stream Goat; reinstall Stream Goat, or install VLC from videolan.org into Applications"
+        isWindows -> "VLC is included with RoarStream; reinstall RoarStream, or install VLC (64-bit) from videolan.org"
+        isMac -> "VLC is included with RoarStream; reinstall RoarStream, or install VLC from videolan.org into Applications"
         else -> "sudo apt install libvlc5 vlc-plugin-base"
     }
 
     /**
      * VLC shipped inside the app, next to the app's jars: Windows <app>\vlc with libvlc.dll and plugins\;
-     * macOS Stream Goat.app/Contents/app/vlc/lib with libvlc.dylib, and vlc/plugins (VLC.app's own layout).
+     * macOS RoarStream.app/Contents/app/vlc/lib with libvlc.dylib, and vlc/plugins (VLC.app's own layout).
      * -Dcs.vlc.dir overrides it. Null when there's none (Linux uses the system's VLC).
      */
     fun bundledVlcDir(): File? {
@@ -136,7 +163,7 @@ object Os {
                 .inputStream.bufferedReader().readText()
             if (current.contains(exe, ignoreCase = true)) return
             fun reg(vararg args: String) = ProcessBuilder(listOf("reg", "add") + args.toList() + "/f").redirectErrorStream(true).start().waitFor()
-            reg(key, "/ve", "/d", "URL:Stream Goat repository")
+            reg(key, "/ve", "/d", "URL:RoarStream repository")
             reg(key, "/v", "URL Protocol", "/d", "")
             reg("$key\\DefaultIcon", "/ve", "/d", "\"$exe\",0")
             reg("$key\\shell\\open\\command", "/ve", "/d", command)

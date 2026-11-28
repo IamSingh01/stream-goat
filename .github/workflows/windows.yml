@@ -1,12 +1,11 @@
 name: Windows
 
-# The Windows app: Stream Goat.exe with its own Java runtime and VLC, as a portable .zip and an .msi installer.
+# The Windows app: RoarStream.exe with its own Java runtime and VLC, as a portable .zip and an .msi installer.
 # Built and tested on a real Windows machine; on a version tag the files are attached to the release.
+# Windows builds are not maintained on the Intel-macOS compatibility branch.
+# Keep this workflow available only for an intentional manual run.
 on:
-  push:
-    branches: [main, windows, stream-goat, picture-keys]
-    tags: ["v*", "V*", "[0-9]*"]
-  pull_request:
+  workflow_dispatch:
 
 # Cancel an older run when a newer commit arrives for the same PR or branch.
 concurrency:
@@ -122,12 +121,12 @@ jobs:
           ./gradlew :app:packageWindows -PvlcDir="$VLC_DIR" -PmpvDir="$MPV_DIR" -PjpackageType=msi
           VERSION=$(grep -o 'VERSION = "[^"]*"' app/src/main/kotlin/com/lagradost/cloudstream3/linux/ui/AppWindow.kt | cut -d'"' -f2)
           mkdir -p build/windows
-          (cd app/build/jpackage-win && 7z a -tzip -bd -mx=7 "../../../build/windows/streamgoat-windows-$VERSION-portable.zip" "Stream Goat" > /dev/null)
-          cp app/build/jpackage-win/Stream\ Goat-*.msi "build/windows/streamgoat-windows-$VERSION.msi"
+          (cd app/build/jpackage-win && 7z a -tzip -bd -mx=7 "../../../build/windows/roarstream-windows-$VERSION-portable.zip" "RoarStream" > /dev/null)
+          cp app/build/jpackage-win/RoarStream-*.msi "build/windows/roarstream-windows-$VERSION.msi"
           ls -la build/windows
 
       - name: Update patch
-        # Stream Goat's own jars, signed: what the app downloads for a small update (Settings → Updates).
+        # RoarStream's own jars, signed: what the app downloads for a small update (Settings → Updates).
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -138,8 +137,8 @@ jobs:
       - name: Check the packaged app
         # The packaged app's own checker must find its Java, extensions folder and the bundled VLC.
         run: |
-          app="app/build/jpackage-win/Stream Goat"
-          out=$(CLOUDSTREAM_HOME="$(cygpath -w "$PWD/doctor-home")" "$app/streamgoat-cli.exe" doctor 2>&1 || true)
+          app="app/build/jpackage-win/RoarStream"
+          out=$(CLOUDSTREAM_HOME="$(cygpath -w "$PWD/doctor-home")" "$app/roarstream-cli.exe" doctor 2>&1 || true)
           echo "$out"
           ls "$app/app/vlc" | head
           if ! echo "$out" | grep -q "libVLC    3\."; then
@@ -150,11 +149,11 @@ jobs:
           echo "$out" | grep -q "libmpv    yes" || { echo "::error::The packaged app didn't find its bundled libmpv"; exit 1; }
 
       - name: Screenshots of the app window
-        # Starts Stream Goat.exe in screenshot mode (the same tour as on Linux); the pictures are in the artifact.
+        # Starts RoarStream.exe in screenshot mode (the same tour as on Linux); the pictures are in the artifact.
         run: |
           mkdir -p shots
           export CS_SCREENSHOT="$(cygpath -w "$PWD/shots")\\win" CS_SCREENSHOT_ONLY=settings7 CLOUDSTREAM_HOME="$(cygpath -w "$PWD/shot-home")"
-          timeout 180 "app/build/jpackage-win/Stream Goat/Stream Goat.exe" || true
+          timeout 180 "app/build/jpackage-win/RoarStream/RoarStream.exe" || true
           ls shots
           [ -n "$(ls shots)" ] || { echo "::error::No screenshots were taken"; exit 1; }
           # A drawn window has many colours and the app's dark background; a blank one doesn't.
@@ -173,7 +172,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: streamgoat-windows
+          name: roarstream-windows
           path: |
             build/windows/*.zip
             build/windows/*.msi

@@ -1,5 +1,7 @@
 package com.lagradost.cloudstream3.linux.ui
 
+import com.lagradost.cloudstream3.linux.BrandIdentity
+
 import javafx.animation.AnimationTimer
 import javafx.scene.canvas.Canvas
 import javafx.scene.image.Image
@@ -16,11 +18,10 @@ import kotlin.math.ceil
 import kotlin.math.sin
 
 /**
- * The Stream Goat logo (Syed Ali Hamza's goat head): the goat in the theme's accent colour (or a rainbow,
- * Settings → Appearance → Logo) on a black rounded tile. Follows theme changes.
+ * The RoarStream lion emblem supplied by Aman Singh.
  */
 class Logo(private val size: Double) : StackPane() {
-    private val view = ImageView().apply { fitWidth = size * 0.72; fitHeight = size * 0.72; isSmooth = true; isPreserveRatio = true }
+    private val view = ImageView().apply { fitWidth = size; fitHeight = size; isSmooth = true; isPreserveRatio = true }
 
     init {
         styleClass += "brand-logo"
@@ -40,53 +41,29 @@ class Logo(private val size: Double) : StackPane() {
     companion object {
         const val DEFAULT_ACCENT = "#3b82f6"
 
-        /** The logo as an image (black tile + goat), e.g. for the window icon. */
+        /** The logo as an image (black tile + lion emblem), e.g. for the window icon. */
         fun image(size: Double): Image = Brand.tile(size.toInt())
     }
 }
 
-/** The logo artwork: white cut-outs in resources/ui/brand, painted here. */
+/** The logo artwork supplied in resources/ui/icon.png. */
 object Brand {
-    private val markSrc: Image by lazy { Image(Brand::class.java.getResourceAsStream("/ui/brand/goat-mark.png")) }
-    val word: Image by lazy { Image(Brand::class.java.getResourceAsStream("/ui/brand/goat-word.png")) }
+    private val markSrc: Image by lazy { Image(Brand::class.java.getResourceAsStream("/ui/icon.png")) }
+    val word: Image by lazy { Image(Brand::class.java.getResourceAsStream("/ui/icon.png")) }
     private val cache = HashMap<String, Image>()
 
     val rainbow = listOf("#ff5f6d", "#ffc371", "#4ade80", "#38bdf8", "#a78bfa", "#f472b6").map { Color.web(it) }
 
     private fun accent(): Color = runCatching { Color.web(Theme.accent) }.getOrDefault(Color.web(Logo.DEFAULT_ACCENT))
 
-    /** The goat, [px] square, painted in the current logo style. */
-    fun mark(px: Int): Image {
-        val rainbowStyle = Theme.logoRainbow
-        val key = "m$px|$rainbowStyle|${Theme.accent}"
-        return cache.getOrPut(key) { paint(Image(Brand::class.java.getResourceAsStream("/ui/brand/goat-mark.png"), px.toDouble(), px.toDouble(), true, true), rainbowStyle, accent()) }
-    }
+    /** The supplied RoarStream lion emblem, kept in its original black-and-white colours. */
+    fun mark(px: Int): Image = Image(
+        Brand::class.java.getResourceAsStream(BrandIdentity.LOGO_RESOURCE),
+        px.toDouble(), px.toDouble(), true, true
+    )
 
-    /** The goat on its black rounded tile, [px] square (window icons). */
-    fun tile(px: Int): Image {
-        val key = "t$px|${Theme.logoRainbow}|${Theme.accent}"
-        return cache.getOrPut(key) {
-            val out = WritableImage(px, px)
-            val w = out.pixelWriter
-            val r = px * 0.22
-            for (y in 0 until px) for (x in 0 until px) {
-                val dx = maxOf(r - x, x - (px - 1 - r), 0.0); val dy = maxOf(r - y, y - (px - 1 - r), 0.0)
-                if (dx * dx + dy * dy <= r * r) w.setArgb(x, y, 0xFF000000.toInt())
-            }
-            val inner = (px * 0.7).toInt()
-            val m = mark(inner)
-            val off = (px - inner) / 2
-            val rd = m.pixelReader
-            for (y in 0 until inner) for (x in 0 until inner) {
-                val c = rd.getArgb(x, y); val a = (c ushr 24) and 0xff
-                if (a == 0) continue
-                val k = a / 255.0
-                val rr = ((c shr 16 and 0xff) * k).toInt(); val gg = ((c shr 8 and 0xff) * k).toInt(); val bb = ((c and 0xff) * k).toInt()
-                w.setArgb(x + off, y + off, (0xFF shl 24) or (rr shl 16) or (gg shl 8) or bb)
-            }
-            out
-        }
-    }
+    /** The app/window icon uses the same supplied emblem without recolouring or cropping. */
+    fun tile(px: Int): Image = mark(px)
 
     private fun paint(src: Image, rainbowStyle: Boolean, accent: Color): Image {
         val wd = src.width.toInt(); val ht = src.height.toInt()

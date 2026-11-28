@@ -40,9 +40,9 @@ import java.util.logging.Logger
 import kotlin.system.exitProcess
 
 object AppInfo {
-    const val NAME = "Stream Goat"
+    const val NAME = com.lagradost.cloudstream3.linux.BrandIdentity.APP_NAME
     const val VERSION = "11.0.0"
-    const val CREDIT = "Syed Ali Hamza"
+    const val CREDIT = com.lagradost.cloudstream3.linux.BrandIdentity.DEVELOPER_NAME
 }
 
 class DesktopApp : Application() {
@@ -148,9 +148,8 @@ class AppWindow(val stage: Stage) : StackPane() {
         Toasts.host = toastHost
         StackPane.setAlignment(statusPill, Pos.TOP_RIGHT)
         StackPane.setMargin(statusPill, Insets(16.0, 22.0, 0.0, 0.0))
-        // The intro plays unless it's turned off; screenshot tours skip it (except the "intro" tour).
-        splash = SplashScreen(Settings.startupAnimation &&
-            (System.getenv("CS_SCREENSHOT") == null || System.getenv("CS_SCREENSHOT_ONLY") == "intro"))
+        // Static splash only; no animated waves or intro sequence on any launch.
+        splash = SplashScreen()
         children.addAll(wallpaper, layout, statusPill, overlay, toastHost, playerLayer, splash)
 
         applyTheme()
@@ -432,7 +431,7 @@ class AppWindow(val stage: Stage) : StackPane() {
                 System.getenv("CS_SCREENSHOT") == null) {
                 Updates.lastCheck = System.currentTimeMillis()
                 runCatching { Updates.check(AppInfo.VERSION) }.getOrNull()?.let { r ->
-                    if (r.patch != null) Toasts.show("Stream Goat ${r.version} is available (${"%.1f".format(r.patch.size / 1048576.0)} MB)",
+                    if (r.patch != null) Toasts.show("${AppInfo.NAME} ${r.version} is available (${"%.1f".format(r.patch.size / 1048576.0)} MB)",
                         "Settings" to { show(Tab.SETTINGS) }, 15.0)
                     else Toasts.show("Stream Goat ${r.version} is available", "Download" to { openUrl(r.url) }, 15.0)
                 }

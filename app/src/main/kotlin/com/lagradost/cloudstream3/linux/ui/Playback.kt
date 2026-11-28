@@ -2,9 +2,12 @@ package com.lagradost.cloudstream3.linux.ui
 
 import com.lagradost.cloudstream3.LoadResponse
 import com.lagradost.cloudstream3.MainAPI
+import com.lagradost.cloudstream3.USER_AGENT
+import com.lagradost.cloudstream3.utils.ExtractorLinkPlayList
 import com.lagradost.cloudstream3.linux.Engine
 import com.lagradost.cloudstream3.linux.Playable
 import com.lagradost.cloudstream3.linux.Settings
+import com.lagradost.cloudstream3.linux.StreamProxy
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.Qualities
 import javafx.animation.Interpolator
@@ -37,12 +40,44 @@ object Playback {
 
     fun start(api: MainAPI, response: LoadResponse, playable: Playable, sources: SourceCollector, link: ExtractorLink) {
         Nav.window.closeOverlay()
+        if (com.lagradost.cloudstream3.linux.Os.isMac && Settings.playerEngine == "IINA") {
+            sources.cancel()
+            openInIina(link)
+            return
+        }
         if (Vlc.factory == null) {
             sources.cancel()
             Toasts.show("Playing needs VLC's libraries: " + com.lagradost.cloudstream3.linux.Os.vlcHint, seconds = 12.0)
             return
         }
         active = BuiltinPlayer(api, response, playable, sources, link).also { it.start() }
+    }
+
+    /** Launch the standalone IINA app; all stream headers and HLS requests go through StreamProxy. */
+    private fun openInIina(link: ExtractorLink) {
+        val raw = ((link as? ExtractorLinkPlayList)?.playlist?.firstOrNull()?.url ?: link.url)
+            .removeSuffix(com.lagradost.cloudstream3.linux.LiveApi.EXPIRED_MARK)
+        val headers = link.getAllHeaders().toMutableMap()
+        if (headers.keys.none { it.equals("user-agent", true) }) headers["User-Agent"] = USER_AGENT
+        val url = runCatching {
+            when {
+                raw.startsWith("file:", true) -> raw
+                raw.startsWith("data:", true) -> StreamProxy.wrapData(raw, headers)
+                    ?: error("This inline stream couldn't be prepared")
+                else -> {
+                    val wrapped = StreamProxy.wrap(raw, headers, link.name == com.lagradost.cloudstream3.linux.LiveApi.EXPIRED)
+                    val hls = link.type == com.lagradost.cloudstream3.utils.ExtractorLinkType.M3U8 ||
+                        ".m3u8" in raw.lowercase() || (raw.startsWith("data:", true) && "mpegurl" in raw.substringBefore(','))
+                    if (hls) wrapped.substringBeforeLast('/') + "/playlist.m3u8" else wrapped
+                }
+            }
+        }.getOrElse {
+            Toasts.show("Couldn't prepare this stream for IINA: ${it.message ?: it}", seconds = 8.0)
+            return
+        }
+        runCatching { ProcessBuilder("/usr/bin/open", "-a", "IINA", url).start() }
+            .onSuccess { com.lagradost.cloudstream3.linux.Glitch.step("Opened ${link.name} in IINA") }
+            .onFailure { Toasts.show("Couldn't launch IINA. Install IINA in Applications and try again.", seconds = 8.0) }
     }
 }
 

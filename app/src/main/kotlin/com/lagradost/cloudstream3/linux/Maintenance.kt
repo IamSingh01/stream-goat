@@ -41,12 +41,12 @@ object SiteOverrides {
 /**
  * Updates from the project's GitHub releases (or its "test-build" pre-release, with Test builds on).
  *
- * When only Stream Goat's own code changed, the GitHub builds attach a signed patch for each system
- * (streamgoat-update-<windows|mac|linux>.zip, a few MB): it's downloaded, checked and installed into the data
+ * When only RoarStream's own code changed, the GitHub builds attach a signed patch for each system
+ * (roarstream-update-<windows|mac|linux>.zip, a few MB): it's downloaded, checked and installed into the data
  * folder, and used from the next start (see Boot.java). Otherwise the full installer is offered, as before.
  */
 object Updates {
-    const val REPO = "sherazi5110/stream-goat"
+    const val REPO = "IamSingh01/stream-goat"
     const val RELEASES = "https://github.com/$REPO/releases/latest"
     const val TEST_BUILDS = "https://github.com/$REPO/releases/tag/test-build"
 
@@ -57,7 +57,7 @@ object Updates {
     /** This build (the GitHub builds set it; "dev" for local builds). */
     val build: String by lazy {
         runCatching {
-            java.util.Properties().apply { Updates::class.java.getResourceAsStream("/stream-goat-build.properties")!!.use { load(it) } }
+            java.util.Properties().apply { Updates::class.java.getResourceAsStream("/roarstream-build.properties")!!.use { load(it) } }
                 .getProperty("build")
         }.getOrNull()?.takeIf { it.isNotBlank() } ?: "dev"
     }
@@ -70,7 +70,7 @@ object Updates {
         val json = JSONObject(app.get("https://api.github.com/repos/$REPO/releases/" + if (test) "tags/test-build" else "latest", timeout = 15).text)
         val assets = json.optJSONArray("assets") ?: org.json.JSONArray()
         fun asset(name: String) = (0 until assets.length()).map { assets.getJSONObject(it) }.firstOrNull { it.optString("name") == name }
-        val props = asset("streamgoat-update-$osKey.properties")?.let { a ->
+        val props = asset("roarstream-update-$osKey.properties")?.let { a ->
             runCatching { java.util.Properties().apply { load(java.io.StringReader(app.get(a.optString("browser_download_url"), timeout = 15).text)) } }.getOrNull()
         }
         val page = json.optString("html_url", if (test) TEST_BUILDS else RELEASES)
@@ -84,13 +84,13 @@ object Updates {
             if (!newer(tag, current)) return@withContext null
             Release(tag.trimStart('v', 'V'), page, props?.getProperty("build"))
         }
-        val zip = asset("streamgoat-update-$osKey.zip")
+        val zip = asset("roarstream-update-$osKey.zip")
         val patch = if (props != null && zip != null && props.getProperty("version") == release.version && patchFits(props))
             Patch(zip.optString("browser_download_url"), zip.optLong("size"), props) else null
         release.copy(patch = patch)
     }
 
-    /** A patch fits when every other jar it needs is exactly the one installed (only Stream Goat's own code changed). */
+    /** A patch fits when every other jar it needs is exactly the one installed (only RoarStream's own code changed). */
     private fun patchFits(props: java.util.Properties): Boolean {
         if (!com.lagradost.cloudstream3.linux.Boot.canVerify() || com.lagradost.cloudstream3.linux.Boot.installedAppJar() == null) return false
         val needed = props.stringPropertyNames().filter { it.startsWith("requires.") }.associate { it.removePrefix("requires.") to props.getProperty(it) }
@@ -174,7 +174,7 @@ object Updates {
     }
 
     /** The patch this run started with, if any (Boot sets it): "<version> <build>". */
-    val runningPatch: String? get() = System.getProperty("streamgoat.patch")
+    val runningPatch: String? get() = System.getProperty("roarstream.patch")
 
     /** Compares dotted versions, ignoring a leading v/V: "V4.0.2" > "4.0.1". */
     fun newer(candidate: String, current: String): Boolean {

@@ -1,9 +1,9 @@
 [Desktop Entry]
 Type=Application
-Name=Stream Goat
+Name=RoarStream
 GenericName=Media Center
-Comment=Movies, series, anime and Live TV from CloudStream extensions
-Exec=cloudstream-linux %u
+Comment=Movies, series, anime and live TV
+Exec=RoarStream %u
 Icon=io.github.sherazi5110.CloudStreamLinux
 Terminal=false
 Categories=AudioVideo;Video;Player;

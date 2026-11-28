@@ -41,10 +41,13 @@ dependencies {
     // Built-in player: libVLC 3 (from the system's VLC packages) through JNA.
     implementation("uk.co.caprica:vlcj:4.12.1")
     testImplementation(kotlin("test"))
+    testImplementation("org.testfx:testfx-core:4.0.18")
+    testImplementation("org.testfx:testfx-junit5:4.0.18")
+    testRuntimeOnly("org.testfx:openjfx-monocle:21.0.2")
 }
 
 application {
-    applicationName = "cloudstream-linux"
+    applicationName = "RoarStream"
     // Boot starts MainKt, with an installed update patch when there is one (Boot.java).
     mainClass.set("com.lagradost.cloudstream3.linux.Boot")
     applicationDefaultJvmArgs = listOf(
@@ -77,11 +80,11 @@ tasks.test {
 }
 
 // Self-contained .deb (bundles a Java runtime) built with the JDK's jpackage:
-//   ./gradlew :app:packageDeb  ->  app/build/jpackage/cloudstream-linux_<version>_amd64.deb
+//   ./gradlew :app:packageDeb  ->  app/build/jpackage/RoarStream_<version>_amd64.deb
 val packageDeb by tasks.registering(Exec::class) {
     group = "distribution"
     dependsOn(tasks.installDist)
-    val lib = layout.buildDirectory.dir("install/cloudstream-linux/lib")
+    val lib = layout.buildDirectory.dir("install/RoarStream/lib")
     val out = layout.buildDirectory.dir("jpackage")
     val resources = layout.buildDirectory.dir("jpackage-resources")
     val packaging = rootProject.file("packaging/linux")
@@ -89,21 +92,21 @@ val packageDeb by tasks.registering(Exec::class) {
         out.get().asFile.deleteRecursively()
         val res = resources.get().asFile.apply { mkdirs() }
         // jpackage picks up <name>.desktop from --resource-dir, so the link handler is registered on install.
-        res.resolve("cloudstream-linux.desktop").writeText(
+        res.resolve("RoarStream.desktop").writeText(
             packaging.resolve("cloudstream-linux.desktop").readText()
-                .replace("@EXEC@", "/opt/cloudstream-linux/bin/cloudstream-linux")
-                .replace("@ICON@", "/opt/cloudstream-linux/lib/cloudstream-linux.png")
+                .replace("@EXEC@", "/opt/RoarStream/bin/RoarStream")
+                .replace("@ICON@", "/opt/RoarStream/lib/RoarStream.png")
         )
     }
     commandLine(buildList {
         // -PjpackageType=app-image builds the unpacked app without dpkg/fakeroot.
         val type = (findProperty("jpackageType") as String?) ?: "deb"
-        addAll(listOf("jpackage", "--type", type, "--name", "cloudstream-linux", "--app-version", "2.0.0"))
+        addAll(listOf("jpackage", "--type", type, "--name", "RoarStream", "--app-version", "2.0.0"))
         addAll(listOf("--input", lib.get().asFile.path, "--main-jar", "app.jar"))
         addAll(listOf("--main-class", application.mainClass.get(), "--dest", out.get().asFile.path))
         addAll(listOf("--resource-dir", resources.get().asFile.path))
-        addAll(listOf("--icon", packaging.resolve("cloudstream-linux.png").path))
-        addAll(listOf("--description", "Stream Goat: movies, series, anime and Live TV from CloudStream extensions"))
+        addAll(listOf("--icon", rootProject.file("app/src/main/resources/ui/icon.png").path))
+        addAll(listOf("--description", "RoarStream: movies, series, anime and live TV"))
         addAll(listOf("--jlink-options", "--strip-debug --no-man-pages --no-header-files --strip-native-commands"))
         // Android gives extensions roughly java.base; the rest is for Swing, TLS, Jackson, Rhino and okhttp.
         addAll(listOf("--add-modules", listOf(
@@ -113,21 +116,20 @@ val packageDeb by tasks.registering(Exec::class) {
         ).joinToString(",")))
         if (type == "deb") {
             addAll(listOf("--linux-shortcut", "--linux-menu-group", "AudioVideo;Video", "--linux-app-category", "video"))
-            addAll(listOf("--linux-deb-maintainer", "cloudstream-linux@users.noreply.github.com"))
             addAll(listOf("--linux-package-deps", "libvlc5, vlc-plugin-base, libmpv2 | libmpv1"))
         }
         application.applicationDefaultJvmArgs.forEach { addAll(listOf("--java-options", it)) }
     })
 }
 
-// Windows: the app image (Stream Goat\Stream Goat.exe with its own Java runtime and VLC) and the .msi installer,
+// Windows: the app image (RoarStream\RoarStream.exe with its own Java runtime and VLC) and the .msi installer,
 // built with the JDK's jpackage on Windows (CI: the "windows" job in .github/workflows/build.yml).
 //   ./gradlew :app:packageWindows -PvlcDir=C:\path\to\vlc                 -> build\jpackage-win\Stream Goat\
-//   ./gradlew :app:packageWindows -PvlcDir=... -PjpackageType=msi          -> build\jpackage-win\Stream Goat-<v>.msi
+//   ./gradlew :app:packageWindows -PvlcDir=... -PjpackageType=msi          -> build\jpackage-win\RoarStream-<v>.msi
 val packageWindows by tasks.registering(Exec::class) {
     group = "distribution"
     dependsOn(tasks.installDist)
-    val lib = layout.buildDirectory.dir("install/cloudstream-linux/lib")
+    val lib = layout.buildDirectory.dir("install/RoarStream/lib")
     val input = layout.buildDirectory.dir("jpackage-win-input")
     val out = layout.buildDirectory.dir("jpackage-win")
     val version = file("src/main/kotlin/com/lagradost/cloudstream3/linux/ui/AppWindow.kt").readText()
@@ -143,14 +145,14 @@ val packageWindows by tasks.registering(Exec::class) {
         if (type == "app-image") out.get().asFile.deleteRecursively()
     }
     commandLine(buildList {
-        addAll(listOf("jpackage", "--type", type, "--name", "Stream Goat", "--app-version", version))
-        addAll(listOf("--vendor", "Syed Ali Hamza", "--dest", out.get().asFile.path))
-        addAll(listOf("--description", "Stream Goat: movies, series, anime and Live TV from CloudStream extensions"))
+        addAll(listOf("jpackage", "--type", type, "--name", "RoarStream", "--app-version", version))
+        addAll(listOf("--vendor", "Aman Singh", "--dest", out.get().asFile.path))
+        addAll(listOf("--description", "RoarStream: movies, series, anime and live TV"))
         if (type == "app-image") {
             addAll(listOf("--input", input.get().asFile.path, "--main-jar", "app.jar", "--main-class", application.mainClass.get()))
-            addAll(listOf("--icon", rootProject.file("packaging/windows/cloudstream.ico").path))
-            // A second launcher with a console window for the command line (streamgoat-cli.exe doctor, install…).
-            addAll(listOf("--add-launcher", "streamgoat-cli=" + rootProject.file("packaging/windows/cli-launcher.properties").path))
+            addAll(listOf("--icon", rootProject.file("packaging/windows/RoarStream.ico").path))
+            // A second launcher with a console window for the command line (roarstream-cli.exe doctor, install…).
+            addAll(listOf("--add-launcher", "roarstream-cli=" + rootProject.file("packaging/windows/cli-launcher.properties").path))
             addAll(listOf("--jlink-options", "--strip-debug --no-man-pages --no-header-files --strip-native-commands"))
             addAll(listOf("--add-modules", listOf(
                 "java.base", "java.desktop", "java.logging", "java.management", "java.naming", "java.net.http",
@@ -161,44 +163,66 @@ val packageWindows by tasks.registering(Exec::class) {
         } else {
             // The installer wraps the app image built first: per-user (no admin prompt), Start menu and desktop
             // shortcuts, upgrades in place (the upgrade code never changes).
-            addAll(listOf("--app-image", out.get().asFile.resolve("Stream Goat").path))
-            addAll(listOf("--win-per-user-install", "--win-menu", "--win-menu-group", "Stream Goat", "--win-shortcut"))
+            addAll(listOf("--app-image", out.get().asFile.resolve("RoarStream").path))
+            addAll(listOf("--win-per-user-install", "--win-menu", "--win-menu-group", "RoarStream", "--win-shortcut"))
             addAll(listOf("--win-upgrade-uuid", "6f1c2b9e-4d1a-4c2e-9a57-3e5b8d0c7a41"))
-            addAll(listOf("--about-url", "https://github.com/sherazi5110/stream-goat"))
+            addAll(listOf("--about-url", "https://github.com/IamSingh01/stream-goat"))
         }
     })
 }
 
-// macOS (Apple Silicon): Stream Goat.app with its own Java runtime and VLC, and a .dmg, built with the JDK's
+// macOS (Apple Silicon and Intel): RoarStream.app with its own Java runtime and VLC, and a .dmg, built with the JDK's
 // jpackage on a Mac (CI: .github/workflows/macos.yml). The VLC folder is VLC.app's Contents/MacOS (lib/, plugins/).
-//   ./gradlew :app:packageMac -PvlcDir=/path/to/vlc                      -> build/jpackage-mac/Stream Goat.app
-//   ./gradlew :app:packageMac -PvlcDir=... -PjpackageType=dmg             -> build/jpackage-mac/Stream Goat-<v>.dmg
+//   ./gradlew :app:packageMac -PvlcDir=/path/to/vlc                      -> build/jpackage-mac/RoarStream.app
+//   ./gradlew :app:packageMac -PvlcDir=... -PjpackageType=dmg             -> build/jpackage-mac/RoarStream-<v>.dmg
 val packageMac by tasks.registering(Exec::class) {
     group = "distribution"
     dependsOn(tasks.installDist)
-    val lib = layout.buildDirectory.dir("install/cloudstream-linux/lib")
+    val lib = layout.buildDirectory.dir("install/RoarStream/lib")
     val input = layout.buildDirectory.dir("jpackage-mac-input")
     val out = layout.buildDirectory.dir("jpackage-mac")
     val version = file("src/main/kotlin/com/lagradost/cloudstream3/linux/ui/AppWindow.kt").readText()
         .let { Regex("VERSION = \"([0-9.]+)").find(it)!!.groupValues[1] }
     val type = (findProperty("jpackageType") as String?) ?: "app-image"
+    val iconFile = layout.buildDirectory.file("generated/branding/RoarStream.icns")
     doFirst {
         val inDir = input.get().asFile.apply { deleteRecursively(); mkdirs() }
         lib.get().asFile.copyRecursively(inDir)
-        // VLC's lib/ and plugins/ go into Stream Goat.app/Contents/app/vlc; see Os.bundledVlcDir.
+        // Build the macOS icon from the supplied RoarStream lion asset.
+        val iconset = layout.buildDirectory.dir("generated/branding/RoarStream.iconset").get().asFile
+        iconset.deleteRecursively()
+        iconset.mkdirs()
+        val sourceIcon = rootProject.file("app/src/main/resources/ui/icon.png")
+        val iconSizes = listOf(
+            16 to "icon_16x16.png", 32 to "icon_16x16@2x.png",
+            32 to "icon_32x32.png", 64 to "icon_32x32@2x.png",
+            128 to "icon_128x128.png", 256 to "icon_128x128@2x.png",
+            256 to "icon_256x256.png", 512 to "icon_256x256@2x.png",
+            512 to "icon_512x512.png", 1024 to "icon_512x512@2x.png",
+        )
+        iconSizes.forEach { (size, name) ->
+            val result = ProcessBuilder("sips", "-z", size.toString(), size.toString(), sourceIcon.path,
+                "--out", iconset.resolve(name).path).inheritIO().start().waitFor()
+            check(result == 0) { "sips failed while generating $name" }
+        }
+        iconFile.get().asFile.parentFile.mkdirs()
+        val iconResult = ProcessBuilder("iconutil", "-c", "icns", iconset.path, "-o", iconFile.get().asFile.path)
+            .inheritIO().start().waitFor()
+        check(iconResult == 0 && iconFile.get().asFile.isFile) { "Could not create the RoarStream .icns icon" }
+        // VLC's lib/ and plugins/ go into RoarStream.app/Contents/app/vlc; see Os.bundledVlcDir.
         (findProperty("vlcDir") as String?)?.let { file(it).copyRecursively(inDir.resolve("vlc")) }
         // libmpv (the main player, see ui/Mpv.kt) goes into <app>/mpv.
         (findProperty("mpvDir") as String?)?.let { file(it).copyRecursively(inDir.resolve("mpv")) }
         if (type == "app-image") out.get().asFile.deleteRecursively()
     }
     commandLine(buildList {
-        addAll(listOf("jpackage", "--type", type, "--name", "Stream Goat", "--app-version", version))
-        addAll(listOf("--vendor", "Syed Ali Hamza", "--dest", out.get().asFile.path))
-        addAll(listOf("--description", "Stream Goat: movies, series, anime and Live TV from CloudStream extensions"))
+        addAll(listOf("jpackage", "--type", type, "--name", "RoarStream", "--app-version", version))
+        addAll(listOf("--vendor", "Aman Singh", "--dest", out.get().asFile.path))
+        addAll(listOf("--description", "RoarStream: movies, series, anime and live TV"))
         if (type == "app-image") {
             addAll(listOf("--input", input.get().asFile.path, "--main-jar", "app.jar", "--main-class", application.mainClass.get()))
-            addAll(listOf("--icon", rootProject.file("packaging/macos/StreamGoat.icns").path))
-            addAll(listOf("--mac-package-identifier", "io.github.sherazi5110.streamgoat", "--mac-package-name", "Stream Goat"))
+            addAll(listOf("--icon", iconFile.get().asFile.path))
+            addAll(listOf("--mac-package-identifier", "com.aman.roarstream", "--mac-package-name", "RoarStream"))
             addAll(listOf("--mac-app-category", "public.app-category.entertainment"))
             addAll(listOf("--jlink-options", "--strip-debug --no-man-pages --no-header-files --strip-native-commands"))
             addAll(listOf("--add-modules", listOf(
@@ -209,7 +233,7 @@ val packageMac by tasks.registering(Exec::class) {
             application.applicationDefaultJvmArgs.forEach { addAll(listOf("--java-options", it)) }
         } else {
             // The .dmg wraps the app image built (and signed) first, with a link to Applications to drag it to.
-            addAll(listOf("--app-image", out.get().asFile.resolve("Stream Goat.app").path))
+            addAll(listOf("--app-image", out.get().asFile.resolve("RoarStream.app").path))
         }
     })
 }
@@ -220,30 +244,30 @@ val cloudConfig = tasks.register("cloudConfig") {
     val out = layout.buildDirectory.dir("generated/cloud")
     val id = providers.environmentVariable("GOOGLE_CLIENT_ID").orElse("")
     val secret = providers.environmentVariable("GOOGLE_CLIENT_SECRET").orElse("")
-    // WeTrakr sync: the app key of the Stream Goat app on wetrakr.com (GitHub secret WETRAKR_CLIENT_ID).
+    // WeTrakr sync: the app key of the RoarStream app on wetrakr.com (GitHub secret WETRAKR_CLIENT_ID).
     val wetrakr = providers.environmentVariable("WETRAKR_CLIENT_ID").orElse("")
     inputs.property("id", id)
     inputs.property("secret", secret)
     inputs.property("wetrakr", wetrakr)
     outputs.dir(out)
     doLast {
-        out.get().file("stream-goat-cloud.properties").asFile.apply { parentFile.mkdirs() }
+        out.get().file("roarstream-cloud.properties").asFile.apply { parentFile.mkdirs() }
             .writeText("GOOGLE_CLIENT_ID=${id.get()}\nGOOGLE_CLIENT_SECRET=${secret.get()}\nWETRAKR_CLIENT_ID=${wetrakr.get()}\n")
     }
 }
 // Update patches (Boot.java, Updates): which build this is, and the certificate patches must be signed with
-// (the GitHub builds export it from the signing key: STREAMGOAT_UPDATE_CERT; without it patches are off).
+// (the GitHub builds export it from the signing key: ROARSTREAM_UPDATE_CERT; without it patches are off).
 val updateConfig = tasks.register("updateConfig") {
     val out = layout.buildDirectory.dir("generated/update")
     val sha = providers.environmentVariable("GITHUB_SHA").orElse("dev")
-    val cert = providers.environmentVariable("STREAMGOAT_UPDATE_CERT").orElse("")
+    val cert = providers.environmentVariable("ROARSTREAM_UPDATE_CERT").orElse("")
     inputs.property("sha", sha)
     inputs.property("cert", cert)
     outputs.dir(out)
     doLast {
         val dir = out.get().asFile.apply { deleteRecursively(); mkdirs() }
-        dir.resolve("stream-goat-build.properties").writeText("build=${sha.get().take(12)}\n")
-        cert.get().takeIf { it.isNotBlank() }?.let(::file)?.takeIf { it.isFile }?.copyTo(dir.resolve("stream-goat-update.pem"))
+        dir.resolve("roarstream-build.properties").writeText("build=${sha.get().take(12)}\n")
+        cert.get().takeIf { it.isNotBlank() }?.let(::file)?.takeIf { it.isFile }?.copyTo(dir.resolve("roarstream-update.pem"))
     }
 }
 sourceSets.main { resources.srcDir(cloudConfig); resources.srcDir(updateConfig) }

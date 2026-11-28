@@ -27,7 +27,7 @@ object Settings {
     private val PROFILE_KEYS = setOf(
         "auto_play_next", "skip_buttons", "auto_skip", "subtitle_language", "preferred_quality", "player_volume", "hero_slider", "anti_spoiler",
         "player_equalizer", "audio_language", "subtitle_size", "subtitle_color", "subtitle_outline", "subtitle_background",
-        "player_zoom", "last_home_provider", "show_nsfw",
+        "player_zoom", "show_nsfw",
         "theme_mode", "theme_accent", "theme_wallpaper", "theme_wallpaper_dim", "theme_wallpaper_blur",
     )
 
@@ -40,10 +40,17 @@ object Settings {
     /** Before profiles (v5 and older) these were app-wide: they become the first profile's. */
     fun migrateToProfiles() {
         if (prefs.contains("profiles_migrated")) return
-        val target = Platform.context.getSharedPreferences("profile_settings", 0).edit()
-        prefs.getAll().forEach { (k, v) -> if (k in PROFILE_KEYS && v is String) target.putString(k, v) }
-        target.apply()
-        prefs.edit().putString("profiles_migrated", "true").apply()
+        val existingProfile = Platform.context.getSharedPreferences("profile_settings", 0)
+        val target = existingProfile.edit()
+        // A partially restored/new profile wins over legacy values; migrate only absent keys.
+        prefs.getAll().forEach { (k, v) ->
+            if (k in PROFILE_KEYS && v is String && !existingProfile.contains(k)) target.putString(k, v)
+        }
+        // Commit the target first. The migration marker is written only once all copied
+        // profile values are durable, so a crash cannot mark an incomplete migration done.
+        if (target.commit()) {
+            prefs.edit().putString("profiles_migrated", "true").commit()
+        }
     }
 
     /** Lower-power playback for low-end PCs and battery: skip H.264 deblocking, buffer more. */
@@ -149,11 +156,10 @@ object Settings {
 
     /** Built-in player zoom mode, a [com.lagradost.cloudstream3.linux.ui.Zoom] name. */
     /**
-     * Which player plays a source: "AUTO" (mpv, VLC when mpv isn't there) or "VLC". The player menu can switch while
-     * watching.
+     * Which player plays a source: "IINA" (external macOS app), "AUTO" (mpv, VLC when mpv isn't there), or "VLC".
      */
     var playerEngine: String
-        get() = string("player_engine", "AUTO")
+        get() = string("player_engine", if (Os.isMac) "IINA" else "AUTO")
         set(v) = put("player_engine", v)
 
     var playerZoom: String
@@ -174,8 +180,12 @@ object Settings {
         set(v) = put("download_folder", v)
 
     var lastHomeProvider: String?
-        get() = string("last_home_provider", "").ifBlank { null }
-        set(v) = put("last_home_provider", v ?: "")
+        // Keep the Home source app-wide. Older builds stored it in profile_settings, so
+        // retain that value as a fallback when migrating existing installations.
+        get() = (prefs.getString("last_home_provider", null)
+            ?: profilePrefs.getString("last_home_provider", null)).orEmpty().ifBlank { null }
+        // This selection is made immediately before an app may be closed; commit synchronously.
+        set(v) { prefs.edit().putString("last_home_provider", v ?: "").commit() }
 
     /** Extension languages to show (lowercase codes such as "en", "hi"); empty = all, like the official app. */
     var extensionLanguages: Set<String>
@@ -211,11 +221,6 @@ object Settings {
     var parallelDownloads: Int
         get() = string("parallel_downloads", "2").toIntOrNull()?.coerceIn(1, 5) ?: 2
         set(v) = put("parallel_downloads", v.coerceIn(1, 5))
-
-    /** The short animated intro at startup (off: a plain splash while extensions load). */
-    var startupAnimation: Boolean
-        get() = string("startup_animation", "true").toBoolean()
-        set(v) = put("startup_animation", v)
 
     /** Sharper lines for animation: OFF, AUTO (animated titles) or ON (everything). */
     var animeEnhance: String

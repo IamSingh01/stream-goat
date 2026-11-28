@@ -1,27 +1,50 @@
 package com.lagradost.cloudstream3.linux.ui
 
 import com.lagradost.cloudstream3.MainAPI
+import com.lagradost.cloudstream3.linux.ContentFilter
 import com.lagradost.cloudstream3.linux.Engine
+import com.lagradost.cloudstream3.linux.GlobalSearchSourceSelection
+import com.lagradost.cloudstream3.linux.SearchPageResult
+import com.lagradost.cloudstream3.linux.ViewAllSearchSession
 import com.lagradost.cloudstream3.linux.PluginManager
 import com.lagradost.cloudstream3.linux.SearchHistory
 import javafx.animation.PauseTransition
 import javafx.geometry.Pos
+import javafx.scene.control.ComboBox
 import javafx.scene.control.ProgressIndicator
 import javafx.scene.control.TextField
+import javafx.scene.layout.FlowPane
 import javafx.scene.layout.StackPane
 import javafx.scene.layout.VBox
 import javafx.util.Duration
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
 
 /** Searches every provider in parallel; each provider's row appears the moment it answers. */
 class SearchPage : StackPane(), Refreshable {
-    private val field = TextField().apply {
+    internal val field = TextField().apply {
+        id = "search-query-field"
         styleClass.setAll("text-field", "search-field")
         promptText = "Search movies, series, anime…"
     }
-    private val filter = ChipGroup { promptText(); run() }
+    internal val sourceSelector = ComboBox<String>().apply {
+        id = "search-source-selector"
+        styleClass += "source-selector"
+        promptText = "All sources"
+        prefWidth = 220.0
+        minWidth = 190.0
+        setOnAction {
+            if (!changingSource) {
+                sourceSelection.selectIndex(selectionModel.selectedIndex)
+                promptText()
+                run()
+            }
+        }
+    }
     private var apis: List<MainAPI> = emptyList()
+    private val sourceSelection = GlobalSearchSourceSelection<MainAPI>(emptyList()) { it.name }
     private val status = hbox(10.0)
     private val results = VBox(30.0)
     private var job: Job? = null
@@ -33,13 +56,43 @@ class SearchPage : StackPane(), Refreshable {
     private val debounce = PauseTransition(Duration.millis(220.0)).apply { setOnFinished { suggest() } }
     private var lastQuery = ""
     private var picking = false
+    private var changingSource = false
 
     init {
         val searchIcon = icon(Icons.SEARCH, 20.0).apply { styleClass += "faint-icon" }
-        val fieldBox = StackPane(field, searchIcon).apply { maxWidth = 760.0 }
+        val clearButton = button(null, Icons.CLOSE, "btn-ghost", "btn-small") {
+            field.clear()
+            field.requestFocus()
+        }.apply {
+            id = "search-clear-button"
+            isVisible = false
+            isManaged = false
+            tooltip("Clear search")
+        }
+        val fieldBox = StackPane(field, searchIcon, clearButton).apply { maxWidth = 760.0 }
         StackPane.setAlignment(searchIcon, Pos.CENTER_LEFT)
         StackPane.setMargin(searchIcon, javafx.geometry.Insets(0.0, 0.0, 0.0, 16.0))
-        field.textProperty().addListener { _, _, _ -> if (!picking) debounce.playFromStart() }
+        StackPane.setAlignment(clearButton, Pos.CENTER_RIGHT)
+        StackPane.setMargin(clearButton, javafx.geometry.Insets(0.0, 8.0, 0.0, 0.0))
+        field.textProperty().addListener { _, _, value ->
+            val query = value?.trim().orEmpty()
+            clearButton.isVisible = query.isNotEmpty()
+            clearButton.isManaged = clearButton.isVisible
+            if (query.isEmpty()) {
+                // Clearing the field exits search mode immediately instead of leaving
+                // stale results or an in-flight provider search on screen.
+                debounce.stop()
+                suggestJob?.cancel()
+                hideSuggestions()
+                job?.cancel()
+                job = null
+                lastQuery = ""
+                status.children.clear()
+                showRecent()
+            } else if (!picking) {
+                debounce.playFromStart()
+            }
+        }
         field.setOnAction {
             debounce.stop()
             val pick = suggestions.getOrNull(highlighted)
@@ -55,7 +108,12 @@ class SearchPage : StackPane(), Refreshable {
             }
         }
         field.focusedProperty().addListener { _, _, f -> if (!f) PauseTransition(Duration.millis(150.0)).apply { setOnFinished { hideSuggestions() } }.play() }
-        val top = vbox(16.0, label("Search", "h2"), vbox(6.0, fieldBox, suggestBox), filter, status)
+        val top = vbox(12.0,
+            label("Search", "h2"),
+            hbox(12.0, fieldBox, sourceSelector),
+            suggestBox,
+            status,
+        )
         children += pageScroll(vbox(26.0, top, results).pad(22.0, 36.0, 40.0, 36.0))
         ui.launch { PluginManager.version.collect { refreshProviders() } }
     }
@@ -65,17 +123,24 @@ class SearchPage : StackPane(), Refreshable {
         field.selectAll()
     }
 
+    /** Stable JavaFX controls exposed for headless integration tests; not part of end-user navigation. */
+    internal fun automationSourceSelector(): ComboBox<String> = sourceSelector
+    internal fun automationSearchField(): TextField = field
+    internal fun automationRefreshProviders() = refreshProviders()
+
     /** Search only [provider] (Home's Search button), or every extension (null). Runs again if there's a search. */
     fun scopeTo(provider: String?) {
-        val index = provider?.let { name -> apis.indexOfFirst { it.name == name } }?.takeIf { it >= 0 }
-        filter.select((index ?: -1) + 1, notify = false)
+        sourceSelection.selectProvider(provider)
+        changingSource = true
+        sourceSelector.selectionModel.select(sourceSelection.options.indexOf(sourceSelection.selectedName ?: GlobalSearchSourceSelection.ALL_SOURCES))
+        changingSource = false
         promptText()
         if (field.text.trim().length >= 2 && lastQuery.isNotEmpty()) run()
         javafx.application.Platform.runLater { focusField() }
     }
 
     private fun promptText() {
-        val one = apis.getOrNull(filter.selected - 1)
+        val one = sourceSelection.selectedName?.let { name -> apis.firstOrNull { it.name == name } }
         field.promptText = if (one != null) "Search in ${one.name}…" else "Search movies, series, anime…"
     }
 
@@ -147,15 +212,28 @@ class SearchPage : StackPane(), Refreshable {
 
     private fun refreshProviders() {
         apis = Engine.providers()
-        val names = listOf("All") + apis.map { it.name }
-        filter.setItems(names, filter.selected.coerceAtLeast(0))
+        sourceSelection.refresh(apis)
+        val names = sourceSelection.options
+        changingSource = true
+        sourceSelector.items.setAll(names)
+        sourceSelector.selectionModel.select(names.indexOf(sourceSelection.selectedName ?: GlobalSearchSourceSelection.ALL_SOURCES).coerceAtLeast(0))
+        changingSource = false
+        promptText()
     }
+
+    /** Test seam for creating the provider-backed View All screen with deterministic page results. */
+    internal fun automationViewAllForTest(
+        firstPage: List<com.lagradost.cloudstream3.SearchResponse> = emptyList(),
+        fetchPage: suspend (Int) -> SearchPageResult<com.lagradost.cloudstream3.SearchResponse> = {
+            SearchPageResult(emptyList(), hasNext = false)
+        },
+        firstHasNext: Boolean = true,
+    ): SearchResultsPage = SearchResultsPage.forAutomation(firstPage, firstHasNext, fetchPage)
 
     fun run(query: String = field.text.trim()) {
         if (query.length < 2) return
         if (field.text.trim() != query) field.text = query
-        val selected = filter.selected
-        val targets = if (selected <= 0) apis else listOfNotNull(apis.getOrNull(selected - 1))
+        val targets = sourceSelection.targets()
         if (targets.isEmpty()) {
             results.children.setAll(emptyState(Icons.EXTENSION, "No extensions installed", "Install extensions from a repository first.",
                 button("Open Extensions", Icons.EXTENSION, "btn-accent") { Nav.window.show(Tab.EXTENSIONS) }))
@@ -188,7 +266,11 @@ class SearchPage : StackPane(), Refreshable {
                     empty += batch.api.name
                 } else {
                     found += batch.results.size
-                    results.children += Shelf(batch.api.name, trailing = label("${batch.results.size}", "tag")).apply {
+                    results.children += Shelf(
+                        batch.api.name,
+                        onViewAll = { Nav.window.push(SearchResultsPage(batch.api, query, batch.results, batch.hasNext)) },
+                        trailing = label("${batch.results.size}", "tag"),
+                    ).apply {
                         batch.results.forEach { item -> add(PosterCard.of(item) { Nav.open(batch.api, item) }) }
                     }
                 }
@@ -198,5 +280,116 @@ class SearchPage : StackPane(), Refreshable {
                 if (!com.lagradost.cloudstream3.linux.Network.online()) offlineState { run(query) }
                 else emptyState(Icons.SEARCH, "No results for \"$query\"", "Try a different spelling, or check that the extensions' sites are reachable (Settings → DNS)."))
         }
+    }
+}
+ 
+/** Full, provider-paginated search results for one provider. */
+internal class SearchResultsPage private constructor(
+    private val api: MainAPI?,
+    private val query: String,
+    firstPage: List<com.lagradost.cloudstream3.SearchResponse>,
+    firstHasNext: Boolean,
+    fetchPage: suspend (Int) -> SearchPageResult<com.lagradost.cloudstream3.SearchResponse>,
+) : StackPane(), Disposable {
+    private val grid = FlowPane(18.0, 22.0)
+    private val renderedUrls = HashSet<String>()
+    private val session = ViewAllSearchSession(
+        firstPage = firstPage,
+        firstHasNext = firstHasNext,
+        keyOf = { it.url },
+        fetchPage = fetchPage,
+    )
+    constructor(
+        api: MainAPI,
+        query: String,
+        firstPage: List<com.lagradost.cloudstream3.SearchResponse>,
+        firstHasNext: Boolean,
+    ) : this(api, query, firstPage, firstHasNext, { nextPage ->
+        val response = api.search(query, nextPage) ?: error("Provider returned no search response")
+        SearchPageResult(ContentFilter.filter(response.items), response.hasNext)
+    })
+
+    companion object {
+        internal fun forAutomation(
+            firstPage: List<com.lagradost.cloudstream3.SearchResponse>,
+            firstHasNext: Boolean,
+            fetchPage: suspend (Int) -> SearchPageResult<com.lagradost.cloudstream3.SearchResponse>,
+        ) = SearchResultsPage(null, "automation", firstPage, firstHasNext, fetchPage)
+    }
+
+    private var job: Job? = null
+    private val spinner = ProgressIndicator().apply { setPrefSize(22.0, 22.0); setMaxSize(22.0, 22.0) }
+    private val status = label("", "muted")
+    private val retry = button("Try again", Icons.REFRESH, "btn-ghost") { loadMore() }.apply {
+        id = "view-all-retry"
+        isVisible = false
+        isManaged = false
+    }
+    private val footer = hbox(10.0, spinner, status, retry).apply { alignment = Pos.CENTER; minHeight = 44.0 }
+    private val scroll: javafx.scene.control.ScrollPane
+
+    /** Stable controls and actions for real JavaFX UI automation. */
+    internal fun automationRetryButton() = retry
+    internal fun automationStatusLabel() = status
+    internal fun automationResultCount() = grid.children.size
+    internal fun automationHasNext() = session.hasNext
+    internal fun automationLoadNext() = loadMore()
+
+    init {
+        firstPage.forEach { add(it) }
+        val header = hbox(14.0,
+            button(null, Icons.BACK, "btn-ghost") { Nav.window.back() },
+            label(query, "h2"),
+            label(api?.name ?: "Test provider", "tag"),
+        )
+        scroll = pageScroll(vbox(24.0, header, grid, footer).pad(22.0, 36.0, 40.0, 36.0))
+        children += scroll
+        idle()
+        if (session.hasNext) javafx.application.Platform.runLater { loadMore() }
+    }
+
+    private fun add(item: com.lagradost.cloudstream3.SearchResponse) {
+        if (renderedUrls.add(item.url)) grid.children += PosterCard.of(item) { api?.let { Nav.open(it, item) } }
+    }
+
+    internal fun loadMore() {
+        if (!session.hasNext) return
+        retry.isVisible = false
+        retry.isManaged = false
+        spinner.isVisible = true
+        spinner.isManaged = true
+        status.text = "Loading more from ${api?.name ?: "Test provider"}…"
+        job = ui.launch {
+            val loaded = try {
+                withTimeout(api?.searchTimeoutMs ?: 45_000L) { session.loadNext() }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Throwable) {
+                false
+            }
+            if (!loaded) {
+                spinner.isVisible = false
+                spinner.isManaged = false
+                status.text = "Couldn't load more results."
+                retry.isVisible = session.hasNext
+                retry.isManaged = retry.isVisible
+                return@launch
+            }
+            session.items.forEach { add(it) }
+            idle()
+            if (session.hasNext) loadMore()
+        }
+    }
+
+    private fun idle() {
+        spinner.isVisible = false
+        spinner.isManaged = false
+        status.text = if (!session.hasNext) {
+            "That's everything · ${grid.children.size} titles"
+        } else ""
+    }
+
+    override fun dispose() {
+        job?.cancel()
     }
 }

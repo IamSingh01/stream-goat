@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Builds a self-contained .deb (bundled Java runtime) without needing fakeroot:
 # jpackage makes the app image, dpkg-deb --root-owner-group packages it.
-#   ./scripts/build-deb.sh  ->  build/streamgoat-linux_<version>_<arch>.deb
-# The package keeps its original name (cloudstream-linux) so apt upgrades existing installs in place.
+#   ./scripts/build-deb.sh  ->  build/roarstream-linux_<version>_<arch>.deb
+# The Debian package keeps its original name (cloudstream-linux) so apt upgrades existing installs in place.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -15,12 +15,12 @@ STAGE=build/deb/cloudstream-linux
 rm -rf build/deb && mkdir -p "$STAGE/DEBIAN" "$STAGE/opt" "$STAGE/usr/bin" \
   "$STAGE/usr/share/applications" "$STAGE/usr/share/icons/hicolor/512x512/apps"
 
-cp -r app/build/jpackage/cloudstream-linux "$STAGE/opt/cloudstream-linux"
-ln -s /opt/cloudstream-linux/bin/cloudstream-linux "$STAGE/usr/bin/cloudstream-linux"
-ln -s /opt/cloudstream-linux/bin/cloudstream-linux "$STAGE/usr/bin/streamgoat"
-cp packaging/linux/cloudstream-linux.png "$STAGE/usr/share/icons/hicolor/512x512/apps/cloudstream-linux.png"
-sed -e "s|@EXEC@|/opt/cloudstream-linux/bin/cloudstream-linux|" -e "s|@ICON@|cloudstream-linux|" \
-  packaging/linux/cloudstream-linux.desktop > "$STAGE/usr/share/applications/cloudstream-linux.desktop"
+cp -r app/build/jpackage/RoarStream "$STAGE/opt/RoarStream"
+ln -s /opt/RoarStream/bin/RoarStream "$STAGE/usr/bin/RoarStream"
+ln -s /opt/RoarStream/bin/RoarStream "$STAGE/usr/bin/roarstream"
+cp app/src/main/resources/ui/icon.png "$STAGE/usr/share/icons/hicolor/512x512/apps/RoarStream.png"
+sed -e "s|@EXEC@|/opt/RoarStream/bin/RoarStream|" -e "s|@ICON@|RoarStream|" \
+  packaging/linux/cloudstream-linux.desktop > "$STAGE/usr/share/applications/RoarStream.desktop"
 
 cat > "$STAGE/DEBIAN/control" <<CONTROL
 Package: cloudstream-linux
@@ -30,10 +30,10 @@ Priority: optional
 Architecture: $ARCH
 Installed-Size: $(du -sk "$STAGE" | cut -f1)
 Depends: libgtk-3-0t64 | libgtk-3-0, libgl1, libx11-6, libxtst6, libvlc5, vlc-plugin-base
-Maintainer: Syed Ali Hamza <100144510+sherazi5110@users.noreply.github.com>
-Homepage: https://github.com/sherazi5110/stream-goat
-Description: Stream Goat: movies, series, anime and Live TV
- Stream Goat installs and runs CloudStream extensions from the same
+Maintainer: Aman Singh
+Homepage: https://github.com/IamSingh01/stream-goat
+Description: RoarStream: movies, series, anime and Live TV
+ RoarStream installs and runs CloudStream extensions from the same
  repositories the Android app uses, and plays streams in its built-in
  player (libVLC: every format VLC plays, online subtitles, source switching).
 CONTROL
@@ -48,6 +48,6 @@ POSTINST
 cp "$STAGE/DEBIAN/postinst" "$STAGE/DEBIAN/postrm"
 chmod 755 "$STAGE/DEBIAN/postinst" "$STAGE/DEBIAN/postrm"
 
-OUT="build/streamgoat-linux_${VERSION}_${ARCH}.deb"
+OUT="build/roarstream-linux_${VERSION}_${ARCH}.deb"
 dpkg-deb --root-owner-group -Zxz --build "$STAGE" "$OUT" >/dev/null
 echo "Built $OUT ($(du -h "$OUT" | cut -f1))"

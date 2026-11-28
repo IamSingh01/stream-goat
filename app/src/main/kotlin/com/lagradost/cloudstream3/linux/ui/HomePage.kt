@@ -14,6 +14,7 @@ import javafx.geometry.Pos
 import javafx.scene.Node
 import javafx.scene.control.ProgressIndicator
 import javafx.scene.control.ScrollPane
+import javafx.scene.control.TextField
 import javafx.scene.effect.GaussianBlur
 import javafx.scene.image.ImageView
 import javafx.scene.layout.FlowPane
@@ -78,10 +79,19 @@ class HomePage : StackPane(), Refreshable, TopBarActions {
         children += scroll
         // The top bar turns solid once the banner has scrolled away beneath it.
         scroll.vvalueProperty().addListener { _, _, _ -> updateTopBar() }
-        ui.launch { PluginManager.version.collect { refreshProviders() } }
+        ui.launch {
+            PluginManager.initialLoadComplete.collect { ready ->
+                if (ready) refreshProviders(force = true)
+            }
+        }
+        ui.launch {
+            PluginManager.version.collect {
+                if (PluginManager.initialLoadComplete.value) refreshProviders()
+            }
+        }
         Library.onChange { ui.launch { if (scene != null) renderContinue() } }
-        // Saved in the Home manager: reload, opening whichever extension or feed was picked there.
-        Catalogs.onChange { ui.launch { current = null; refreshProviders(force = true) } }
+        // Catalog edits rebuild the available sources, but must not discard the user's selection.
+        Catalogs.onChange { ui.launch { refreshProviders(force = true) } }
     }
 
     override fun topBarActions(): List<Node> = listOf(sourceButton)
@@ -99,30 +109,69 @@ class HomePage : StackPane(), Refreshable, TopBarActions {
     }
 
     private fun showSourceMenu() {
-        val rows = sources.map { src ->
+        val sourceRows = sources.map { src ->
             val row = Popover.row(if (src.key == FEED) icon(Icons.APPS, 18.0) else label(src.label.filter { it.isLetterOrDigit() }.take(2).uppercase(), "provider-badge", "small-badge"),
                 src.label, if (src.key == FEED) "${src.apis.size} extensions" else null, selected = src == current) { select(src) }
-            if (Profiles.isKids) return@map row
-            // Edit this extension's catalogs (or the feed) right from the menu.
-            val tune = StackPane(icon(Icons.TUNE, 16.0)).apply {
-                styleClass += "popover-tune"
-                tooltip(if (src.key == FEED) "Choose the feed's extensions and catalogs" else "Choose ${src.label}'s catalogs")
-                setOnMouseClicked {
-                    it.consume()
-                    Nav.window.closeOverlay()
-                    Nav.window.showOverlay(HomeManager(providers, src.apis.singleOrNull().takeIf { src.key != FEED }))
+            if (!Profiles.isKids) {
+                // Edit this extension's catalogs (or the feed) without selecting a different source.
+                val tune = StackPane(icon(Icons.TUNE, 16.0)).apply {
+                    styleClass += "popover-tune"
+                    tooltip(if (src.key == FEED) "Choose the feed's extensions and catalogs" else "Choose ${src.label}'s catalogs")
+                    setOnMouseClicked {
+                        it.consume()
+                        Nav.window.closeOverlay()
+                        Nav.window.showOverlay(HomeManager(providers, src.apis.singleOrNull().takeIf { src.key != FEED }))
+                    }
                 }
+                (row as javafx.scene.layout.HBox).children += tune
             }
-            (row as javafx.scene.layout.HBox).children += tune
             row
-        }.toMutableList()
-        if (rows.isNotEmpty()) rows += Popover.separator()
+        }
+
+        val filter = TextField().apply {
+            promptText = "Search sources…"
+            styleClass += "popover-search"
+            prefWidth = 300.0
+            isFocusTraversable = true
+        }
+        val list = VBox(2.0, *sourceRows.toTypedArray())
+        filter.textProperty().addListener { _, _, value ->
+            val query = value.trim()
+            sourceRows.forEachIndexed { index, row ->
+                val visible = sources[index].label.contains(query, ignoreCase = true)
+                row.isVisible = visible
+                row.isManaged = visible
+            }
+        }
+        val listScroll = ScrollPane(list).apply {
+            isFitToWidth = true
+            isPannable = true
+            hbarPolicy = ScrollPane.ScrollBarPolicy.NEVER
+            vbarPolicy = ScrollPane.ScrollBarPolicy.AS_NEEDED
+            prefViewportHeight = (Nav.window.height - 250.0).coerceIn(180.0, 460.0)
+            maxHeight = prefViewportHeight
+            styleClass += "popover-source-scroll"
+        }
+        val rows = mutableListOf<Node>(filter, listScroll)
         if (!Profiles.isKids) rows += Popover.row(icon(Icons.TUNE, 18.0), "Customize home…") { Nav.window.showOverlay(HomeManager(providers, null)) }
         rows += Popover.row(icon(Icons.REFRESH, 18.0), "Reload") { current?.let { select(it, force = true) } }
-        Popover.show(sourceButton, Popover.panel(*rows.toTypedArray()))
+        Popover.show(sourceButton, VBox(8.0, *rows.toTypedArray()).apply {
+            styleClass += "popover"
+            padding = javafx.geometry.Insets(10.0)
+            prefWidth = 320.0
+            maxWidth = 320.0
+        })
+        filter.requestFocus()
     }
 
     private fun refreshProviders(force: Boolean = false) {
+        // Do not select Cinemeta (or any first-provider fallback) during the initial
+        // 0/0 progress window. Wait for PluginManager.loadAll() to finish registering
+        // every installed extension, then resolve the persisted source exactly once.
+        if (!PluginManager.initialLoadComplete.value) {
+            sourceButton.isVisible = false
+            return
+        }
         val fresh = Engine.providers().filter { it.hasMainPage }
         val feed = Catalogs.feedProviders(fresh).takeIf { Catalogs.multiFeed && it.isNotEmpty() }
         val fresher = listOfNotNull(feed?.let { Source(FEED, "My feed", it) }) + fresh.map { Source(it.name, it.name, listOf(it)) }
@@ -130,8 +179,10 @@ class HomePage : StackPane(), Refreshable, TopBarActions {
         providers = fresh
         sources = fresher
         val wanted = current?.key ?: Settings.lastHomeProvider
-        val preferred = sources.indexOfFirst { it.key == wanted }.coerceAtLeast(0)
-        sources.getOrNull(preferred)?.let { select(it, force = true) } ?: run {
+        val preferred = sources.indexOfFirst { it.key == wanted }
+
+        val fallback = if (preferred >= 0) preferred else if (current == null) 0 else -1
+        sources.getOrNull(fallback)?.let { select(it, force = true) } ?: run {
             current = null; job?.cancel(); sections.clear(); hero?.stop(); hero = null; loading = false
             sourceButton.isVisible = false
             render()
@@ -378,7 +429,6 @@ class HomePage : StackPane(), Refreshable, TopBarActions {
             layers += Region().apply { styleClass += "hero-shade-bottom"; isMouseTransparent = true }
             layers += Region().apply { styleClass += "hero-shade-top"; isMouseTransparent = true }
 
-            val source = hbox(8.0, Logo(22.0), label(api.name, "hero-source"))
             val title: Node = (r?.logoUrl ?: ex?.logo?.takeIf { art })?.let { logo ->
                 val view = ImageView().apply { isPreserveRatio = true; fitWidth = 460.0; fitHeight = 150.0 }
                 view.image = javafx.scene.image.Image(logo, 920.0, 300.0, true, true, true)
@@ -407,7 +457,7 @@ class HomePage : StackPane(), Refreshable, TopBarActions {
             val plot = (r?.plot?.takeIf { it.isNotBlank() } ?: ex?.overview)?.let { label(it, "hero-plot").apply { isWrapText = true; maxWidth = 560.0; maxHeight = 72.0 } }
             val play = button("Play", Icons.PLAY, "hero-play") { play(item, r) }
             val info = button("More Info", Icons.INFO, "hero-info") { Nav.open(api, item) }
-            val text = vbox(16.0, *listOfNotNull(source, title, meta, rank, plot, hbox(12.0, play, info).pad(6.0, 0.0, 0.0, 0.0)).toTypedArray()).apply {
+            val text = vbox(16.0, *listOfNotNull(title, meta, rank, plot, hbox(12.0, play, info).pad(6.0, 0.0, 0.0, 0.0)).toTypedArray()).apply {
                 alignment = Pos.BOTTOM_LEFT
                 maxWidth = 680.0
                 isPickOnBounds = false

@@ -20,7 +20,7 @@ import java.util.Set;
 /**
  * Starts the app, with the installed update patch when there is one (Settings → Updates and backup).
  *
- * A patch is Stream Goat's own jars (app, cs-library, android-shim) from a newer build, kept in
+ * A patch is RoarStream's own jars (app, cs-library, android-shim) from a newer build, kept in
  * {@code <data folder>/update}. It's used only when its signature checks out with the key the installed app was
  * built with, its jars are the ones it signed, and it was made for this installation (a newly installed version
  * replaces it). A patch that didn't get the app to its window is dropped on the next start, so a bad one can't
@@ -56,13 +56,45 @@ public final class Boot {
         if (set != null) return new File(set);
         String os = System.getProperty("os.name", "");
         String home = System.getProperty("user.home");
-        if (os.startsWith("Mac")) return new File(home, "Library/Application Support/Stream Goat");
+        if (os.startsWith("Mac")) {
+            File base = new File(home, "Library/Application Support");
+            return migrate(new File(base, "RoarStream"), new File(base, "Stream Goat"));
+        }
         if (os.regionMatches(true, 0, "Windows", 0, 7)) {
             String appData = System.getenv("APPDATA");
-            return new File(appData != null ? appData : home + "\\AppData\\Roaming", "Stream Goat");
+            File base = new File(appData != null ? appData : home + "\\AppData\\Roaming");
+            File current = new File(base, "RoarStream");
+            File previous = new File(base, "Stream Goat");
+            File older = new File(base, "CloudStream");
+            return migrate(current, previous.isDirectory() ? previous : older);
         }
         String xdg = System.getenv("XDG_DATA_HOME");
-        return new File(xdg != null ? xdg : home + "/.local/share", "cloudstream-linux");
+        File base = new File(xdg != null ? xdg : home + "/.local/share");
+        return migrate(new File(base, "RoarStream"), new File(base, "cloudstream-linux"));
+    }
+
+    /**
+     * Keep legacy data accessible when the directory is renamed or copied on first launch.
+     * If both folders already exist, prefer the current folder but leave the legacy folder untouched.
+     */
+    static File migrate(File current, File legacy) {
+        if (current.exists() || !legacy.isDirectory()) return current;
+        if (legacy.renameTo(current)) return current;
+        try {
+            File parent = current.getParentFile();
+            if (parent != null) Files.createDirectories(parent.toPath());
+            Files.walk(legacy.toPath()).forEach(source -> {
+                try {
+                    java.nio.file.Path target = current.toPath().resolve(legacy.toPath().relativize(source));
+                    if (Files.isDirectory(source)) Files.createDirectories(target);
+                    else if (!Files.exists(target)) Files.copy(source, target);
+                } catch (Exception e) { throw new java.io.UncheckedIOException(new java.io.IOException(e)); }
+            });
+            return current.isDirectory() ? current : legacy;
+        } catch (Exception e) {
+            System.err.println("migration: couldn't copy legacy data; keeping the old folder: " + e);
+            return legacy;
+        }
     }
 
     static File updateDir() { return new File(dataDir(), "update"); }
@@ -135,14 +167,14 @@ public final class Boot {
         }
         Files.write(starting.toPath(), new byte[0]);
         System.err.println("update: starting " + p.getProperty("version") + " (" + p.getProperty("build") + ")");
-        System.setProperty("streamgoat.patch", p.getProperty("version", "") + " " + p.getProperty("build", ""));
+        System.setProperty("roarstream.patch", p.getProperty("version", "") + " " + p.getProperty("build", ""));
         // Nothing is shared with the installed copies: every class (JavaFX, VLC, the app) comes from this loader.
-        return new URLClassLoader("streamgoat-update", urls.toArray(new URL[0]), ClassLoader.getPlatformClassLoader());
+        return new URLClassLoader("roarstream-update", urls.toArray(new URL[0]), ClassLoader.getPlatformClassLoader());
     }
 
     /** Checks [sig] over [data] with the certificate the installed app was built with (none: patches are off). */
     public static boolean verify(byte[] data, byte[] sig) {
-        try (InputStream cert = Boot.class.getResourceAsStream("/stream-goat-update.pem")) {
+        try (InputStream cert = Boot.class.getResourceAsStream("/roarstream-update.pem")) {
             if (cert == null) return false;
             PublicKey key = CertificateFactory.getInstance("X.509").generateCertificate(cert).getPublicKey();
             Signature s = Signature.getInstance(key.getAlgorithm().equals("EC") ? "SHA256withECDSA" : "SHA256withRSA");
@@ -156,7 +188,7 @@ public final class Boot {
 
     /** True when this build can check updates' signatures (built by the project's GitHub builds). */
     public static boolean canVerify() {
-        return Boot.class.getResource("/stream-goat-update.pem") != null;
+        return Boot.class.getResource("/roarstream-update.pem") != null;
     }
 
     public static String sha256(File file) throws Exception {

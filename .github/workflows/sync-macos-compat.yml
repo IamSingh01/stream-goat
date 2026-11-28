@@ -1,0 +1,37 @@
+name: Sync macOS compatibility branch
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-macos-compat
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Merge the latest main into the compatibility branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin main compat/macos-intel-x86_64-11.0
+          git switch --create compat/macos-intel-x86_64-11.0 --track origin/compat/macos-intel-x86_64-11.0
+          if ! git merge --no-edit origin/main; then
+            git merge --abort
+            echo "::error::Upstream changes conflict with custom macOS compatibility changes. The branch was left unchanged; resolve the conflict before continuing."
+            exit 1
+          fi
+          git push origin HEAD:compat/macos-intel-x86_64-11.0

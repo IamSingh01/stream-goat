@@ -146,7 +146,9 @@ fun pageScroll(content: Node): ScrollPane = ScrollPane(content).apply {
     var animation: Timeline? = null
     vvalueProperty().addListener { _, _, v -> if (animation == null) target = v.toDouble() }
     addEventFilter(ScrollEvent.SCROLL) { e ->
-        if (e.deltaY == 0.0 || e.isShiftDown) return@addEventFilter
+        // macOS trackpads already deliver high-resolution, momentum-aware scroll events.
+        // Replacing every event with a restarted Timeline makes scrolling stutter and lose momentum.
+        if (com.lagradost.cloudstream3.linux.Os.isMac || e.deltaY == 0.0 || e.isShiftDown) return@addEventFilter
         val contentHeight = (this.content as Region).height - viewportBounds.height
         if (contentHeight <= 0) return@addEventFilter
         target = (target - e.deltaY * 3.2 / contentHeight).coerceIn(0.0, 1.0)

@@ -52,7 +52,7 @@ sealed interface LinkEvent {
     data class Done(val error: Throwable?, val timedOut: Boolean) : LinkEvent
 }
 
-data class SearchBatch(val api: MainAPI, val results: List<SearchResponse>, val error: Throwable?)
+data class SearchBatch(val api: MainAPI, val results: List<SearchResponse>, val error: Throwable?, val hasNext: Boolean = false)
 
 /**
  * The provider call sequence the Android UI drives through APIRepository:
@@ -123,8 +123,9 @@ object Engine {
         apis.forEach { api ->
             launch(dispatcher) {
                 val batch = try {
-                    val results = withTimeout(api.searchTimeoutMs ?: DEFAULT_TIMEOUT) { api.search(query, 1)?.items.orEmpty() }.let(ContentFilter::filter)
-                    SearchBatch(api, results, null)
+                    val response = withTimeout(api.searchTimeoutMs ?: DEFAULT_TIMEOUT) { api.search(query, 1) }
+                    val results = response?.items.orEmpty().let(ContentFilter::filter)
+                    SearchBatch(api, results, null, response?.hasNext == true)
                 } catch (t: Throwable) {
                     log(api, "search", t)
                     SearchBatch(api, emptyList(), t)
