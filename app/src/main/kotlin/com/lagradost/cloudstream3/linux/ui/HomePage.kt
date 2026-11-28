@@ -165,13 +165,8 @@ class HomePage : StackPane(), Refreshable, TopBarActions {
     }
 
     private fun refreshProviders(force: Boolean = false) {
-        // Do not select Cinemeta (or any first-provider fallback) during the initial
-        // 0/0 progress window. Wait for PluginManager.loadAll() to finish registering
-        // every installed extension, then resolve the persisted source exactly once.
-        if (!PluginManager.initialLoadComplete.value) {
-            sourceButton.isVisible = false
-            return
-        }
+        // Provider registration is incremental: resolve the saved source as soon as it
+        // appears instead of waiting for every installed extension to finish loading.
         val fresh = Engine.providers().filter { it.hasMainPage }
         val feed = Catalogs.feedProviders(fresh).takeIf { Catalogs.multiFeed && it.isNotEmpty() }
         val fresher = listOfNotNull(feed?.let { Source(FEED, "My feed", it) }) + fresh.map { Source(it.name, it.name, listOf(it)) }
