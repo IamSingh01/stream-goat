@@ -273,7 +273,11 @@ class HomePage : StackPane(), Refreshable, TopBarActions {
             // starting any provider/network work. Cached content is already in sections.
             suspendCancellableCoroutine<Unit> { continuation ->
                 val firstPaint = object : AnimationTimer() {
+                    private var pulses = 0
                     override fun handle(now: Long) {
+                        // AnimationTimer runs before rendering within a pulse. Wait for
+                        // the following pulse so the first snapshot frame has actually painted.
+                        if (++pulses < 2) return
                         stop()
                         if (continuation.isActive) continuation.resume(Unit)
                     }
