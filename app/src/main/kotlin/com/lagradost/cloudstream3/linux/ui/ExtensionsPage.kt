@@ -191,9 +191,9 @@ class ExtensionsPage : StackPane(), Refreshable {
 
     private fun growWide(node: Node) = javafx.scene.layout.HBox.setHgrow(node, Priority.ALWAYS)
 
-    // Reuse the loaded catalogue when returning to Extensions; repository mutations explicitly
-    // trigger a refresh, so opening the page never causes a needless reload.
-    override fun onShow() = refresh()
+    // Always reload the repository catalogue whenever the Extensions screen is shown again.
+    // This picks up installs, uninstalls, repository changes, and updated plugin manifests.
+    override fun onShow() = refresh(force = true)
 
     fun refresh(force: Boolean = false) {
         if (loadingRepos && !force) {
