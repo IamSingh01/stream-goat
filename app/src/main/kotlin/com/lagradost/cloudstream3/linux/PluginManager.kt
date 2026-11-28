@@ -163,30 +163,42 @@ object PluginManager {
         // .jar = cross-platform build, already JVM bytecode. .cs3 = Dalvik, translate first.
         val jar = if (file.extension == "jar") file else DexTranslator.translate(file)
         val loader = PluginClassLoader(jar, file)
+        try {
+            val manifest = loader.getResourceAsStream("manifest.json")?.use {
+                mapper.readValue<BasePlugin.Manifest>(it.readBytes())
+            } ?: BasePlugin.Manifest().apply {
+                name = data.name ?: data.internalName
+                version = data.version
+                pluginClassName = loader.findAnnotatedPluginClass()
+            }
+            val className = manifest.pluginClassName ?: error("No plugin class found in ${file.name}")
 
-        val manifest = loader.getResourceAsStream("manifest.json")?.use {
-            mapper.readValue<BasePlugin.Manifest>(it.readBytes())
-        } ?: BasePlugin.Manifest().apply {
-            name = data.name ?: data.internalName
-            version = data.version
-            pluginClassName = loader.findAnnotatedPluginClass()
-        }
-        val className = manifest.pluginClassName ?: error("No plugin class found in ${file.name}")
+            val instance = loader.loadClass(className).getDeclaredConstructor().newInstance() as BasePlugin
+            instance.filename = file.absolutePath
+            // Files packed under assets/ in the extension (read through resources.assets, as on Android).
+            android.content.res.AssetManager.register(file)
+            (instance as? Plugin)?.let { if (manifest.requiresResources || it.resources == null) it.resources = Resources(android.content.res.AssetManager(file)) }
 
-        val instance = loader.loadClass(className).getDeclaredConstructor().newInstance() as BasePlugin
-        instance.filename = file.absolutePath
-        // Files packed under assets/ in the extension (read through resources.assets, as on Android).
-        android.content.res.AssetManager.register(file)
-        (instance as? Plugin)?.let { if (manifest.requiresResources || it.resources == null) it.resources = Resources(android.content.res.AssetManager(file)) }
+            synchronized(registerLock) {
+                if (instance is Plugin) instance.load(Platform.context) else instance.load()
+            }
 
-        synchronized(registerLock) {
-            if (instance is Plugin) instance.load(Platform.context) else instance.load()
-        }
-
-        LoadedPlugin(data.copy(version = manifest.version ?: data.version), manifest, instance, loader).also {
-            loaded[file.absolutePath] = it
-            failures.remove(data.internalName)
-            changed()
+            LoadedPlugin(data.copy(version = manifest.version ?: data.version), manifest, instance, loader).also {
+                loaded[file.absolutePath] = it
+                failures.remove(data.internalName)
+                changed()
+            }
+        } catch (failure: Throwable) {
+            // A plugin can register some providers before its load() throws. Roll those
+            // registrations back so failed installs cannot leave ghost Home sources.
+            val owner = file.absolutePath
+            APIHolder.apis.filter { it.sourcePlugin == owner }.forEach { APIHolder.removePluginMapping(it) }
+            APIHolder.allProviders.withLock { APIHolder.allProviders.removeAll { it.sourcePlugin == owner } }
+            extractorApis.withLock { extractorApis.removeAll { it.sourcePlugin == owner } }
+            com.lagradost.cloudstream3.actions.VideoClickActionHolder.removeFrom(owner)
+            android.content.res.AssetManager.unregister(file)
+            runCatching { loader.close() }
+            throw failure
         }
     }.onFailure {
         failures[data.internalName] = it
