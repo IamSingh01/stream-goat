@@ -61,7 +61,10 @@ object Mpv {
             }
             when {
                 Os.isWindows -> addAll(listOf("libmpv-2", "mpv-2"))
-                Os.isMac -> addAll(listOf("/opt/local/lib/libmpv.2.dylib", "/opt/local/lib/libmpv.dylib", "/usr/local/lib/libmpv.2.dylib", "/usr/local/lib/libmpv.dylib", "/opt/homebrew/lib/libmpv.2.dylib", "/opt/homebrew/lib/libmpv.dylib", "mpv"))
+                Os.isMac -> {
+                    addAll(Os.discoverMacNativeLibraries(setOf("libmpv.dylib", "libmpv.2.dylib")).map { it.absolutePath })
+                    add("mpv")
+                }
                 else -> addAll(listOf("libmpv.so.2", "libmpv.so.1", "mpv"))
             }
         }
