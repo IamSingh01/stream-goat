@@ -234,14 +234,14 @@ class HomePage : StackPane(), Refreshable, TopBarActions {
                 // A previously selected provider may be temporarily absent while an add-on
                 // is restoring, or may have been uninstalled. Never replace that preference
                 // with the first alphabetic provider (commonly Cinemeta).
+                // Keep the persisted Home snapshot while the saved provider is still loading.
                 current = null
                 job?.cancel()
-                sections.clear()
                 hero?.stop()
                 hero = null
                 loading = false
-                sourceButton.text = "Saved source unavailable"
-                sourceButton.isVisible = sources.isNotEmpty()
+                sourceButton.text = "Restoring saved source"
+                sourceButton.isVisible = true
                 render()
             }
         }
@@ -298,8 +298,8 @@ class HomePage : StackPane(), Refreshable, TopBarActions {
         val ready = PluginManager.initialLoadComplete.value
         val noProviders = providers.isEmpty() && ready && !PluginManager.progress.value.running
         when {
-            !ready && providers.isEmpty() -> nodes += emptyState(Icons.EXTENSION, "Restoring your extensions",
-                "Your Home screen is opening first. Saved catalog cards will appear from cache as soon as their extensions are ready.")
+            !ready && providers.isEmpty() && sections.isEmpty() -> nodes += emptyState(Icons.EXTENSION, "Restoring your extensions",
+                "Your previous Home cards will appear immediately when available. Extensions are loading in the background.")
             noProviders && Profiles.isKids -> nodes += emptyState(Icons.FACE, "Nothing here yet",
                 "Ask a grown-up to allow some extensions for this profile (Manage profiles → edit → Allowed extensions).")
             noProviders -> nodes += emptyState(
