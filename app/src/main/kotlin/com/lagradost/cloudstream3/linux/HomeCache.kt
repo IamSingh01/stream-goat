@@ -2,6 +2,7 @@ package com.lagradost.cloudstream3.linux
 
 import com.fasterxml.jackson.module.kotlin.readValue
 import com.lagradost.cloudstream3.HomePageResponse
+import com.lagradost.cloudstream3.mapper
 import org.json.JSONArray
 import java.security.MessageDigest
 
